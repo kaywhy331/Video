@@ -1,0 +1,98 @@
+name: Restore complete VideoFactory source
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/import-videofactory-alpha2
+    paths:
+      - .source-bundle/part-000.b64
+      - .github/workflows/restore-full-project.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: restore-videofactory-source
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out import branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/import-videofactory-alpha2
+          fetch-depth: 0
+
+      - name: Decode and validate source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .source-bundle/part-000.b64
+          base64 --decode .source-bundle/part-000.b64 > "$RUNNER_TEMP/videofactory-source.zip"
+          unzip -t "$RUNNER_TEMP/videofactory-source.zip"
+
+      - name: Restore browsable project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/videofactory-extracted"
+          mkdir -p "$RUNNER_TEMP/videofactory-extracted"
+          unzip -q "$RUNNER_TEMP/videofactory-source.zip" -d "$RUNNER_TEMP/videofactory-extracted"
+
+          package_file="$(find "$RUNNER_TEMP/videofactory-extracted" -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
+          if [ -z "$package_file" ]; then
+            echo 'No package.json found in restored source archive.' >&2
+            exit 1
+          fi
+          source_root="$(dirname "$package_file")"
+
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name .git \
+            ! -name .github \
+            ! -name .source-bundle \
+            -exec rm -rf {} +
+
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='node_modules/' \
+            --exclude='dist/' \
+            --exclude='out/' \
+            --exclude='release/' \
+            --exclude='*.log' \
+            --exclude='*.sqlite*' \
+            --exclude='.env' \
+            "$source_root/" ./
+
+          rm -rf .source-bundle
+
+          test -f package.json
+          test -d src
+
+      - name: Add repository safety notice
+        shell: bash
+        run: |
+          cat > RELEASE_STATUS.md <<'EOF'
+          # Release status
+
+          This repository contains the complete VideoFactory Desktop alpha.2 source tree.
+
+          The current implementation remains **release-blocked** by the findings documented in `docs/reviews/` and must not be treated as production-safe until those blockers are corrected and the required acceptance tests pass.
+          EOF
+
+      - name: Commit restored source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Source tree is already restored.'
+            exit 0
+          fi
+          git commit -m 'feat: add complete VideoFactory Desktop project source'
+          git push origin HEAD:agent/import-videofactory-alpha2
