@@ -1,0 +1,102 @@
+name: Restore complete VideoFactory source
+
+on:
+  push:
+    branches:
+      - agent/import-videofactory-alpha2
+    paths:
+      - .github/workflows/restore-full-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out import branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and validate source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/videofactory-restore"
+          cat \
+            .source-bundle/core-000.b64 \
+            .source-bundle/core-001.b64 \
+            .source-bundle/core-002.b64 \
+            .source-bundle/core-003.b64 \
+            .source-bundle/core-004.b64 \
+            .source-bundle/core-005.b64 \
+            .source-bundle/core-006.b64 \
+            .source-bundle/core-007a.b64 \
+            .source-bundle/core-007b.b64 \
+            > "$RUNNER_TEMP/videofactory-restore/source.b64"
+          base64 --decode "$RUNNER_TEMP/videofactory-restore/source.b64" > "$RUNNER_TEMP/videofactory-restore/source.zip"
+          unzip -t "$RUNNER_TEMP/videofactory-restore/source.zip"
+          mkdir -p "$RUNNER_TEMP/videofactory-restore/extracted"
+          unzip -q "$RUNNER_TEMP/videofactory-restore/source.zip" -d "$RUNNER_TEMP/videofactory-restore/extracted"
+
+          SOURCE_ROOT="$RUNNER_TEMP/videofactory-restore/extracted"
+          FIRST_DIR="$(find "$SOURCE_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1 || true)"
+          ROOT_FILE_COUNT="$(find "$SOURCE_ROOT" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          ROOT_DIR_COUNT="$(find "$SOURCE_ROOT" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          if [[ "$ROOT_FILE_COUNT" == "0" && "$ROOT_DIR_COUNT" == "1" && -n "$FIRST_DIR" ]]; then
+            SOURCE_ROOT="$FIRST_DIR"
+          fi
+
+          test -f "$SOURCE_ROOT/package.json"
+          test -f "$SOURCE_ROOT/src/main/index.ts"
+          test -f "$SOURCE_ROOT/src/renderer/src/App.tsx"
+          test -f "$SOURCE_ROOT/src/shared/types.ts"
+          test -f "$SOURCE_ROOT/RUN-ON-WINDOWS.cmd"
+
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            "$SOURCE_ROOT/" ./
+
+          rm -rf .source-bundle
+
+      - name: Add release-blocked safety notice
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > RELEASE-BLOCKED.md <<'EOF'
+          # Release blocked
+
+          This repository contains the complete VideoFactory Desktop alpha.2 source tree, but the application is **not production-ready**.
+
+          Do not connect a live YouTube channel or rely on the current automated location, licensing, quality-control, render-cache, or upload-idempotency paths until the P0 findings from the July 31, 2026 code review are corrected.
+
+          The current build is suitable for development and local evaluation only.
+          EOF
+
+          if ! grep -q "Release blocked" README.md; then
+            tmp="$(mktemp)"
+            cat > "$tmp" <<'EOF'
+          > [!WARNING]
+          > **Release blocked:** this alpha is a development prototype, not a production publishing system. Do not connect a live YouTube channel or rely on automated geographic/license verification until the documented P0 defects are corrected. See [`RELEASE-BLOCKED.md`](RELEASE-BLOCKED.md).
+
+          EOF
+            cat README.md >> "$tmp"
+            mv "$tmp" README.md
+          fi
+
+      - name: Commit expanded source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No restoration changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: add complete VideoFactory Desktop alpha.2 source"
+          git push origin HEAD:agent/import-videofactory-alpha2
