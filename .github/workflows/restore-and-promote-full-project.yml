@@ -1,0 +1,199 @@
+name: Restore and promote complete VideoFactory project
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/import-videofactory-alpha2
+    paths:
+      - .github/workflows/restore-and-promote-full-project.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: restore-and-promote-videofactory
+  cancel-in-progress: false
+
+jobs:
+  restore-and-promote:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out import branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/import-videofactory-alpha2
+          fetch-depth: 0
+
+      - name: Reconstruct and validate source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import io
+          import re
+          import zipfile
+          from pathlib import Path
+
+          bundle = Path('.source-bundle')
+          if not bundle.is_dir():
+              raise SystemExit('Missing .source-bundle directory')
+
+          files = sorted(bundle.glob('*.b64'))
+          if not files:
+              raise SystemExit('No base64 bundle files found')
+
+          groups: list[tuple[str, list[Path]]] = []
+          parts = sorted(bundle.glob('part-*.b64'))
+          cores = sorted(bundle.glob('core-*.b64'))
+          if parts:
+              groups.append(('parts', parts))
+          if cores:
+              groups.append(('cores', cores))
+          groups.append(('all', files))
+          groups.extend((f'individual:{p.name}', [p]) for p in files)
+
+          archive = Path('/tmp/videofactory-source.zip')
+
+          def compact_ascii(raw: bytes) -> bytes:
+              return re.sub(rb'\s+', b'', raw)
+
+          errors: list[str] = []
+          for label, group in groups:
+              raw = b''.join(p.read_bytes() for p in group)
+              current = compact_ascii(raw)
+              for pass_number in (1, 2, 3):
+                  try:
+                      decoded = base64.b64decode(current, validate=False)
+                  except Exception as exc:
+                      errors.append(f'{label} pass {pass_number}: {exc}')
+                      break
+
+                  if zipfile.is_zipfile(io.BytesIO(decoded)):
+                      archive.write_bytes(decoded)
+                      print(f'Restored ZIP from {label} after {pass_number} base64 pass(es)')
+                      raise SystemExit(0)
+
+                  try:
+                      current = compact_ascii(decoded)
+                  except Exception:
+                      break
+
+          raise SystemExit('Unable to reconstruct a valid ZIP archive. Attempts: ' + '; '.join(errors[-10:]))
+          PY
+          unzip -t /tmp/videofactory-source.zip
+
+      - name: Replace staging bundle with the complete source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/videofactory-extracted
+          mkdir -p /tmp/videofactory-extracted
+          unzip -q /tmp/videofactory-source.zip -d /tmp/videofactory-extracted
+
+          package_file="$(find /tmp/videofactory-extracted -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
+          if [ -z "$package_file" ]; then
+            echo 'No package.json found in reconstructed archive.' >&2
+            exit 1
+          fi
+          source_root="$(dirname "$package_file")"
+          echo "Using source root: $source_root"
+
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name .git \
+            ! -name .github \
+            ! -name .source-bundle \
+            -exec rm -rf {} +
+
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='node_modules/' \
+            --exclude='dist/' \
+            --exclude='out/' \
+            --exclude='release/' \
+            --exclude='coverage/' \
+            --exclude='.env' \
+            --exclude='*.log' \
+            --exclude='*.sqlite' \
+            --exclude='*.sqlite-*' \
+            "$source_root/" ./
+
+          rm -rf .source-bundle
+
+          test -f package.json
+          test -d src
+          test -f RUN-ON-WINDOWS.cmd
+
+      - name: Add repository status and secure ignore rules
+        shell: bash
+        run: |
+          cat > RELEASE_STATUS.md <<'EOF'
+          # Release status
+
+          This repository contains the complete, browsable VideoFactory Desktop alpha.2 project source.
+
+          The implementation remains **release-blocked** pending correction of the safety and architecture findings documented in `docs/reviews/`. Do not connect production YouTube credentials or rely on automated geographic/license verification until those blockers and acceptance tests are resolved.
+          EOF
+
+          cat >> .gitignore <<'EOF'
+
+          # Local VideoFactory data and generated media
+          *.sqlite
+          *.sqlite-*
+          *.db
+          .env
+          .env.local
+          logs/
+          cache/
+          data/
+          media/
+          output/
+          outputs/
+          renders/
+          ingest/
+          backups/
+          VideoFactory-Last-Startup.log
+          EOF
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.gitignore')
+          lines = p.read_text(encoding='utf-8').splitlines()
+          seen = set()
+          clean = []
+          for line in lines:
+              key = line.strip()
+              if key and not key.startswith('#') and key in seen:
+                  continue
+              if key and not key.startswith('#'):
+                  seen.add(key)
+              clean.append(line)
+          p.write_text('\n'.join(clean).rstrip() + '\n', encoding='utf-8')
+          PY
+
+      - name: Verify repository contains a normal source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const p=require('./package.json'); if(!p.name) process.exit(1); console.log(p.name)"
+          test "$(find src -type f | wc -l)" -gt 5
+          test ! -d .source-bundle
+          git status --short
+
+      - name: Commit complete source and promote to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat: add complete VideoFactory Desktop project source'
+          fi
+          git push origin HEAD:agent/import-videofactory-alpha2
+          git push origin HEAD:main
