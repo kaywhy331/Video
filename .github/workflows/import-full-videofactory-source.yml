@@ -1,0 +1,105 @@
+name: Import complete VideoFactory source
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/import-full-videofactory-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct source archive from import branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin agent/import-videofactory-alpha2
+          WORK="$RUNNER_TEMP/videofactory-import"
+          mkdir -p "$WORK/extracted"
+          : > "$WORK/source.b64"
+          for file in \
+            core-000.b64 \
+            core-001.b64 \
+            core-002.b64 \
+            core-003.b64 \
+            core-004.b64 \
+            core-005.b64 \
+            core-006.b64 \
+            core-007a.b64 \
+            core-007b.b64
+          do
+            git show "origin/agent/import-videofactory-alpha2:.source-bundle/$file" >> "$WORK/source.b64"
+          done
+
+          base64 --decode "$WORK/source.b64" > "$WORK/source.zip"
+          unzip -t "$WORK/source.zip"
+          unzip -q "$WORK/source.zip" -d "$WORK/extracted"
+
+          SOURCE_ROOT="$WORK/extracted"
+          FIRST_DIR="$(find "$SOURCE_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1 || true)"
+          ROOT_FILE_COUNT="$(find "$SOURCE_ROOT" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          ROOT_DIR_COUNT="$(find "$SOURCE_ROOT" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          if [[ "$ROOT_FILE_COUNT" == "0" && "$ROOT_DIR_COUNT" == "1" && -n "$FIRST_DIR" ]]; then
+            SOURCE_ROOT="$FIRST_DIR"
+          fi
+
+          test -f "$SOURCE_ROOT/package.json"
+          test -f "$SOURCE_ROOT/src/main/index.ts"
+          test -f "$SOURCE_ROOT/src/renderer/src/App.tsx"
+          test -f "$SOURCE_ROOT/src/shared/types.ts"
+          test -f "$SOURCE_ROOT/RUN-ON-WINDOWS.cmd"
+
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            "$SOURCE_ROOT/" ./
+
+      - name: Add release status notice
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > RELEASE-BLOCKED.md <<'EOF'
+          # Release blocked
+
+          This repository contains the complete VideoFactory Desktop alpha.2 source tree, but the application is **not production-ready**.
+
+          Do not connect a live YouTube channel or rely on the current automated geographic verification, licensing, quality-control, render-cache, or upload-idempotency paths until the documented P0 defects are corrected.
+
+          The current build is suitable for development and local evaluation only.
+          EOF
+
+          if ! grep -q "Release blocked" README.md; then
+            tmp="$(mktemp)"
+            cat > "$tmp" <<'EOF'
+          > [!WARNING]
+          > **Release blocked:** this alpha is a development prototype, not a production publishing system. Do not connect a live YouTube channel or rely on automated geographic/license verification until the documented P0 defects are corrected. See [`RELEASE-BLOCKED.md`](RELEASE-BLOCKED.md).
+
+          EOF
+            cat README.md >> "$tmp"
+            mv "$tmp" README.md
+          fi
+
+      - name: Commit expanded project to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No import changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: add complete VideoFactory Desktop alpha.2 source"
+          git push origin HEAD:main
