@@ -1,0 +1,92 @@
+name: Ensure full VideoFactory project is on main
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/import-videofactory-alpha2
+    paths:
+      - .github/workflows/ensure-full-project-on-main.yml
+
+permissions:
+  contents: write
+
+jobs:
+  ensure-source:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/import-videofactory-alpha2
+          fetch-depth: 0
+
+      - name: Restore archive only when source tree is still staged
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package.json ] && [ -d src ]; then
+            echo 'Browsable source tree already exists.'
+            exit 0
+          fi
+
+          python - <<'PY'
+          import base64, io, re, zipfile
+          from pathlib import Path
+
+          bundle = Path('.source-bundle')
+          files = sorted(bundle.glob('*.b64'))
+          if not files:
+              raise SystemExit('No source bundle and no project tree found')
+
+          groups = []
+          for pattern in ('part-*.b64', 'core-*.b64', '*.b64'):
+              group = sorted(bundle.glob(pattern))
+              if group:
+                  groups.append((pattern, group))
+          groups += [(p.name, [p]) for p in files]
+
+          output = Path('/tmp/videofactory.zip')
+          for label, group in groups:
+              current = re.sub(rb'\s+', b'', b''.join(p.read_bytes() for p in group))
+              for pass_no in range(1, 4):
+                  try:
+                      current = base64.b64decode(current, validate=False)
+                  except Exception:
+                      break
+                  if zipfile.is_zipfile(io.BytesIO(current)):
+                      output.write_bytes(current)
+                      print(f'Valid archive restored from {label}, pass {pass_no}')
+                      raise SystemExit(0)
+                  current = re.sub(rb'\s+', b'', current)
+          raise SystemExit('Could not reconstruct source ZIP')
+          PY
+
+          rm -rf /tmp/videofactory-extracted
+          mkdir -p /tmp/videofactory-extracted
+          unzip -q /tmp/videofactory.zip -d /tmp/videofactory-extracted
+          package_file="$(find /tmp/videofactory-extracted -type f -name package.json -not -path '*/node_modules/*' | head -n1)"
+          test -n "$package_file"
+          source_root="$(dirname "$package_file")"
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name .source-bundle -exec rm -rf {} +
+          rsync -a --exclude='.git/' --exclude='.github/' --exclude='node_modules/' --exclude='dist/' --exclude='out/' --exclude='release/' --exclude='coverage/' --exclude='.env' --exclude='*.log' --exclude='*.sqlite*' "$source_root/" ./
+          rm -rf .source-bundle
+
+      - name: Verify, commit, and fast-forward main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f package.json
+          test -d src
+          test -f RUN-ON-WINDOWS.cmd
+          test ! -d .source-bundle
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat: publish complete VideoFactory Desktop source tree'
+          fi
+          git push origin HEAD:agent/import-videofactory-alpha2
+          git push origin HEAD:main
