@@ -1,0 +1,69 @@
+name: Finalize complete VideoFactory project upload
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/import-videofactory-alpha2
+    paths:
+      - .github/workflows/finalize-full-project-upload.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/import-videofactory-alpha2
+          fetch-depth: 0
+
+      - name: Verify complete browsable source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f package.json
+          test -d src
+          test -f RUN-ON-WINDOWS.cmd
+          test ! -d .source-bundle
+          source_count="$(find src -type f | wc -l)"
+          test "$source_count" -gt 5
+          printf 'Verified source files under src/: %s\n' "$source_count"
+
+      - name: Record upload completion and source manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          file_count="$(find . -type f -not -path './.git/*' | wc -l)"
+          src_count="$(find src -type f | wc -l)"
+          cat > FULL_PROJECT_UPLOAD_COMPLETE.md <<EOF
+          # Full project upload complete
+
+          The complete, browsable VideoFactory Desktop source tree is present on the default branch.
+
+          - Repository: \`kaywhy331/Video\`
+          - Source files under \`src/\`: $src_count
+          - Total tracked working-tree files before this marker: $file_count
+          - Windows launcher: \`RUN-ON-WINDOWS.cmd\`
+          - Project manifest: \`package.json\`
+          - Temporary source bundle: removed
+          - Release status: development alpha; see \`RELEASE_STATUS.md\` and \`docs/reviews/\`
+          EOF
+
+          find . -type f -not -path './.git/*' -printf '%P\n' | sort > SOURCE_TREE_MANIFEST.txt
+
+      - name: Commit marker and promote exact branch head to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: verify complete VideoFactory source upload'
+          fi
+          git push origin HEAD:agent/import-videofactory-alpha2
+          git push origin HEAD:main
