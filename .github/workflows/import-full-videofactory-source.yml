@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           git fetch origin agent/import-videofactory-alpha2
           WORK="$RUNNER_TEMP/videofactory-import"
-          mkdir -p "$WORK/extracted"
+          mkdir -p "$WORK/extracted" "$WORK/chunks"
           : > "$WORK/source.zip"
           for file in \
             core-000.b64 \
@@ -43,12 +43,21 @@ jobs:
             core-007a.b64 \
             core-007b.b64
           do
-            git show "origin/agent/import-videofactory-alpha2:.source-bundle/$file" \
-              | tr -d '\r\n\t ' \
-              | base64 --decode \
-              >> "$WORK/source.zip"
+            raw="$WORK/chunks/$file"
+            bin="$WORK/chunks/${file%.b64}.bin"
+            git show "origin/agent/import-videofactory-alpha2:.source-bundle/$file" > "$raw"
+            tr -d '\r\n\t ' < "$raw" > "$raw.clean"
+            echo "CHUNK $file encoded_bytes=$(wc -c < "$raw.clean")"
+            if ! base64 --decode "$raw.clean" > "$bin"; then
+              echo "INVALID_CHUNK=$file"
+              echo "TAIL_HEX=$(tail -c 64 "$raw.clean" | od -An -tx1 | tr -d ' \n')"
+              exit 2
+            fi
+            echo "CHUNK_OK $file decoded_bytes=$(wc -c < "$bin") sha256=$(sha256sum "$bin" | cut -d' ' -f1)"
+            cat "$bin" >> "$WORK/source.zip"
           done
 
+          echo "ARCHIVE bytes=$(wc -c < "$WORK/source.zip") sha256=$(sha256sum "$WORK/source.zip" | cut -d' ' -f1)"
           unzip -t "$WORK/source.zip"
           unzip -q "$WORK/source.zip" -d "$WORK/extracted"
 
