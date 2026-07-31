@@ -31,7 +31,7 @@ jobs:
           git fetch origin agent/import-videofactory-alpha2
           WORK="$RUNNER_TEMP/videofactory-import"
           mkdir -p "$WORK/extracted"
-          : > "$WORK/source.b64"
+          : > "$WORK/source.zip"
           for file in \
             core-000.b64 \
             core-001.b64 \
@@ -43,10 +43,12 @@ jobs:
             core-007a.b64 \
             core-007b.b64
           do
-            git show "origin/agent/import-videofactory-alpha2:.source-bundle/$file" >> "$WORK/source.b64"
+            git show "origin/agent/import-videofactory-alpha2:.source-bundle/$file" \
+              | tr -d '\r\n\t ' \
+              | base64 --decode \
+              >> "$WORK/source.zip"
           done
 
-          base64 --decode "$WORK/source.b64" > "$WORK/source.zip"
           unzip -t "$WORK/source.zip"
           unzip -q "$WORK/source.zip" -d "$WORK/extracted"
 
