@@ -31,7 +31,6 @@ jobs:
           git fetch origin agent/import-videofactory-alpha2
           WORK="$RUNNER_TEMP/videofactory-import"
           mkdir -p "$WORK/extracted" "$WORK/chunks"
-          : > "$WORK/source.zip"
           for file in \
             core-000.b64 \
             core-001.b64 \
@@ -43,21 +42,81 @@ jobs:
             core-007a.b64 \
             core-007b.b64
           do
-            raw="$WORK/chunks/$file"
-            bin="$WORK/chunks/${file%.b64}.bin"
-            git show "origin/agent/import-videofactory-alpha2:.source-bundle/$file" > "$raw"
-            tr -d '\r\n\t ' < "$raw" > "$raw.clean"
-            echo "CHUNK $file encoded_bytes=$(wc -c < "$raw.clean")"
-            if ! base64 --decode "$raw.clean" > "$bin"; then
-              echo "INVALID_CHUNK=$file"
-              echo "TAIL_HEX=$(tail -c 64 "$raw.clean" | od -An -tx1 | tr -d ' \n')"
-              exit 2
-            fi
-            echo "CHUNK_OK $file decoded_bytes=$(wc -c < "$bin") sha256=$(sha256sum "$bin" | cut -d' ' -f1)"
-            cat "$bin" >> "$WORK/source.zip"
+            git show "origin/agent/import-videofactory-alpha2:.source-bundle/$file" > "$WORK/chunks/$file"
           done
 
-          echo "ARCHIVE bytes=$(wc -c < "$WORK/source.zip") sha256=$(sha256sum "$WORK/source.zip" | cut -d' ' -f1)"
+          python - "$WORK" <<'PY'
+          import base64
+          import itertools
+          import io
+          import pathlib
+          import sys
+          import zipfile
+
+          work = pathlib.Path(sys.argv[1])
+          names = [
+              'core-000.b64', 'core-001.b64', 'core-002.b64',
+              'core-003.b64', 'core-004.b64', 'core-005.b64',
+              'core-006.b64', 'core-007a.b64', 'core-007b.b64'
+          ]
+          alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+          choices = []
+
+          for name in names:
+              text = ''.join((work / 'chunks' / name).read_text().split())
+              print(f'CHUNK {name} encoded_bytes={len(text)}')
+              options = []
+              if len(text) % 4 == 0:
+                  options.append((None, base64.b64decode(text, validate=True)))
+              elif len(text) % 4 == 3:
+                  # The staged core-004 upload lost its final base64 character.
+                  # Try every valid final character and let ZIP CRC validation choose it.
+                  for char in alphabet:
+                      try:
+                          options.append((char, base64.b64decode(text + char, validate=True)))
+                      except Exception:
+                          pass
+              else:
+                  raise SystemExit(f'Unsupported base64 truncation in {name}: length={len(text)}')
+              if not options:
+                  raise SystemExit(f'No decodable candidates for {name}')
+              choices.append(options)
+
+          combinations = 1
+          for options in choices:
+              combinations *= len(options)
+          if combinations > 4096:
+              raise SystemExit(f'Too many repair combinations: {combinations}')
+
+          for selected in itertools.product(*choices):
+              archive = b''.join(item[1] for item in selected)
+              try:
+                  with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                      if bundle.testzip() is not None:
+                          continue
+                      required = {
+                          'package.json',
+                          'src/main/index.ts',
+                          'src/renderer/src/App.tsx',
+                          'src/shared/types.ts',
+                          'RUN-ON-WINDOWS.cmd'
+                      }
+                      members = {name.rstrip('/') for name in bundle.namelist()}
+                      roots = {member.split('/', 1)[0] for member in members if member}
+                      direct = required.issubset(members)
+                      nested = any(all(f'{root}/{path}' in members for path in required) for root in roots)
+                      if not direct and not nested:
+                          continue
+                  (work / 'source.zip').write_bytes(archive)
+                  repairs = {name: selected[index][0] for index, name in enumerate(names) if selected[index][0]}
+                  print(f'ARCHIVE_OK bytes={len(archive)} repairs={repairs}')
+                  break
+              except (zipfile.BadZipFile, RuntimeError, OSError):
+                  continue
+          else:
+              raise SystemExit('No repaired chunk combination produced a valid complete source ZIP')
+          PY
+
           unzip -t "$WORK/source.zip"
           unzip -q "$WORK/source.zip" -d "$WORK/extracted"
 
