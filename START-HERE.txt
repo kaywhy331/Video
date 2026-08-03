@@ -1,0 +1,18 @@
+VIDEOFACTORY DESKTOP alpha.2 — WINDOWS START
+
+1. Delete or ignore the previous alpha.1 folder. Do not mix the two versions.
+2. Fully extract this ZIP to a local folder, for example:
+     D:\VideoFactoryDesktop-alpha2
+3. Double-click:
+     RUN-ON-WINDOWS.cmd
+
+First launch downloads the declared npm dependencies and can take several minutes.
+The command window now remains open on success or failure.
+
+If launch fails, send this file back for diagnosis:
+  VideoFactory-Last-Startup.log
+
+Required runtime:
+  Node.js 22.12+ LTS (recommended) or Node.js 24
+
+Do not run the application directly from inside the ZIP preview.

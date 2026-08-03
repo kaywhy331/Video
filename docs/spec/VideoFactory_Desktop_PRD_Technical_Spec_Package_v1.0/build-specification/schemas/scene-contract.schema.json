@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://internal.example/schemas/scene-contract-v1.json",
+  "title": "VideoFactory Scene Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "sceneContractId",
+    "narrationBeatId",
+    "narration",
+    "targetDurationMs",
+    "geography",
+    "visualTreatments",
+    "visualRequirements",
+    "timingPolicy",
+    "verificationStatus"
+  ],
+  "properties": {
+    "contractVersion": { "const": 1 },
+    "sceneContractId": { "type": "string", "minLength": 1 },
+    "narrationBeatId": { "type": "string", "minLength": 1 },
+    "narration": { "type": "string", "minLength": 1 },
+    "claimIds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true,
+      "default": []
+    },
+    "targetDurationMs": { "type": "integer", "minimum": 1000, "maximum": 60000 },
+    "geography": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredGranularity", "contextualFallbackAllowed"],
+      "properties": {
+        "requiredPlaceId": { "type": ["string", "null"] },
+        "requiredGranularity": {
+          "enum": ["none", "country", "region", "city", "neighborhood", "landmark", "feature"]
+        },
+        "contextualFallbackAllowed": { "type": "boolean" },
+        "allowedParentPlaceIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "minimumLocationConfidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "visualTreatments": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "exact_location_footage",
+          "contextual_verified_footage",
+          "map_or_diagram",
+          "text_or_quote_card",
+          "licensed_archival_image"
+        ]
+      }
+    },
+    "visualRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredObjects", "preferredShotTypes", "targetShotCount"],
+      "properties": {
+        "requiredObjects": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "optionalObjects": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "requiredActivities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "preferredShotTypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "preferredCameraMotion": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "preferredTimeOfDay": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "disallowedContent": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "targetShotCount": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "minimumEffectiveWidth": { "type": "integer", "minimum": 1, "default": 1920 },
+        "minimumEffectiveHeight": { "type": "integer", "minimum": 1, "default": 1080 }
+      }
+    },
+    "timingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumShotMs", "preferredShotMs", "maximumShotMs"],
+      "properties": {
+        "minimumShotMs": { "type": "integer", "minimum": 500, "maximum": 7000 },
+        "preferredShotMs": { "type": "integer", "minimum": 1000, "maximum": 7000 },
+        "maximumShotMs": { "type": "integer", "minimum": 1000, "maximum": 7000 }
+      }
+    },
+    "candidateAssetIds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true,
+      "default": []
+    },
+    "selectedSegmentIds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true,
+      "default": []
+    },
+    "verificationStatus": {
+      "enum": ["provisional", "metadata_validated", "footage_validated", "blocked"]
+    },
+    "blockingReasons": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  }
+}

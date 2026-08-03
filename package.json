@@ -1,0 +1,91 @@
+{
+  "name": "videofactory-desktop",
+  "version": "0.1.0-alpha.2",
+  "private": true,
+  "description": "Internal metadata-first stock-footage-to-YouTube production desktop application",
+  "main": "./out/main/index.js",
+  "author": "Kevin",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0 <23 || >=24.0.0 <25",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate": "npm run typecheck && npm run test && npm run build",
+    "package:dir": "npm run build && electron-builder --dir",
+    "package:win": "npm run build && electron-builder --win nsis zip",
+    "package:win:portable": "npm run build && electron-builder --win portable",
+    "demo:media": "node scripts/generate-demo-media.mjs",
+    "doctor": "node scripts/preflight.mjs"
+  },
+  "dependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "chokidar": "^4.0.3",
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "googleapis": "^148.0.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "43.2.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "com.kevin.videofactory",
+    "productName": "VideoFactory Desktop",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/ffmpeg-static/**",
+      "**/node_modules/ffprobe-static/**"
+    ],
+    "files": [
+      "out/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "directories": {
+      "buildResources": "resources",
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

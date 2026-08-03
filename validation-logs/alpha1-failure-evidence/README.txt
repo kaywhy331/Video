@@ -1,0 +1,1 @@
+These logs are retained from the original alpha.1 delivery. They show the immediate failure caused by missing npm dependency declarations (for example, electron-vite and vitest were unavailable). They are not validation results for alpha.2.

@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-07-31T04:25:20.947386+00:00",
+  "release": "0.1.0-alpha.2",
+  "preflight_source_check": "passed",
+  "typescript_tsx_syntax_transpilation": "passed_44_files",
+  "core_logic_smoke_tests": "passed",
+  "sqlite_schema_fts_integrity": "passed",
+  "dependency_declaration_audit": "passed_12_external_packages",
+  "full_npm_install": "not_run_registry_unavailable_in_build_environment",
+  "full_typescript_typecheck": "requires_installed_dependencies",
+  "vitest_suite": "requires_installed_dependencies",
+  "electron_vite_bundle": "requires_installed_dependencies",
+  "windows_runtime_smoke_test": "required_on_windows_10_or_11",
+  "production_ready": false
+}

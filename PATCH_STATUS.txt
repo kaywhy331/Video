@@ -1,0 +1,11 @@
+patched
+src/renderer/src/App.tsx
+src/renderer/src/views/LibraryView.tsx
+src/renderer/src/views/AutopilotView.tsx
+src/renderer/src/views/FinalReviewView.tsx
+src/renderer/src/views/DownloadsView.tsx
+src/renderer/src/views/ExceptionsView.tsx
+src/renderer/src/views/SettingsView.tsx
+src/renderer/src/components/ui.tsx
+src/main/services/render-service.ts
+src/main/services/youtube-service.ts

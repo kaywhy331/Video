@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://internal.example/schemas/render-manifest-v1.json",
+  "title": "VideoFactory Render Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestVersion",
+    "projectId",
+    "scriptVersionId",
+    "output",
+    "durationMs",
+    "videoShots",
+    "audioTracks",
+    "captions"
+  ],
+  "properties": {
+    "manifestVersion": { "const": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "scriptVersionId": { "type": "string", "minLength": 1 },
+    "policySnapshotHash": { "type": "string" },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "width", "height", "frameRateNumerator", "frameRateDenominator", "container", "videoCodec", "audioCodec"],
+      "properties": {
+        "profileId": { "type": "string" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "frameRateNumerator": { "type": "integer", "minimum": 1 },
+        "frameRateDenominator": { "type": "integer", "minimum": 1 },
+        "container": { "const": "mp4" },
+        "videoCodec": { "const": "h264" },
+        "audioCodec": { "const": "aac" },
+        "pixelFormat": { "const": "yuv420p" },
+        "colorSpace": { "const": "bt709" },
+        "qualified4k": { "type": "boolean" },
+        "allowUpscaling": { "const": false }
+      }
+    },
+    "durationMs": { "type": "integer", "minimum": 1000 },
+    "videoShots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shotId",
+          "sceneContractId",
+          "timelineStartMs",
+          "timelineEndMs",
+          "treatment",
+          "source"
+        ],
+        "properties": {
+          "shotId": { "type": "string" },
+          "sceneContractId": { "type": "string" },
+          "timelineStartMs": { "type": "integer", "minimum": 0 },
+          "timelineEndMs": { "type": "integer", "minimum": 1 },
+          "treatment": {
+            "enum": ["full_screen", "inset", "split_screen", "background", "graphic_support"]
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceType", "path", "sha256", "sourceInMs", "sourceOutMs"],
+            "properties": {
+              "sourceType": { "enum": ["video", "image", "graphic"] },
+              "path": { "type": "string" },
+              "sha256": { "type": "string" },
+              "sourceInMs": { "type": "integer", "minimum": 0 },
+              "sourceOutMs": { "type": "integer", "minimum": 1 },
+              "assetId": { "type": ["string", "null"] },
+              "assetFileId": { "type": ["string", "null"] },
+              "assetSegmentId": { "type": ["string", "null"] }
+            }
+          },
+          "crop": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y": { "type": "number", "minimum": 0, "maximum": 1 },
+              "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+              "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+          },
+          "position": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "scale": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+          },
+          "transitionIn": { "type": "object" },
+          "transitionOut": { "type": "object" },
+          "effectiveWidth": { "type": "integer", "minimum": 1 },
+          "effectiveHeight": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "audioTracks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["trackId", "role", "path", "timelineStartMs", "timelineEndMs", "gainDb"],
+        "properties": {
+          "trackId": { "type": "string" },
+          "role": { "enum": ["narration", "music", "ambient", "effect"] },
+          "path": { "type": "string" },
+          "sha256": { "type": "string" },
+          "timelineStartMs": { "type": "integer", "minimum": 0 },
+          "timelineEndMs": { "type": "integer", "minimum": 1 },
+          "sourceInMs": { "type": "integer", "minimum": 0 },
+          "sourceOutMs": { "type": "integer", "minimum": 1 },
+          "gainDb": { "type": "number" },
+          "duckUnderNarration": { "type": "boolean", "default": false },
+          "fadeInMs": { "type": "integer", "minimum": 0 },
+          "fadeOutMs": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "overlays": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["overlayId", "type", "timelineStartMs", "timelineEndMs", "assetPath"],
+        "properties": {
+          "overlayId": { "type": "string" },
+          "type": { "enum": ["location_label", "chapter_card", "map", "fact", "logo", "end_card", "custom"] },
+          "timelineStartMs": { "type": "integer", "minimum": 0 },
+          "timelineEndMs": { "type": "integer", "minimum": 1 },
+          "assetPath": { "type": "string" },
+          "assetSha256": { "type": "string" },
+          "position": { "type": "object" }
+        }
+      },
+      "default": []
+    },
+    "captions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["srtPath", "vttPath", "burnedIn"],
+      "properties": {
+        "srtPath": { "type": "string" },
+        "vttPath": { "type": "string" },
+        "burnedIn": { "type": "boolean" },
+        "styleProfileId": { "type": ["string", "null"] }
+      }
+    },
+    "expectedArtifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  }
+}
