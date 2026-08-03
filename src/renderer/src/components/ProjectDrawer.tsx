@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { ExternalLink, MapPin, X } from 'lucide-react';
 import type { ProjectDetail } from '@shared/types';
 import { Button, ProgressBar, StatusPill } from './ui';

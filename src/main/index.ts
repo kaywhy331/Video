@@ -23,6 +23,7 @@ let mainWindow: BrowserWindow | null = null;
 let context: AppContext | null = null;
 let tray: Tray | null = null;
 let blockerId: number | null = null;
+let isQuitting = false;
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.stack ?? error.message;
@@ -148,7 +149,7 @@ app.whenReady().then(async () => {
   await loadWindow(mainWindow);
 
   mainWindow.on('close', event => {
-    if (!app.isQuitting) {
+    if (!isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -159,7 +160,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
-  app.isQuitting = true;
+  isQuitting = true;
   if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
     powerSaveBlocker.stop(blockerId);
   }
@@ -177,9 +178,3 @@ app.on('activate', () => {
 
 // The tray keeps the single-user production service alive when its window is hidden.
 app.on('window-all-closed', () => undefined);
-
-declare module 'electron' {
-  interface App {
-    isQuitting?: boolean;
-  }
-}

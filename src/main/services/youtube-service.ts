@@ -2,7 +2,7 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { shell } from 'electron';
-import { google, type youtube_v3 } from 'googleapis';
+import { google, type Auth, type youtube_v3 } from 'googleapis';
 import type { AppDatabase } from '../database/database';
 import type { AppSettings, YouTubeConnectionStatus } from '@shared/types';
 import type { SecretStore } from '../secret-store';
@@ -36,7 +36,7 @@ export class YouTubeService {
         expiry_date: secret.youtubeTokenExpiry
       });
     }
-    (client as any).on('tokens', tokens => {
+    (client as any).on('tokens', (tokens: Auth.Credentials) => {
       this.secrets.update({
         youtubeAccessToken: tokens.access_token ?? undefined,
         youtubeRefreshToken: tokens.refresh_token ?? secret.youtubeRefreshToken,

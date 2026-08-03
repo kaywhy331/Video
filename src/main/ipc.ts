@@ -16,7 +16,7 @@ import {
 import type { AppSettings } from '@shared/types';
 
 function validateSender(event: Electron.IpcMainInvokeEvent): void {
-  const url = event.senderFrame.url;
+  const url = event.senderFrame?.url ?? '';
   const isDev = url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
   const isPackaged = url.startsWith('file://');
   if (!isDev && !isPackaged) throw new Error('IPC sender is not authorized.');
