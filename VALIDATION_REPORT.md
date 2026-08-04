@@ -19,15 +19,15 @@ Alpha.2 adds the dependency declarations, durable startup logging, an always-vis
 | Imported-package declaration audit | Passed for 12 external packages |
 | Original alpha.1 failure evidence retained | Yes, under `validation-logs/alpha1-failure-evidence/` |
 
-## Checks that still require a networked Windows machine
+## Follow-up verification — 2026-08-04
 
-This container cannot reach the npm registry, so it could not install the declared dependencies. The following checks are intentionally **not represented as passed**:
+The complete imported source was installed and revalidated in a networked Linux environment:
 
-- `npm install`
-- full `npm run typecheck`
-- Vitest execution
-- Electron/Vite production bundle
-- Windows runtime launch
-- portable/installer packaging
+- `npm ci` / dependency installation: passed
+- full TypeScript typecheck: passed
+- Vitest: 12/12 tests passed
+- Electron/Vite main, preload, and renderer production bundles: passed
 
-`RUN-ON-WINDOWS.cmd` now performs those installation and startup steps on the target machine, keeps the console open on every exit, and writes `VideoFactory-Last-Startup.log` beside the launcher.
+The repository owner explicitly waived the Windows 10/11 runtime smoke as a blocking gate on 2026-08-04. This is a temporary acceptance decision, **not** a passed Windows test. Windows runtime launch and portable/installer packaging remain unverified and should be completed before treating this alpha as target-platform qualified.
+
+`RUN-ON-WINDOWS.cmd` performs installation and startup on the target machine, keeps the console open on every exit, and writes `VideoFactory-Last-Startup.log` beside the launcher.
