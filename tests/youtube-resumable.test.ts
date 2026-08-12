@@ -3,7 +3,7 @@ import {
   parseCommittedRange,
   reusableEnglishCaptionId,
   resumableContentRange
-} from '@main/services/youtube-service';
+} from '@shared/youtube-resumable';
 
 describe('YouTube resumable upload protocol', () => {
   it('converts the committed Range response into the next byte offset', () => {
