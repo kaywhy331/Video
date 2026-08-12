@@ -1,10 +1,10 @@
 # VideoFactory Desktop alpha.3 — Validation Report
 
-Generated: 2026-08-12 (America/Los_Angeles); sourced-research validation pending GitHub CI receipt.
+Generated: 2026-08-12 (America/Los_Angeles) after sourced-research exact-head CI validation.
 
 ## Outcome
 
-The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing, semantic footage verification, sourced web research, freshness/conflict orchestration, and provider preflight implemented. Full local source validation passes, including real FFmpeg media operations. The prior semantic milestone's GitHub Actions run passed; the current research milestone's CI receipt is added only after exact-head validation. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
+The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing, semantic footage verification, sourced web research, freshness/conflict orchestration, and provider preflight implemented. Full local source validation and the research implementation's exact-head GitHub Actions run pass, including real FFmpeg media operations and Windows packaging. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
 
 ## Local validation
 
@@ -23,13 +23,13 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with a
 
 ## GitHub Actions validation
 
-PR run [31636652585](https://github.com/kaywhy331/Video/actions/runs/31636652585) passed for semantic implementation commit `0c9068f` (GitHub pull-request merge ref `8ed45f5`):
+PR run [31647433764](https://github.com/kaywhy331/Video/actions/runs/31647433764) passed for research/provider exact-head commit `45387c2`:
 
 | Job | Result |
 |---|---|
-| Linux `validate` | Passed in 40 seconds |
-| Windows `package-windows` | Passed in 5 minutes 30 seconds |
-| Unsigned NSIS/ZIP workflow artifact | Uploaded; 512,279,275 bytes; retained through 2026-08-26 |
+| Linux `validate` | Passed in 37 seconds |
+| Windows `package-windows` | Passed in 5 minutes 22 seconds |
+| Unsigned NSIS/ZIP workflow artifact | Uploaded; 512,295,865 bytes; retained through 2026-08-26 |
 
 This proves the Windows packages can be produced by the hosted runner. It does not replace a clean-machine installation and runtime test.
 
