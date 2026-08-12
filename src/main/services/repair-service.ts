@@ -91,6 +91,7 @@ interface CandidateReadiness {
   segmentId: string | null;
   acquisitionState: string | null;
   licenseState: string | null;
+  semanticStatus: string | null;
   ready: boolean;
   permanentlyFailed: boolean;
 }
@@ -497,7 +498,10 @@ export class RepairService {
     const candidate = this.db.raw.prepare(`
       SELECT c.*, a.local_file_id, a.availability_status, a.excluded,
         a.country, a.city, a.location_name, a.location_granularity,
-        q.state AS acquisition_state, q.mapped_file_id, l.license_state
+        q.state AS acquisition_state, q.mapped_file_id, l.license_state,
+        (SELECT v.status FROM footage_verifications v
+          WHERE v.scene_id = c.scene_id AND v.asset_file_id = coalesce(q.mapped_file_id, a.local_file_id)
+          ORDER BY v.created_at DESC, v.id DESC LIMIT 1) AS semantic_status
       FROM shot_candidates c
       JOIN assets a ON a.id = c.asset_id
       LEFT JOIN acquisition_items q ON q.project_id = c.project_id AND q.asset_id = c.asset_id
@@ -518,18 +522,23 @@ export class RepairService {
     const acquisitionState = candidate.acquisition_state ? String(candidate.acquisition_state) : null;
     const licenseState = candidate.license_state ? String(candidate.license_state) : null;
     const originalExists = Boolean(segment?.original_path && existsSync(segment.original_path));
+    const semanticStatus = candidate.semantic_status ? String(candidate.semantic_status) : null;
     const ready = Boolean(
       fileId
       && segment
       && originalExists
       && licenseState
       && ACCEPTED_LICENSE_STATES.has(licenseState)
+      && semanticStatus === 'verified'
     );
     const permanentlyFailed = Boolean(
       candidate.excluded
       || candidate.availability_status === 'unavailable'
       || acquisitionState === 'FAILED'
       || licenseState === 'CONFLICT'
+      || semanticStatus === 'rejected'
+      || semanticStatus === 'conflict'
+      || semanticStatus === 'uncertain'
       || (acquisitionState === 'COMPLETE' && fileId && (!segment || !originalExists))
     );
     return {
@@ -538,6 +547,7 @@ export class RepairService {
       segmentId: segment?.id ?? null,
       acquisitionState,
       licenseState,
+      semanticStatus,
       ready,
       permanentlyFailed
     };
@@ -551,6 +561,7 @@ export class RepairService {
     if (
       !readiness.fileId
       || !readiness.segmentId
+      || readiness.semanticStatus !== 'verified'
       || !this.candidateGeographySatisfies(scene, readiness.candidate)
     ) throw new Error('Unsafe alternate promotion was blocked.');
     const projectId = String(readiness.candidate.project_id);
@@ -594,6 +605,7 @@ export class RepairService {
         JSON.stringify({
           ...parseObject(attempt.evidence_json),
           verifiedLicenseState: readiness.licenseState,
+          semanticVerificationStatus: readiness.semanticStatus,
           promotedAt: now
         }),
         attempt.id
@@ -601,6 +613,7 @@ export class RepairService {
       this.db.raw.prepare(`
         UPDATE exceptions SET status = 'RESOLVED', resolved_at = ?, resolution_json = ?
         WHERE project_id = ? AND status = 'OPEN' AND stage = 'media'
+          AND code IN ('SEMANTIC_PROVIDER_REQUIRED', 'NO_SAFE_FOOTAGE_ALTERNATE')
           AND json_extract(evidence_json, '$.sceneId') = ?
       `).run(now, JSON.stringify({ method: 'verified_alternate', attemptId: attempt.id }), projectId, sceneId);
     })();
@@ -610,7 +623,8 @@ export class RepairService {
       replacementAssetId,
       replacementFileId: readiness.fileId,
       replacementSegmentId: readiness.segmentId,
-      licenseState: readiness.licenseState
+      licenseState: readiness.licenseState,
+      semanticVerificationStatus: readiness.semanticStatus
     });
   }
 
@@ -708,6 +722,7 @@ export class RepairService {
     const existing = this.db.raw.prepare(`
       SELECT id FROM exceptions
       WHERE project_id = ? AND status = 'OPEN' AND stage = 'media'
+        AND code = 'NO_SAFE_FOOTAGE_ALTERNATE'
         AND json_extract(evidence_json, '$.sceneId') = ?
       LIMIT 1
     `).get(projectId, sceneId);

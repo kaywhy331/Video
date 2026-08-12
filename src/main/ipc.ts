@@ -21,6 +21,7 @@ import {
   PathChoiceRequestSchema,
   RenderRequestSchema,
   SecretPatchSchema,
+  SemanticVerificationRetrySchema,
   SettingsPatchSchema
 } from '@shared/contracts';
 import type { AppSettings } from '@shared/types';
@@ -191,9 +192,9 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     context.emitState();
     return true;
   });
-  handle(IPC.acquisitionAttest, (_event, payload) => {
+  handle(IPC.acquisitionAttest, async (_event, payload) => {
     const request = AcquisitionAttestSchema.parse(payload);
-    const result = context.acquisitions.attest(request.acquisitionId, request.certificatePath);
+    const result = await context.acquisitions.attest(request.acquisitionId, request.certificatePath);
     context.emitState();
     return result;
   });
@@ -270,6 +271,17 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     const result = context.exceptions.resolve(request.id, request.resolution);
     context.emitState();
     return result;
+  });
+  handle(IPC.semanticVerificationRetry, async (_event, payload) => {
+    const request = SemanticVerificationRetrySchema.parse(payload);
+    context.setLongOperationActive(true);
+    try {
+      const result = await context.media.retrySemanticVerification(request.exceptionId);
+      context.emitState();
+      return result;
+    } finally {
+      context.setLongOperationActive(false);
+    }
   });
   handle(IPC.jobsList, (_event, payload) => context.jobs.list(payload ? IdSchema.parse(payload) : undefined));
   handle(IPC.jobsRetry, (_event, payload) => context.jobs.retry(IdSchema.parse(payload)));

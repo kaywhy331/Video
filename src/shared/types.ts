@@ -119,6 +119,10 @@ export interface AppSettings {
   llmProvider: 'mock' | 'openai_compatible';
   llmBaseUrl: string;
   llmModel: string;
+  visionProvider: 'disabled' | 'openai_compatible';
+  visionBaseUrl: string;
+  visionModel: string;
+  visionMinimumConfidence: number;
   youtubeCategoryId: string;
   youtubePlaylistId: string;
   youtubePrivacy: 'private';
@@ -133,6 +137,7 @@ export interface AppSettings {
 
 export interface SecretStatus {
   llmApiKeyConfigured: boolean;
+  visionApiKeyConfigured: boolean;
   httpTtsApiKeyConfigured: boolean;
   youtubeClientConfigured: boolean;
   youtubeAuthorized: boolean;
@@ -397,6 +402,7 @@ export interface ProjectScene {
   requiredCountry: string | null;
   requiredCity: string | null;
   requiredLocation: string | null;
+  requiredPlaceId: string | null;
   requiredGranularity: CatalogAsset['locationGranularity'];
   requiredObjects: string[];
   requiredActivities: string[];
@@ -498,6 +504,17 @@ export interface ExceptionRecord {
   status: 'OPEN' | 'RESOLVED' | 'OVERRIDDEN';
   createdAt: string;
   resolvedAt: string | null;
+}
+
+export interface SemanticVerificationRetryResult {
+  exceptionId: string;
+  projectId: string;
+  sceneId: string;
+  verificationId: string;
+  status: 'verified' | 'rejected' | 'conflict' | 'provider_required' | 'uncertain' | 'error';
+  reasons: string[];
+  exceptionResolved: boolean;
+  projectState: ProjectState;
 }
 
 export interface RenderRecord {

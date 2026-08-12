@@ -17,9 +17,43 @@ export interface Geography {
   granularity: Granularity;
 }
 
+export interface CanonicalPlaceNode {
+  id: string;
+  parentId: string | null;
+  type: Exclude<Granularity, 'unknown'>;
+}
+
+export function normalizePlaceName(value: string): string {
+  return value
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('en-US')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 function same(a?: string | null, b?: string | null): boolean {
   if (!a || !b) return false;
-  return a.trim().localeCompare(b.trim(), undefined, { sensitivity: 'base' }) === 0;
+  return normalizePlaceName(a) === normalizePlaceName(b);
+}
+
+export function placeIsSameOrDescendant(
+  candidatePlaceId: string | null,
+  requiredPlaceId: string | null,
+  places: ReadonlyMap<string, CanonicalPlaceNode>
+): boolean {
+  if (!requiredPlaceId) return true;
+  if (!candidatePlaceId) return false;
+  const visited = new Set<string>();
+  let currentId: string | null = candidatePlaceId;
+  while (currentId && !visited.has(currentId)) {
+    if (currentId === requiredPlaceId) return true;
+    visited.add(currentId);
+    currentId = places.get(currentId)?.parentId ?? null;
+  }
+  return false;
 }
 
 export function geographySatisfies(asset: Geography, required: Geography): boolean {

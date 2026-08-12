@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CatalogUpdateAssetSchema, PathChoiceRequestSchema, SettingsPatchSchema } from '@shared/contracts';
+import {
+  CatalogUpdateAssetSchema,
+  PathChoiceRequestSchema,
+  SemanticVerificationRetrySchema,
+  SettingsPatchSchema
+} from '@shared/contracts';
 
 describe('IPC request contracts', () => {
   it('rejects unknown settings keys and unsafe policy values', () => {
@@ -7,6 +12,8 @@ describe('IPC request contracts', () => {
     expect(SettingsPatchSchema.safeParse({ maxActiveProjects: 0 }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ backupIntervalHours: 24, backupDailyRetention: 7 }).success).toBe(true);
     expect(SettingsPatchSchema.safeParse({ backupIntervalHours: 0 }).success).toBe(false);
+    expect(SettingsPatchSchema.safeParse({ visionProvider: 'openai_compatible', visionMinimumConfidence: 0.82 }).success).toBe(true);
+    expect(SettingsPatchSchema.safeParse({ visionMinimumConfidence: 0.2 }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ arbitrarySql: 'DROP TABLE assets' }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ youtubePrivacy: 'public' }).success).toBe(false);
   });
@@ -20,5 +27,11 @@ describe('IPC request contracts', () => {
   it('bounds file-picker filters', () => {
     expect(PathChoiceRequestSchema.safeParse({ kind: 'file', filters: [{ name: 'Video', extensions: ['mp4'] }] }).success).toBe(true);
     expect(PathChoiceRequestSchema.safeParse({ kind: 'shell', command: 'calc.exe' }).success).toBe(false);
+  });
+
+  it('accepts only a bounded semantic retry exception identifier', () => {
+    expect(SemanticVerificationRetrySchema.safeParse({ exceptionId: 'exception-1' }).success).toBe(true);
+    expect(SemanticVerificationRetrySchema.safeParse({ exceptionId: '' }).success).toBe(false);
+    expect(SemanticVerificationRetrySchema.safeParse({ exceptionId: 'exception-1', force: true }).success).toBe(false);
   });
 });

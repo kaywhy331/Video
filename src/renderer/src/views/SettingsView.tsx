@@ -28,12 +28,14 @@ export function SettingsView({
   const [youtube, setYoutube] = useState<YouTubeConnectionStatus | null>(null);
   type SecretDraft = {
     llmApiKey: string;
+    visionApiKey: string;
     youtubeClientId: string;
     youtubeClientSecret: string;
     youtubeApiKey: string;
   };
   const [secrets, setSecrets] = useState<SecretDraft>({
     llmApiKey: '',
+    visionApiKey: '',
     youtubeClientId: '',
     youtubeClientSecret: '',
     youtubeApiKey: ''
@@ -74,7 +76,7 @@ export function SettingsView({
       ) as Record<string, string | undefined>;
       if (Object.keys(secretPatch).length) {
         await window.videoFactory.settings.updateSecrets(secretPatch);
-        setSecrets({ llmApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
+        setSecrets({ llmApiKey: '', visionApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
       }
       setDiagnostics(await window.videoFactory.diagnostics.run());
       await onRefresh();
@@ -193,6 +195,22 @@ export function SettingsView({
             </label>
             <label><span>Voice name</span><input value={form.narratorVoice} onChange={event => setForm({ ...form, narratorVoice: event.target.value })} placeholder="Blank uses Windows default" /></label>
             <NumberField label="Voice rate" value={form.narratorRate} min={-10} max={10} set={value => setForm({ ...form, narratorRate: value })} />
+          </div>
+        </Panel>
+
+        <Panel title="Footage verification" subtitle="Semantic verification is fail-closed; only bounded contact sheets are sent to the configured provider">
+          <div className="settings-form">
+            <label>
+              <span>Provider</span>
+              <select value={form.visionProvider} onChange={event => setForm({ ...form, visionProvider: event.target.value as AppSettings['visionProvider'] })}>
+                <option value="disabled">Disabled — require human-verified evidence</option>
+                <option value="openai_compatible">OpenAI-compatible multimodal API</option>
+              </select>
+            </label>
+            <label><span>Base URL</span><input value={form.visionBaseUrl} onChange={event => setForm({ ...form, visionBaseUrl: event.target.value })} /></label>
+            <label><span>Vision model</span><input value={form.visionModel} onChange={event => setForm({ ...form, visionModel: event.target.value })} /></label>
+            <NumberField label="Minimum confidence" value={form.visionMinimumConfidence} min={0.5} max={0.99} step={0.01} set={value => setForm({ ...form, visionMinimumConfidence: value })} />
+            <label><span>Vision API key {bootstrap.secrets.visionApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.visionApiKey} onChange={event => setSecrets({ ...secrets, visionApiKey: event.target.value })} placeholder={bootstrap.secrets.visionApiKeyConfigured ? 'Leave blank to keep current key' : 'Required for semantic verification'} /></label>
           </div>
         </Panel>
 

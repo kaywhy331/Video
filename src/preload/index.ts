@@ -21,6 +21,7 @@ import type {
   ProjectSummary,
   RenderRecord,
   RestoreReport,
+  SemanticVerificationRetryResult,
   SecretStatus,
   YouTubeConnectionStatus
 } from '@shared/types';
@@ -117,7 +118,9 @@ const api = {
     list: (request?: { projectId?: string; openOnly?: boolean }): Promise<ExceptionRecord[]> =>
       ipcRenderer.invoke(IPC.exceptionsList, request),
     resolve: (request: { id: string; resolution?: Record<string, unknown> }): Promise<ExceptionRecord> =>
-      ipcRenderer.invoke(IPC.exceptionResolve, request)
+      ipcRenderer.invoke(IPC.exceptionResolve, request),
+    retrySemanticVerification: (exceptionId: string): Promise<SemanticVerificationRetryResult> =>
+      ipcRenderer.invoke(IPC.semanticVerificationRetry, { exceptionId })
   },
   jobs: {
     list: (projectId?: string): Promise<JobRecord[]> => ipcRenderer.invoke(IPC.jobsList, projectId),

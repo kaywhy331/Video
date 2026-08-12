@@ -1,10 +1,10 @@
 # VideoFactory Desktop alpha.3 — Validation Report
 
-Generated: 2026-08-12T07:37:36-07:00 (America/Los_Angeles)
+Generated: 2026-08-12T13:04:46-07:00 (America/Los_Angeles)
 
 ## Outcome
 
-The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with the next automated repair-routing milestone implemented on the current branch. Local source validation passes, including real FFmpeg media operations. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
+The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing and semantic footage verification implemented. Full local source validation passes, including real FFmpeg media operations. GitHub Actions evidence for this branch remains pending publication. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
 
 ## Local validation
 
@@ -12,23 +12,24 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with t
 |---|---|
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
-| Vitest suite | Passed; 23 files / 69 tests (46 suite groups reported) |
+| Focused semantic/repair/contracts suite | Passed; recovery/provider/repair coverage included in full suite |
+| Full Vitest suite | Passed; 28 files / 87 tests |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
-| Application migration wrapper (001 + 002 + 003) | Passed in focused validation; versions recorded, reopen idempotent, integrity `ok` |
+| Application migration wrapper (001 + 002 + 003 + 004) | Passed in focused validation; versions recorded, reopen idempotent, integrity `ok` |
 | Source/resource migration parity | Passed |
 | Electron/Vite main, preload, renderer build | Passed |
 | `git diff --check` | Passed |
 
 ## GitHub Actions validation
 
-PR run [31607257297](https://github.com/kaywhy331/Video/actions/runs/31607257297) passed on commit `aeedb52`:
+The last merged `main` run [31627007086](https://github.com/kaywhy331/Video/actions/runs/31627007086) passed before this semantic milestone. Branch CI evidence is pending publication.
 
 | Job | Result |
 |---|---|
-| Linux `validate` | Passed |
-| Windows `package-windows` | Passed |
-| Unsigned NSIS/ZIP workflow artifact | Uploaded; 512,239,541 bytes before release extraction |
+| Prior `main` Linux `validate` | Passed |
+| Prior `main` Windows `package-windows` | Passed |
+| This semantic branch | Pending |
 
 This proves the Windows packages can be produced by the hosted runner. It does not replace a clean-machine installation and runtime test.
 
@@ -43,10 +44,13 @@ This proves the Windows packages can be produced by the hosted runner. It does n
 - narration splitting without audio truncation, SRT/WebVTT output, concat-before-analysis, two-pass EBU R128 normalization, and output profile/fast-start QC;
 - rights fail-closed checks, package/final-render fingerprints, and strict final approval receipts;
 - persisted resumable YouTube sessions, byte-offset recovery, duplicate final-hash guard, private-first metadata, processing polling, captions, thumbnails, playlist attachment, and configurable synthetic-media disclosure;
-- queue/spend/duplicate/coverage planning gates and catalog-backed sources/claims.
+- queue/spend/duplicate/coverage planning gates and catalog-backed sources/claims;
 - deterministic per-scene shot-candidate ranks and bounded residual-risk alternate acquisition;
 - automatic failed-footage routing that revalidates geography, on-disk source, no-upscale/black/freeze limits, and project license before promotion;
-- classified final-QC repair policy, monotonic artifact versions, two-attempt output retry, smallest-safe state routing, exhaustion stop, audit log, and operator-visible repair history.
+- classified final-QC repair policy, monotonic artifact versions, two-attempt output retry, smallest-safe state routing, exhaustion stop, audit log, and operator-visible repair history;
+- canonical geographic hierarchies with parent-aware disambiguation and human-over-vision evidence precedence;
+- scene-specific contact-sheet-only semantic provider requests with strict schema validation, one corrective retry, caching, persisted provider/error receipts, and fail-closed policy;
+- semantic receipt-gated media attachment and alternate promotion, explicit operator retry, blocker lifecycle handling, and startup re-verification for legacy waiting alternates.
 
 ## Historical alpha.2 validation
 
@@ -61,6 +65,7 @@ Alpha.2 repaired the original incomplete package by restoring dependency declara
 | Five representative real-video pilot | Unverified |
 | Live Envato licensing/download workflow | Unverified |
 | Live Google OAuth/YouTube private upload and publish rehearsal | Unverified |
+| Live semantic vision provider against representative licensed footage | Unverified; mocked protocol/policy coverage is not provider qualification |
 | Forced restart during real ingest/render/upload | Unverified |
 | Representative production-data restore drill | Unverified |
 
