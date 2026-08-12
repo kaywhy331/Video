@@ -5,6 +5,8 @@ import { slugify } from '@shared/normalization';
 import type { CatalogService } from './catalog-service';
 import type { AiService } from './ai-service';
 import { MatchingService } from './matching-service';
+import { ProjectStateService } from './project-state-service';
+import { assertPlanningCapacity, evaluateCoverage } from './planning-policy';
 
 function jsonArray(value: unknown): string[] {
   if (!value) return [];
@@ -68,13 +70,16 @@ function sceneFromRow(row: Record<string, unknown>): ProjectScene {
 
 export class ProjectService {
   private readonly matcher = new MatchingService();
+  readonly states: ProjectStateService;
 
   constructor(
     private readonly db: AppDatabase,
     private readonly catalog: CatalogService,
     private readonly ai: AiService,
     private readonly settings: () => AppSettings
-  ) {}
+  ) {
+    this.states = new ProjectStateService(db);
+  }
 
   list(): ProjectSummary[] {
     const rows = this.db.raw.prepare(`
@@ -240,14 +245,6 @@ export class ProjectService {
 
   async createAutopilot(request: CreateAutopilotProjectRequest): Promise<ProjectDetail> {
     const settings = this.settings();
-    const active = this.db.raw.prepare(`
-      SELECT count(*) AS count FROM projects
-      WHERE state NOT IN ('PUBLISHED','FAILED','PAUSED')
-    `).get() as { count: number };
-    if (active.count >= settings.maxActiveProjects) {
-      throw new Error(`Active project limit reached (${settings.maxActiveProjects}).`);
-    }
-
     const coverage = this.catalog.coverage(250);
     if (!coverage.length) throw new Error('Import a footage catalog before starting Autopilot.');
     const requestedCluster = request.destinationKey
@@ -259,6 +256,13 @@ export class ProjectService {
     if (!cluster) throw new Error('No supportable destination cluster is available.');
 
     const destination = cluster.locationName ?? cluster.city ?? cluster.country ?? 'Selected destination';
+    const title = `A Visual Guide to ${destination}`;
+    assertPlanningCapacity(this.db, settings, title);
+    const targetMinutes = request.targetMinutes ?? settings.targetVideoMinutes;
+    const planning = evaluateCoverage(cluster, targetMinutes);
+    if (!planning.qualified) {
+      throw new Error(`Destination coverage is below the production threshold: ${planning.reasons.join('; ')}`);
+    }
     const assets = this.loadAssetsForCluster(cluster);
     if (assets.length < 3) {
       throw new Error(`Not enough eligible assets for ${destination}.`);
@@ -266,19 +270,17 @@ export class ProjectService {
 
     const sequenceRow = this.db.raw.prepare(`SELECT coalesce(max(sequence), 0) + 1 AS next FROM projects`).get() as { next: number };
     const sequence = sequenceRow.next;
-    const title = `A Visual Guide to ${destination}`;
     const slug = slugify(title);
     const projectId = randomUUID();
     const now = new Date().toISOString();
     const envatoProjectName = `YT-${new Date().getFullYear()}-${settings.channelShort || 'TRAVEL'}-${String(sequence).padStart(4, '0')}-${slug.toUpperCase()}`;
-    const targetMinutes = request.targetMinutes ?? settings.targetVideoMinutes;
 
     this.db.raw.prepare(`
       INSERT INTO projects(
         id, sequence, slug, title, topic, description, destination_key, destination,
         state, progress, envato_project_name, target_duration_ms, opportunity_score,
         created_at, updated_at
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'PLANNING', 0.08, ?, ?, ?, ?, ?)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', 0.02, ?, ?, ?, ?, ?)
     `).run(
       projectId,
       sequence,
@@ -290,12 +292,74 @@ export class ProjectService {
       destination,
       envatoProjectName,
       Math.round(targetMinutes * 60_000),
-      cluster.coverageScore,
+      planning.opportunityScore,
       now,
       now
     );
 
+    this.db.raw.prepare(`
+      INSERT INTO topic_candidates(
+        id, project_id, destination_key, title, destination, angle, viewer_promise,
+        keywords_json, coverage_json, demand_score, competition_score, opportunity_score,
+        feasibility, reasons_json, raw_metrics_json, created_at
+      ) VALUES(?, ?, ?, ?, ?, 'visual guide', ?, ?, ?, NULL, NULL, ?, 'qualified', ?, ?, ?)
+    `).run(
+      randomUUID(), projectId, cluster.key, title, destination,
+      `A truthful visual journey grounded in available ${destination} footage.`,
+      JSON.stringify([destination, 'travel', 'visual guide']), JSON.stringify(cluster),
+      planning.opportunityScore, JSON.stringify(planning.reasons), JSON.stringify({
+        signalLabel: 'catalog-coverage-only',
+        estimatedShots: planning.estimatedShots,
+        requiredShots: planning.requiredShots,
+        components: planning.components
+      }), now
+    );
+
     try {
+      this.states.transition(projectId, 'ANALYZING_OPPORTUNITY', {
+        progress: 0.05,
+        reason: 'Catalog coverage selected for opportunity analysis',
+        prerequisites: { destination, assetCount: assets.length, coverageScore: cluster.coverageScore }
+      });
+      this.states.transition(projectId, 'TOPIC_SELECTED', {
+        progress: 0.08,
+        reason: 'Coverage-qualified metadata-first topic selected',
+        prerequisites: { title, destination }
+      });
+      this.states.transition(projectId, 'RESEARCHING', {
+        progress: 0.1,
+        reason: 'Preparing a visually observable, metadata-grounded fact pack'
+      });
+      const catalogSourceIds = new Map<string, string>();
+      for (const asset of assets) {
+        const sourceId = randomUUID();
+        this.db.raw.prepare(`
+          INSERT INTO research_sources(id, project_id, url, title, publisher, accessed_at, summary, raw_json)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          sourceId,
+          projectId,
+          asset.canonicalPageUrl ?? `urn:videofactory:catalog:${asset.id}`,
+          asset.title,
+          asset.authorName,
+          now,
+          [asset.description, asset.sceneDescription, asset.objects, asset.activity].filter(Boolean).join(' | '),
+          JSON.stringify({
+            sourceType: 'licensed-catalog-metadata',
+            assetId: asset.id,
+            country: asset.country,
+            city: asset.city,
+            location: asset.locationName,
+            verificationStatus: asset.verificationStatus,
+            locationConfidence: asset.locationConfidence
+          })
+        );
+        catalogSourceIds.set(asset.id, sourceId);
+      }
+      this.states.transition(projectId, 'SCRIPTING_PROVISIONAL', {
+        progress: 0.12,
+        reason: 'Generating provisional script from verified catalog metadata'
+      });
       const script = await this.ai.generateScript({
         projectId,
         topicTitle: title,
@@ -337,6 +401,11 @@ export class ProjectService {
       `);
 
       const transaction = this.db.raw.transaction(() => {
+        this.states.transition(projectId, 'STORYBOARD_PROVISIONAL', {
+          progress: 0.18,
+          reason: 'Provisional script validated; exact-location matching started',
+          prerequisites: { sceneCount: script.scenes.length }
+        });
         script.scenes.forEach((scene, index) => {
           const ordinal = index + 1;
           const ranked = this.matcher.rank({
@@ -360,8 +429,9 @@ export class ProjectService {
               reasons: selected.reasons
             });
           }
+          const sceneId = randomUUID();
           insertScene.run(
-            randomUUID(),
+            sceneId,
             projectId,
             scriptId,
             ordinal,
@@ -386,6 +456,30 @@ export class ProjectService {
             now,
             now
           );
+          if (selected) {
+            const sourceId = catalogSourceIds.get(selected.asset.id);
+            if (sourceId) {
+              const claimId = randomUUID();
+              this.db.raw.prepare(`
+                INSERT INTO fact_claims(
+                  id, project_id, text, place_key, category, confidence, stability,
+                  valid_as_of, source_ids_json, status, created_at
+                ) VALUES(?, ?, ?, ?, 'visual_observation', ?, 'stable', ?, ?, 'accepted', ?)
+              `).run(
+                claimId,
+                projectId,
+                scene.narration,
+                [scene.requiredCountry, scene.requiredCity, scene.requiredLocation].filter(Boolean).join('|') || null,
+                Math.max(0, Math.min(1, selected.asset.locationConfidence)),
+                now.slice(0, 10),
+                JSON.stringify([sourceId]),
+                now
+              );
+              this.db.raw.prepare(`
+                INSERT INTO project_scene_claims(scene_id, claim_id) VALUES(?, ?)
+              `).run(sceneId, claimId);
+            }
+          }
         });
 
         const grouped = new Map<string, { ordinals: number[]; score: number; reasons: string[] }>();
@@ -430,17 +524,14 @@ export class ProjectService {
           `).run(randomUUID(), projectId, assetId, envatoProjectName, now, now);
         }
 
-        this.db.raw.prepare(`
-          UPDATE projects
-          SET state = ?, progress = ?, script_version_id = ?, updated_at = ?
-          WHERE id = ?
-        `).run(
-          grouped.size ? 'WAITING_FOR_DOWNLOADS' : 'BLOCKED',
-          grouped.size ? 0.27 : 0.15,
-          scriptId,
-          new Date().toISOString(),
-          projectId
-        );
+        this.db.raw.prepare('UPDATE script_versions SET locked = 1 WHERE id = ?').run(scriptId);
+        this.db.raw.prepare('UPDATE projects SET script_version_id = ?, updated_at = ? WHERE id = ?')
+          .run(scriptId, new Date().toISOString(), projectId);
+        this.states.transition(projectId, grouped.size ? 'WAITING_FOR_DOWNLOADS' : 'BLOCKED_EXCEPTION', {
+          progress: grouped.size ? 0.27 : 0.15,
+          reason: grouped.size ? 'Acquisition manifest created' : 'No eligible exact-location footage matched',
+          prerequisites: { acquisitionCount: grouped.size, sceneCount: script.scenes.length }
+        });
       });
       transaction();
 
@@ -457,9 +548,10 @@ export class ProjectService {
       }
       return this.get(projectId);
     } catch (error) {
-      this.db.raw.prepare(`
-        UPDATE projects SET state = 'FAILED', updated_at = ? WHERE id = ?
-      `).run(new Date().toISOString(), projectId);
+      const current = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as { state: import('@shared/types').ProjectState };
+      if (current.state !== 'FAILED') {
+        this.states.transition(projectId, 'FAILED', { reason: 'Autopilot planning failed' });
+      }
       this.db.raw.prepare(`
         INSERT INTO exceptions(
           id, project_id, severity, stage, code, title, message, evidence_json,

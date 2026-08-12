@@ -1,41 +1,54 @@
-# Production Hardening Backlog
+# Production Hardening and Release Gates
 
-The source code is organized so the vertical slice can be hardened without replacing its architecture.
+Updated 2026-08-12 for 0.1.0-alpha.3.
 
-## P0 before unattended channel operation
+Alpha.3 closes the highest-risk local durability, security, rendering, backup, and publishing defects found during the production-readiness audit. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
-- Add actual-video visual verification using representative frames and a configurable vision provider.
-- Add script factual research with cited fact claims and freshness rules.
-- Add automatic alternate-asset selection when downloaded media fails verification.
-- Split narration longer than seven seconds into multiple visual shots instead of blocking.
-- Add music selection, ducking policy, and ambient-audio policy.
-- Add two-pass EBU R128 loudness analysis rather than a single-pass normalization filter.
-- Add render cache reuse at scene granularity.
-- Add resumable YouTube upload session persistence.
-- Add backup scheduler, retention policy, restore UI, and integrity drill.
-- Add automated disk-pressure cleanup for regenerable proxies and work files.
-- Add release signing, installer update channel, and crash reporting.
-- Validate the packaged Windows build against ProRes, H.264, H.265, alpha, variable-frame-rate, and unusual color-space fixtures.
+## P0 before production qualification
+
+- Run a clean Windows 10/11 install and first-run diagnostic on a machine without Node, Python, or developer tools.
+- Run the five-video representative pilot with real licensed footage and preserve receipts for location grounding, rights, render QC, and human approval.
+- Rehearse live Envato account handoff, license naming, download watcher mapping, ambiguity handling, and certificate attachment.
+- Rehearse live YouTube OAuth, resumable interruption/restart, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish.
+- Add a configurable semantic vision provider for actual-footage/place/scene-contract verification.
+- Add sourced web research with freshness/conflict policy for non-visual material claims.
+- Implement the final post-ingest script rewrite against verified footage, plus pronunciation and word-level/forced alignment.
+- Implement automated alternate selection and smallest-safe repair routing for failed footage instead of stopping at exception/manual retry.
+- Complete maps, labels, chapter cards, lower thirds, and scene/range render modes required by the full editing PRD.
+- Expand QC for duplicate/near-duplicate shots, severe crops, letterboxing, clipping/silence, caption overlap/line length, unsupported package claims, and thumbnail file limits.
+- Add project export and deterministic derivative rebuild after restore.
+- Complete per-project provider budgets and quota/auth preflight across all configured providers.
+- Perform ingest, render, upload, and restore interruption drills on representative data.
+
+## Release engineering
+
+- Sign the Windows installer and define an update channel before broad distribution.
+- Add crash reporting only with an explicit privacy/redaction policy.
+- Validate Windows fixtures covering ProRes, H.264, H.265, alpha, variable frame rate, interlaced sources, rotation, and unusual color spaces.
+- Benchmark startup, catalog import/search, and project operations against the PRD data-size targets.
+- Define artifact provenance/SBOM and dependency vulnerability response policy.
 
 ## P1
 
-- Qualified 4K final render profile
-- Configurable external TTS provider with word timing
-- Google Ads demand-proxy adapter
-- YouTube competition scoring and channel-specific opportunity model
-- Scene-level retention analytics mapped to render manifests
-- Automated title/thumbnail experiment tracking
-- Map and route graphic generator
-- Destination batch planning
-- Automatic expiry/freshness checks for factual claims
-- Operator-friendly metadata conflict merge screen
+- Qualified 4K final render profile and blocker UI
+- HTTP TTS provider, stable timing, pronunciation dictionary, and section cache
+- Google Ads demand-proxy and YouTube competition adapters
+- scene-level retention analytics and render-manifest mapping
+- title/thumbnail experiment tracking
+- map/route graphic generator
+- destination batch planner and publication scheduler
+- automatic factual expiry/freshness checks
+- operator-friendly metadata conflict merge, bulk editing, location merge/split, and filtered export
+- disk-pressure cleanup for regenerable derivatives
 
 ## P2
 
-- Shorts/vertical format
-- Multiple YouTube channels
-- Multiple languages
-- Additional stock providers
-- Advanced motion graphics
-- Local embedding model
-- Custom landmark recognizer
+- Shorts/vertical output
+- multiple channels and languages
+- additional stock providers
+- advanced motion graphics
+- local embeddings and custom landmark recognition
+
+## Truthful release rule
+
+CI success, a generated Windows installer, and local automated tests are necessary but do not set `production_ready` to `true`. That flag changes only after the external qualification gates above have evidence attached to a release.

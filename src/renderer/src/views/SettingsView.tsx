@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Save,
   ShieldCheck,
+  DatabaseBackup,
   Youtube
 } from 'lucide-react';
 import type { AppBootstrap, AppSettings, DiagnosticsReport, YouTubeConnectionStatus } from '@shared/types';
@@ -87,6 +88,19 @@ export function SettingsView({
     });
   }
 
+  async function createBackup(): Promise<void> {
+    await run('backup', async () => {
+      const backup = await window.videoFactory.backups.create();
+      window.alert(`Backup verified and saved:\n${backup.path}`);
+    });
+  }
+
+  async function restoreBackup(): Promise<void> {
+    await run('restore', async () => {
+      await window.videoFactory.backups.restore();
+    });
+  }
+
   const freePath = diagnostics.paths.find(path => path.key === 'Media library');
   const freeGb = freePath?.freeBytes ? Math.round(freePath.freeBytes / 1024 ** 3) : null;
 
@@ -144,6 +158,15 @@ export function SettingsView({
           </div>
         </Panel>
 
+        <Panel title="Backup policy" subtitle="Verified backups run automatically while the application is open">
+          <div className="settings-form two-column">
+            <NumberField label="Backup interval (hours)" value={form.backupIntervalHours} min={1} max={168} set={value => setForm({ ...form, backupIntervalHours: value })} />
+            <NumberField label="Daily copies" value={form.backupDailyRetention} min={1} max={365} set={value => setForm({ ...form, backupDailyRetention: value })} />
+            <NumberField label="Weekly copies" value={form.backupWeeklyRetention} min={1} max={260} set={value => setForm({ ...form, backupWeeklyRetention: value })} />
+            <NumberField label="Monthly copies" value={form.backupMonthlyRetention} min={1} max={120} set={value => setForm({ ...form, backupMonthlyRetention: value })} />
+          </div>
+        </Panel>
+
         <Panel title="Script intelligence" subtitle="A generic OpenAI-compatible endpoint is optional; local fallback creates descriptive provisional scripts">
           <div className="settings-form">
             <label>
@@ -180,6 +203,11 @@ export function SettingsView({
             <label><span>OAuth client ID {bootstrap.secrets.youtubeClientConfigured ? '· configured' : ''}</span><input type="password" value={secrets.youtubeClientId} onChange={event => setSecrets({ ...secrets, youtubeClientId: event.target.value })} /></label>
             <label><span>OAuth client secret</span><input type="password" value={secrets.youtubeClientSecret} onChange={event => setSecrets({ ...secrets, youtubeClientSecret: event.target.value })} /></label>
             <label><span>YouTube API key {bootstrap.secrets.youtubeApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.youtubeApiKey} onChange={event => setSecrets({ ...secrets, youtubeApiKey: event.target.value })} /></label>
+            <label><span>Playlist ID (optional)</span><input value={form.youtubePlaylistId} onChange={event => setForm({ ...form, youtubePlaylistId: event.target.value })} /></label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={form.youtubeSyntheticMediaDisclosure} onChange={event => setForm({ ...form, youtubeSyntheticMediaDisclosure: event.target.checked })} />
+              <span>Disclose synthetic media (enabled by default for generated narration)</span>
+            </label>
             <div className="button-row">
               <Button variant="secondary" busy={busy === 'youtube'} onClick={() => void connectYouTube()}><Youtube size={16} /> Connect YouTube</Button>
               {youtube ? <StatusPill value={youtube.authorized ? 'authorized' : youtube.configured ? 'configured' : 'not configured'} /> : null}
@@ -208,6 +236,14 @@ export function SettingsView({
           >
             <RefreshCw size={15} /> Run diagnostics
           </Button>
+          <div className="button-row">
+            <Button variant="secondary" busy={busy === 'backup'} onClick={() => void createBackup()}>
+              <DatabaseBackup size={15} /> Create verified backup
+            </Button>
+            <Button variant="ghost" busy={busy === 'restore'} onClick={() => void restoreBackup()}>
+              Restore backup
+            </Button>
+          </div>
         </Panel>
       </div>
     </div>

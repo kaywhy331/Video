@@ -711,4 +711,44 @@ export class CatalogService {
 
     return toAsset(this.db.raw.prepare('SELECT * FROM assets WHERE id = ?').get(assetId) as Record<string, unknown>);
   }
+
+  revisions(assetId: string): Array<{
+    id: string;
+    fieldName: string;
+    previousValue: unknown;
+    newValue: unknown;
+    reason: string | null;
+    createdAt: string;
+    revertedAt: string | null;
+  }> {
+    return (this.db.raw.prepare(`
+      SELECT * FROM asset_metadata_revisions
+      WHERE asset_id = ? ORDER BY created_at DESC, id DESC LIMIT 250
+    `).all(assetId) as Array<Record<string, unknown>>).map(row => ({
+      id: String(row.id),
+      fieldName: String(row.field_name),
+      previousValue: row.previous_value_json ? JSON.parse(String(row.previous_value_json)) : null,
+      newValue: row.new_value_json ? JSON.parse(String(row.new_value_json)) : null,
+      reason: row.reason ? String(row.reason) : null,
+      createdAt: String(row.created_at),
+      revertedAt: row.reverted_at ? String(row.reverted_at) : null
+    }));
+  }
+
+  revertRevision(revisionId: string): CatalogAsset {
+    const revision = this.db.raw.prepare(`
+      SELECT * FROM asset_metadata_revisions WHERE id = ?
+    `).get(revisionId) as Record<string, unknown> | undefined;
+    if (!revision) throw new Error('Metadata revision not found.');
+    if (revision.reverted_at) throw new Error('Metadata revision was already reverted.');
+    const assetId = String(revision.asset_id);
+    const fieldName = String(revision.field_name);
+    const previousValue = revision.previous_value_json
+      ? JSON.parse(String(revision.previous_value_json))
+      : null;
+    const asset = this.updateAsset(assetId, { [fieldName]: previousValue }, `Undo revision ${revisionId}`);
+    this.db.raw.prepare('UPDATE asset_metadata_revisions SET reverted_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), revisionId);
+    return asset;
+  }
 }

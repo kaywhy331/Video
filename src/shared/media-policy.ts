@@ -42,6 +42,16 @@ export function assertShotDuration(durationMs: number, maxMs = 7000): void {
   }
 }
 
+export function missingSelectedLicenseCount(
+  selectedAssetIds: Array<string | null | undefined>,
+  licenses: Array<{ assetId: string; state: string }>
+): number {
+  const accepted = new Set(['OPERATOR_ATTESTED', 'CERTIFICATE_ATTACHED', 'VERIFIED', 'NOT_REQUIRED']);
+  const states = new Map(licenses.map(license => [license.assetId, license.state]));
+  return [...new Set(selectedAssetIds.filter((id): id is string => Boolean(id)))]
+    .filter(assetId => !accepted.has(states.get(assetId) ?? 'PENDING')).length;
+}
+
 export function generateSlidingWindows(
   durationMs: number,
   preferredMs: number[] = [3000, 4500, 6000],

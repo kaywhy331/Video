@@ -5,6 +5,7 @@ import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { AppContext } from './app-context';
 import { registerIpc } from './ipc';
+import { pathIsInside } from './security-policy';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -24,6 +25,15 @@ let context: AppContext | null = null;
 let tray: Tray | null = null;
 let blockerId: number | null = null;
 let isQuitting = false;
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.stack ?? error.message;
@@ -131,18 +141,29 @@ function setupMediaProtocol(): void {
         | undefined;
       path = row?.thumbnail_path ?? null;
     }
-    if (!path || !existsSync(path)) return new Response('Media not found.', { status: 404 });
+    const settings = context.settings();
+    if (!path || !existsSync(path) || !pathIsInside(path, [settings.mediaLibraryFolder, settings.projectFolder, settings.outputFolder])) {
+      return new Response('Media not found.', { status: 404 });
+    }
     return net.fetch(pathToFileURL(path).toString());
   });
 }
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.kevin.videofactory');
   app.on('browser-window-created', (_event, window) => optimizer.watchWindowShortcuts(window));
   setupMediaProtocol();
 
   mainWindow = createWindow();
   context = new AppContext(() => mainWindow);
+  context.setPowerBlockerHandler(active => {
+    if (active && (blockerId === null || !powerSaveBlocker.isStarted(blockerId))) {
+      blockerId = powerSaveBlocker.start('prevent-app-suspension');
+    } else if (!active && blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
+      powerSaveBlocker.stop(blockerId);
+      blockerId = null;
+    }
+  });
   registerIpc(context, () => mainWindow);
   await context.start();
   setupTray();

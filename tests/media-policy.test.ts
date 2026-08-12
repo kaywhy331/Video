@@ -3,7 +3,8 @@ import {
   assertShotDuration,
   calculateEffectiveResolution,
   fileLooksTemporary,
-  generateSlidingWindows
+  generateSlidingWindows,
+  missingSelectedLicenseCount
 } from '@shared/media-policy';
 
 describe('media policy', () => {
@@ -41,5 +42,17 @@ describe('media policy', () => {
     expect(fileLooksTemporary('clip.mov.crdownload')).toBe(true);
     expect(fileLooksTemporary('clip.part')).toBe(true);
     expect(fileLooksTemporary('clip.mov')).toBe(false);
+  });
+
+  it('blocks a selected asset when its project license row is missing or pending', () => {
+    expect(missingSelectedLicenseCount(['asset-a', 'asset-b', 'asset-a'], [
+      { assetId: 'asset-a', state: 'OPERATOR_ATTESTED' }
+    ])).toBe(1);
+    expect(missingSelectedLicenseCount(['asset-a'], [
+      { assetId: 'asset-a', state: 'PENDING' }
+    ])).toBe(1);
+    expect(missingSelectedLicenseCount(['asset-a'], [
+      { assetId: 'asset-a', state: 'VERIFIED' }
+    ])).toBe(0);
   });
 });

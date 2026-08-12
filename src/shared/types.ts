@@ -1,25 +1,34 @@
 export type Id = string;
 
 export type ProjectState =
-  | 'DRAFT'
-  | 'PLANNING'
+  | 'CREATED'
+  | 'ANALYZING_OPPORTUNITY'
+  | 'TOPIC_SELECTED'
+  | 'RESEARCHING'
+  | 'SCRIPTING_PROVISIONAL'
   | 'STORYBOARD_PROVISIONAL'
   | 'WAITING_FOR_DOWNLOADS'
   | 'INGESTING_MEDIA'
-  | 'VERIFYING_MEDIA'
-  | 'STORYBOARD_FINAL'
+  | 'VERIFYING_FOOTAGE'
+  | 'FINALIZING_SCRIPT'
   | 'GENERATING_VOICE'
+  | 'BUILDING_TIMELINE'
   | 'RENDERING_DRAFT'
   | 'QC_DRAFT'
   | 'RENDERING_FINAL'
   | 'QC_FINAL'
   | 'UPLOADING_PRIVATE'
+  | 'WAITING_YOUTUBE_PROCESSING'
   | 'WAITING_FINAL_APPROVAL'
   | 'SCHEDULED'
   | 'PUBLISHED'
+  | 'ANALYTICS_ACTIVE'
   | 'PAUSED'
-  | 'BLOCKED'
-  | 'FAILED';
+  | 'BLOCKED_EXCEPTION'
+  | 'AWAITING_MANUAL_STUDIO_ACTION'
+  | 'CANCELLED'
+  | 'FAILED'
+  | 'ARCHIVED';
 
 export type AcquisitionState =
   | 'PLANNED'
@@ -46,11 +55,14 @@ export type LicenseState =
 
 export type JobState =
   | 'QUEUED'
+  | 'READY'
   | 'RUNNING'
+  | 'WAITING_EXTERNAL'
   | 'WAITING_HUMAN'
-  | 'RETRY_WAIT'
+  | 'RETRY_SCHEDULED'
   | 'SUCCEEDED'
-  | 'FAILED'
+  | 'FAILED_RETRYABLE'
+  | 'FAILED_PERMANENT'
   | 'CANCELLED';
 
 export type ExceptionSeverity = 'BLOCKER' | 'HIGH' | 'MEDIUM' | 'LOW';
@@ -69,6 +81,10 @@ export interface AppSettings {
   projectFolder: string;
   outputFolder: string;
   backupFolder: string;
+  backupIntervalHours: number;
+  backupDailyRetention: number;
+  backupWeeklyRetention: number;
+  backupMonthlyRetention: number;
   ffmpegPath: string;
   ffprobePath: string;
   monthlyBudgetUsd: number;
@@ -90,6 +106,7 @@ export interface AppSettings {
   youtubeCategoryId: string;
   youtubePlaylistId: string;
   youtubePrivacy: 'private';
+  youtubeSyntheticMediaDisclosure: boolean;
   channelName: string;
   channelShort: string;
   autoStartWithWindows: boolean;
@@ -136,6 +153,24 @@ export interface DiagnosticsReport {
     integrity: string;
     walMode: boolean;
   };
+}
+
+export interface BackupRecord {
+  path: string;
+  checksum: string;
+  sizeBytes: number;
+  integrity: string;
+  createdAt: string;
+  missingOriginals: string[];
+}
+
+export interface RestoreReport {
+  backupPath: string;
+  stagedPath: string;
+  integrity: string;
+  checksum: string;
+  restartRequired: boolean;
+  missingOriginals: string[];
 }
 
 export interface QueueSummary {
@@ -205,6 +240,16 @@ export interface CatalogAsset {
   excluded: boolean;
   importedAt: string;
   updatedAt: string;
+}
+
+export interface MetadataRevision {
+  id: string;
+  fieldName: string;
+  previousValue: unknown;
+  newValue: unknown;
+  reason: string | null;
+  createdAt: string;
+  revertedAt: string | null;
 }
 
 export interface CatalogSearchRequest {
@@ -491,6 +536,8 @@ export interface FinalReview {
   localPreviewUrl: string | null;
   blockers: QcResult[];
   warnings: QcResult[];
+  packageSynced: boolean;
+  canUpload: boolean;
   canApprove: boolean;
 }
 

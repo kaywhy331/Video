@@ -1,33 +1,52 @@
-# VideoFactory Desktop alpha.2 - Validation Report
+# VideoFactory Desktop alpha.3 — Validation Report
 
-Generated: 2026-07-31T04:25:20.947386+00:00
+Generated: 2026-08-12T07:29:35-07:00 (America/Los_Angeles)
 
-## Root cause addressed
+## Outcome
 
-The original alpha.1 package omitted the npm runtime and development dependency declarations. Its launcher therefore reached `npm run dev` without Electron/Vite installed and closed without preserving the error.
+The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3. Local source validation passes, including real FFmpeg media operations. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
 
-Alpha.2 adds the dependency declarations, durable startup logging, an always-visible launcher result, preflight checks, corrected Electron/Vite module output, and Electron-bundled SQLite access that avoids a native SQLite npm add-on.
-
-## Checks completed in this environment
+## Local validation
 
 | Check | Result |
 |---|---|
-| Source/package preflight | Passed |
-| TypeScript/TSX syntax transpilation | Passed for 44 source/test files |
-| Core normalization/geography/media-policy smoke tests | Passed |
-| SQLite schema + FTS5 trigger + integrity smoke test | Passed |
-| Imported-package declaration audit | Passed for 12 external packages |
-| Original alpha.1 failure evidence retained | Yes, under `validation-logs/alpha1-failure-evidence/` |
+| `npm run doctor` | Passed |
+| TypeScript typecheck | Passed |
+| Vitest suite | Passed; 21 files, 61 tests |
+| Real FFmpeg analysis fixture | Passed |
+| Real concat/two-pass normalization fixture | Passed |
+| Application migration wrapper (001 + 002) | Passed; versions recorded, reopen idempotent, integrity `ok` |
+| Source/resource migration parity | Passed |
+| Electron/Vite main, preload, renderer build | Passed |
+| `git diff --check` | Passed |
 
-## Follow-up verification — 2026-08-04
+## Validated changes
 
-The complete imported source was installed and revalidated in a networked Linux environment:
+- canonical audited project state transitions and fail-closed exception recovery;
+- nested SQLite transactions and atomic forward migration records;
+- durable job dependencies, cycles, leases, project locks, bounded retry, and stale-process recovery;
+- scheduled checksummed backups, configurable rotation, staged restore, safety copy, and missing-original scan;
+- strict IPC schemas, sender/origin validation, managed-path containment, URL allowlists, and secret redaction;
+- actual FFmpeg black/freeze analysis, rotation-aware resolution policy, corrupt/duplicate quarantine, and declared/actual conflict evidence;
+- narration splitting without audio truncation, SRT/WebVTT output, concat-before-analysis, two-pass EBU R128 normalization, and output profile/fast-start QC;
+- rights fail-closed checks, package/final-render fingerprints, and strict final approval receipts;
+- persisted resumable YouTube sessions, byte-offset recovery, duplicate final-hash guard, private-first metadata, processing polling, captions, thumbnails, playlist attachment, and configurable synthetic-media disclosure;
+- queue/spend/duplicate/coverage planning gates and catalog-backed sources/claims.
 
-- `npm ci` / dependency installation: passed
-- full TypeScript typecheck: passed
-- Vitest: 12/12 tests passed
-- Electron/Vite main, preload, and renderer production bundles: passed
+## Historical alpha.2 validation
 
-The repository owner explicitly waived the Windows 10/11 runtime smoke as a blocking gate on 2026-08-04. This is a temporary acceptance decision, **not** a passed Windows test. Windows runtime launch and portable/installer packaging remain unverified and should be completed before treating this alpha as target-platform qualified.
+Alpha.2 repaired the original incomplete package by restoring dependency declarations, startup logging, Electron/Vite output, and Electron-bundled SQLite. The 2026-08-04 validation passed 12 tests and the production bundle. That evidence remains historical and is superseded by alpha.3 validation.
 
-`RUN-ON-WINDOWS.cmd` performs installation and startup on the target machine, keeps the console open on every exit, and writes `VideoFactory-Last-Startup.log` beside the launcher.
+## External gates not run
+
+| Gate | Status |
+|---|---|
+| Clean Windows 10/11 install and runtime | Unverified |
+| Windows installer launch/upgrade/uninstall | Unverified; CI packaging is not runtime validation |
+| Five representative real-video pilot | Unverified |
+| Live Envato licensing/download workflow | Unverified |
+| Live Google OAuth/YouTube private upload and publish rehearsal | Unverified |
+| Forced restart during real ingest/render/upload | Unverified |
+| Representative production-data restore drill | Unverified |
+
+These are not waived or counted as passes. `production_ready` remains `false`.

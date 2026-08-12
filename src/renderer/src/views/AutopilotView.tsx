@@ -34,16 +34,16 @@ export function AutopilotView({
 }) {
   const [busy, setBusy] = useState(false);
   const current = bootstrap.projects.find(project =>
-    !['PUBLISHED', 'FAILED', 'PAUSED'].includes(project.state)
+    !['PUBLISHED', 'ANALYTICS_ACTIVE', 'FAILED', 'CANCELLED', 'ARCHIVED', 'PAUSED'].includes(project.state)
   ) ?? bootstrap.projects[0];
 
   const nextAction = useMemo<NextAction | null>(() => {
     if (!current) return null;
     if (current.state === 'WAITING_FOR_DOWNLOADS') return { label: 'Open download queue', view: 'downloads' };
     if (current.state === 'WAITING_FINAL_APPROVAL') return { label: 'Review finished video', view: 'final-review' };
-    if (current.state === 'STORYBOARD_FINAL') return { label: 'Render draft automatically', advance: true };
+    if (current.state === 'BUILDING_TIMELINE') return { label: 'Render draft automatically', advance: true };
     if (current.state === 'QC_DRAFT') return { label: 'Render final video', advance: true };
-    if (current.state === 'BLOCKED') return { label: 'Review exceptions', view: 'exceptions' };
+    if (current.state === 'BLOCKED_EXCEPTION') return { label: 'Review exceptions', view: 'exceptions' };
     return { label: 'Inspect current project', inspect: true };
   }, [current]);
 

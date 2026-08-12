@@ -1,12 +1,28 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const SECRET_PATTERNS = [
-  /(authorization\s*[:=]\s*bearer\s+)[^\s"']+/gi,
-  /(api[-_ ]?key\s*[:=]\s*)[^\s,"']+/gi,
-  /(refresh[-_ ]?token\s*[:=]\s*)[^\s,"']+/gi,
-  /(client[-_ ]?secret\s*[:=]\s*)[^\s,"']+/gi
+export const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /("?authorization"?\s*[:=]\s*"?bearer\s+)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },
+  { pattern: /("?(?:api[-_ ]?key|llmApiKey|youtubeApiKey)"?\s*[:=]\s*"?)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },
+  { pattern: /("?(?:refresh[-_ ]?token|youtubeRefreshToken)"?\s*[:=]\s*"?)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },
+  { pattern: /("?(?:access[-_ ]?token|youtubeAccessToken)"?\s*[:=]\s*"?)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },
+  { pattern: /("?(?:client[-_ ]?secret|youtubeClientSecret)"?\s*[:=]\s*"?)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },
+  { pattern: /(https?:\/\/[^\s/:@]+:)[^\s/@]+(@)/gi, replacement: '$1[REDACTED]$2' }
 ];
+
+export function redactSecrets(input: unknown): string {
+  let text: string;
+  try {
+    text = typeof input === 'string' ? input : JSON.stringify(input);
+  } catch {
+    text = String(input);
+  }
+  for (const { pattern, replacement } of SECRET_PATTERNS) {
+    pattern.lastIndex = 0;
+    text = text.replace(pattern, replacement);
+  }
+  return text;
+}
 
 export class Logger {
   constructor(private readonly filePath: string) {
@@ -14,14 +30,7 @@ export class Logger {
   }
 
   private redact(input: unknown): string {
-    let text: string;
-    try {
-      text = typeof input === 'string' ? input : JSON.stringify(input);
-    } catch {
-      text = String(input);
-    }
-    for (const pattern of SECRET_PATTERNS) text = text.replace(pattern, '$1[REDACTED]');
-    return text;
+    return redactSecrets(input);
   }
 
   private write(level: string, message: string, metadata?: unknown): void {

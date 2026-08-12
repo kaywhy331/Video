@@ -22,8 +22,10 @@ export function FinalReviewView({
 }) {
   const candidates = useMemo(() => projects.filter(project =>
     project.state === 'WAITING_FINAL_APPROVAL'
+    || project.state === 'WAITING_YOUTUBE_PROCESSING'
+    || project.state === 'UPLOADING_PRIVATE'
     || project.state === 'SCHEDULED'
-    || (project.finalRenderPath && project.state !== 'FAILED')
+    || project.state === 'PUBLISHED'
   ), [projects]);
   const [projectId, setProjectId] = useState('');
   const [review, setReview] = useState<FinalReview | null>(null);
@@ -159,10 +161,20 @@ export function FinalReviewView({
                   </div>
                 )}
 
+                {review.privateVideoUrl && !review.packageSynced ? (
+                  <Button
+                    busy={busy === 'sync-package'}
+                    disabled={!review.canUpload}
+                    onClick={() => void action('sync-package', () => window.videoFactory.youtube.uploadPrivate(review.project.id))}
+                  >
+                    <UploadCloud size={16} /> Complete private upload package
+                  </Button>
+                ) : null}
+
                 {!review.privateVideoUrl ? (
                   <Button
                     busy={busy === 'upload'}
-                    disabled={!review.canApprove}
+                    disabled={!review.canUpload}
                     onClick={() => void action('upload', () => window.videoFactory.youtube.uploadPrivate(review.project.id))}
                   >
                     <UploadCloud size={16} /> Upload privately

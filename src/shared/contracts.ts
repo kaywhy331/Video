@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { CatalogAsset, VisualTreatment } from './types';
 
+const FilePathSchema = z.string().trim().min(1).max(32_767);
+const NullableText = (max: number) => z.string().trim().max(max).nullable();
+
 export const CatalogSearchRequestSchema = z.object({
   query: z.string().trim().max(500).optional(),
   country: z.string().trim().max(120).optional(),
@@ -16,7 +19,53 @@ export const CatalogSearchRequestSchema = z.object({
   sortDirection: z.enum(['asc', 'desc']).optional()
 });
 
-export const SettingsPatchSchema = z.record(z.string(), z.unknown());
+export const SettingsPatchSchema = z.object({
+  dataRoot: FilePathSchema.optional(),
+  databasePath: FilePathSchema.optional(),
+  ingestFolder: FilePathSchema.optional(),
+  mediaLibraryFolder: FilePathSchema.optional(),
+  projectFolder: FilePathSchema.optional(),
+  outputFolder: FilePathSchema.optional(),
+  backupFolder: FilePathSchema.optional(),
+  backupIntervalHours: z.number().int().min(1).max(168).optional(),
+  backupDailyRetention: z.number().int().min(1).max(365).optional(),
+  backupWeeklyRetention: z.number().int().min(1).max(260).optional(),
+  backupMonthlyRetention: z.number().int().min(1).max(120).optional(),
+  ffmpegPath: z.string().max(32_767).optional(),
+  ffprobePath: z.string().max(32_767).optional(),
+  monthlyBudgetUsd: z.number().min(0).max(100_000).optional(),
+  minFreeDiskGb: z.number().min(1).max(100_000).optional(),
+  maxActiveProjects: z.number().int().min(1).max(20).optional(),
+  maxWaitingDownloads: z.number().int().min(1).max(20).optional(),
+  maxPrivateApproval: z.number().int().min(1).max(20).optional(),
+  targetVideoMinutes: z.number().min(1).max(30).optional(),
+  defaultOutput: z.enum(['1080p', 'qualified_4k']).optional(),
+  preferredShotMinSeconds: z.number().min(1.5).max(7).optional(),
+  preferredShotMaxSeconds: z.number().min(1.5).max(7).optional(),
+  hardShotMaxSeconds: z.number().min(2).max(7).optional(),
+  narratorProvider: z.enum(['windows_sapi', 'http_tts']).optional(),
+  narratorVoice: z.string().max(200).optional(),
+  narratorRate: z.number().min(-10).max(10).optional(),
+  llmProvider: z.enum(['mock', 'openai_compatible']).optional(),
+  llmBaseUrl: z.string().url().max(2_000).optional(),
+  llmModel: z.string().trim().min(1).max(200).optional(),
+  youtubeCategoryId: z.string().regex(/^\d{1,4}$/).optional(),
+  youtubePlaylistId: z.string().max(200).optional(),
+  youtubePrivacy: z.literal('private').optional(),
+  youtubeSyntheticMediaDisclosure: z.boolean().optional(),
+  channelName: z.string().max(200).optional(),
+  channelShort: z.string().regex(/^[A-Za-z0-9_-]{0,12}$/).optional(),
+  autoStartWithWindows: z.boolean().optional(),
+  autoUploadPrivate: z.boolean().optional(),
+  preferredCountries: z.array(z.string().trim().min(1).max(120)).max(250).optional(),
+  blockedCountries: z.array(z.string().trim().min(1).max(120)).max(250).optional()
+}).strict().superRefine((settings, context) => {
+  if (settings.preferredShotMinSeconds !== undefined
+    && settings.preferredShotMaxSeconds !== undefined
+    && settings.preferredShotMinSeconds > settings.preferredShotMaxSeconds) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Preferred shot minimum cannot exceed the maximum.' });
+  }
+});
 
 export const CreateAutopilotProjectSchema = z.object({
   destinationKey: z.string().max(500).optional(),
@@ -27,10 +76,10 @@ export const CreateAutopilotProjectSchema = z.object({
 export const IdSchema = z.string().min(1).max(200);
 
 export const ImportRequestSchema = z.object({
-  filePath: z.string().min(1),
-  sheetName: z.string().optional(),
-  mapping: z.record(z.string(), z.string().nullable()).optional()
-});
+  filePath: FilePathSchema,
+  sheetName: z.string().max(250).optional(),
+  mapping: z.record(z.string().max(100), z.string().max(250).nullable()).optional()
+}).strict();
 
 export const SecretPatchSchema = z.object({
   llmApiKey: z.string().optional(),
@@ -38,7 +87,62 @@ export const SecretPatchSchema = z.object({
   youtubeClientId: z.string().optional(),
   youtubeClientSecret: z.string().optional(),
   youtubeApiKey: z.string().optional()
-});
+}).strict();
+
+export const PathChoiceRequestSchema = z.object({
+  kind: z.enum(['directory', 'file']),
+  title: z.string().max(200).optional(),
+  filters: z.array(z.object({
+    name: z.string().max(100),
+    extensions: z.array(z.string().regex(/^[A-Za-z0-9]+$/)).max(50)
+  }).strict()).max(20).optional()
+}).strict();
+
+export const CatalogAssetPatchSchema = z.object({
+  title: z.string().trim().min(1).max(500).optional(),
+  description: NullableText(10_000).optional(),
+  country: NullableText(120).optional(),
+  city: NullableText(120).optional(),
+  locationName: NullableText(250).optional(),
+  activity: NullableText(500).optional(),
+  shotType: NullableText(250).optional(),
+  sceneDescription: NullableText(2_000).optional(),
+  objects: NullableText(2_000).optional(),
+  timeOfDay: NullableText(250).optional(),
+  style: NullableText(500).optional(),
+  orientation: z.enum(['landscape', 'portrait', 'square', 'unknown']).optional(),
+  locationGranularity: z.enum(['country', 'region', 'city', 'neighborhood', 'landmark', 'feature', 'unknown']).optional(),
+  locationConfidence: z.number().min(0).max(1).optional(),
+  verificationStatus: z.enum(['unverified', 'metadata', 'ai_suggested', 'human_verified', 'conflict']).optional(),
+  availabilityStatus: z.enum(['unknown', 'available', 'unavailable']).optional(),
+  excluded: z.boolean().optional()
+}).strict();
+
+export const CatalogUpdateAssetSchema = z.object({
+  assetId: IdSchema,
+  patch: CatalogAssetPatchSchema,
+  reason: z.string().trim().min(1).max(500).optional()
+}).strict();
+
+export const AcquisitionAttestSchema = z.object({
+  acquisitionId: IdSchema,
+  certificatePath: FilePathSchema.optional()
+}).strict();
+
+export const AcquisitionMapFileSchema = z.object({
+  acquisitionId: IdSchema,
+  filePath: FilePathSchema.optional()
+}).strict();
+
+export const PackageSelectSchema = z.object({ projectId: IdSchema, packageId: IdSchema }).strict();
+export const ExceptionListSchema = z.object({ projectId: IdSchema.optional(), openOnly: z.boolean().optional() }).strict();
+export const ExceptionResolveSchema = z.object({
+  id: IdSchema,
+  resolution: z.record(z.string().max(100), z.unknown()).optional()
+}).strict();
+export const BackupRestoreSchema = FilePathSchema.optional();
+export const ExternalUrlSchema = z.string().url().max(2_000);
+export const OpenPathSchema = FilePathSchema;
 
 export const RenderRequestSchema = z.object({
   projectId: IdSchema,

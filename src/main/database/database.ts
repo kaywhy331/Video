@@ -1,6 +1,7 @@
 import { DatabaseSync, type StatementSync, type SQLInputValue } from 'node:sqlite';
 import { existsSync, readFileSync, copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { readdirSync } from 'node:fs';
 import { app } from 'electron';
 import type { AppSettings } from '@shared/types';
 
@@ -42,6 +43,8 @@ export class SqlStatement {
  */
 export class SqliteConnection {
   private readonly database: DatabaseSync;
+  private transactionDepth = 0;
+  private savepointSequence = 0;
 
   constructor(path: string) {
     this.database = new DatabaseSync(path);
@@ -76,14 +79,24 @@ export class SqliteConnection {
 
   transaction<Args extends unknown[], Result>(operation: (...args: Args) => Result): (...args: Args) => Result {
     const wrapped = (...args: Args): Result => {
-      this.database.exec('BEGIN IMMEDIATE');
+      const outermost = this.transactionDepth === 0;
+      const savepoint = `vf_nested_${this.savepointSequence++}`;
+      this.database.exec(outermost ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`);
+      this.transactionDepth += 1;
       try {
         const result = operation(...args);
-        this.database.exec('COMMIT');
+        this.transactionDepth -= 1;
+        this.database.exec(outermost ? 'COMMIT' : `RELEASE SAVEPOINT ${savepoint}`);
         return result;
       } catch (error) {
+        this.transactionDepth -= 1;
         try {
-          this.database.exec('ROLLBACK');
+          if (outermost) {
+            this.database.exec('ROLLBACK');
+          } else {
+            this.database.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+            this.database.exec(`RELEASE SAVEPOINT ${savepoint}`);
+          }
         } catch {
           // Preserve the original operation error if rollback itself cannot run.
         }
@@ -111,26 +124,46 @@ export class AppDatabase {
     this.migrate();
   }
 
-  private migrationPath(): string {
-    const candidates = [
-      join(process.cwd(), 'src', 'main', 'database', '001_initial.sql'),
-      join(process.cwd(), 'resources', '001_initial.sql'),
-      join(app.getAppPath(), 'resources', '001_initial.sql'),
-      join(process.resourcesPath, 'resources', '001_initial.sql'),
-      join(process.resourcesPath, '001_initial.sql')
+  private migrationPaths(): string[] {
+    const directories = [
+      join(process.cwd(), 'src', 'main', 'database'),
+      join(process.cwd(), 'resources')
     ];
-    const found = candidates.find(candidate => existsSync(candidate));
-    if (!found) throw new Error(`Database migration not found. Checked: ${candidates.join(', ')}`);
-    return found;
+    if (app && typeof app.getAppPath === 'function') directories.push(join(app.getAppPath(), 'resources'));
+    if (process.resourcesPath) directories.push(join(process.resourcesPath, 'resources'), process.resourcesPath);
+    for (const directory of directories) {
+      if (!existsSync(directory)) continue;
+      const migrations = readdirSync(directory)
+        .filter(name => /^\d{3}_.+\.sql$/.test(name))
+        .sort()
+        .map(name => join(directory, name));
+      if (migrations.length) return migrations;
+    }
+    throw new Error(`Database migrations not found. Checked: ${directories.join(', ')}`);
   }
 
   migrate(): void {
-    const sql = readFileSync(this.migrationPath(), 'utf8');
-    this.raw.exec(sql);
-    this.raw.prepare(`
-      INSERT OR IGNORE INTO schema_migrations(version, name)
-      VALUES(1, 'initial')
-    `).run();
+    for (const path of this.migrationPaths()) {
+      const name = path.split(/[\\/]/).pop() ?? path;
+      const version = Number(name.slice(0, 3));
+      const migrationName = name.replace(/^\d{3}_|\.sql$/g, '');
+      if (version === 1) {
+        this.raw.exec(readFileSync(path, 'utf8'));
+        this.raw.prepare(`
+          INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)
+        `).run(version, migrationName);
+      } else {
+        const applied = this.raw.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version);
+        if (!applied) {
+          this.raw.transaction(() => {
+            this.raw.exec(readFileSync(path, 'utf8'));
+            this.raw.prepare(`
+              INSERT INTO schema_migrations(version, name) VALUES(?, ?)
+            `).run(version, migrationName);
+          })();
+        }
+      }
+    }
   }
 
   getSetting<T>(key: string): T | undefined {

@@ -1,167 +1,93 @@
 # VideoFactory Desktop
 
-**Build:** 0.1.0-alpha.2 launcher repair
+**Build:** 0.1.0-alpha.3 production hardening
 
-VideoFactory Desktop is a single-user Windows production application that turns a metadata catalog of licensed stock footage into exact-location-grounded YouTube videos.
+VideoFactory Desktop is a single-user Windows application that turns a licensed stock-footage metadata catalog into exact-location-grounded YouTube videos. It is metadata-first and fail-closed: it does not silently substitute footage that merely looks similar, upscale a source to pass resolution policy, or publish before the final human gate.
 
-It is intentionally **not** a generic text-to-video generator. A narration scene can only use:
+## Current status
 
-1. exact-location footage,
-2. contextual footage whose verified geography is no more specific than the narration,
-3. a map/graphic, or
-4. a text/archival treatment.
+The repository is a production-hardened alpha. The application builds and its local automated suite covers database migration, durable project/job state, IPC and path security, real FFmpeg analysis/rendering, backup/restore, approval fingerprints, and resumable-upload protocol helpers. It is not yet production-qualified because these external acceptance gates have not been performed:
 
-There is no silent “looks similar” fallback.
+- clean Windows 10/11 installer and runtime test on a machine without developer tooling;
+- five representative 4–6 minute videos completed with real licensed assets;
+- live Envato license/download/mapping workflow;
+- live Google OAuth, resumable private upload, caption/thumbnail/playlist attachment, processing, scheduling, and publication rehearsal.
 
-## What this alpha implements
+`production_ready` therefore remains `false`. See [Implementation Coverage](docs/IMPLEMENTATION-COVERAGE.md), [Production Hardening](docs/PRODUCTION-HARDENING.md), and [Validation Report](VALIDATION_REPORT.md).
 
-- Electron + React + TypeScript desktop shell
-- Local SQLite database with WAL and FTS5 using Electron’s bundled `node:sqlite`
-- XLSX/CSV import, detected column mapping, import diffs, raw-row retention
-- Searchable 26K+ asset library with geographic coverage clusters
-- Human metadata overrides that survive later spreadsheet imports
-- Metadata-first Autopilot project creation
-- Scene contracts and exact-location hard filtering
-- Globally penalized source reuse
-- Project-specific Envato acquisition queue
-- Operator-controlled Envato page opening and license attestation
-- Watched download folder that ignores partial browser downloads
-- SHA-256 content-addressed original storage
-- FFprobe inspection, 720p proxies, contact sheets, and 2–7 second candidate segments
-- Strict no-upscale 1080p eligibility
-- Built-in Windows SAPI narration fallback
-- FFmpeg scene synchronization, captions, draft render, final H.264/AAC MP4 render, and loudness normalization
-- Automated render, rights, duration, and grounding checks
-- Three packaging concepts and extracted thumbnail frames
-- Google OAuth desktop flow and private-first YouTube upload
-- Final human publication/scheduling gate
-- Local durable job records, progress events, restart recovery, exception inbox, and diagnostics
+## Implemented
 
-## Routine human actions
+- Electron, React, and TypeScript desktop shell with sandboxed renderer
+- SQLite/WAL/FTS5 data store with atomic forward migrations and nested savepoints
+- XLSX/CSV import, mapping preview, raw-row retention, revisions, and undo
+- catalog search, geographic coverage, topic capacity/spend/duplicate gates
+- metadata-grounded research records, fact claims, script versions, and scene contracts
+- canonical audited project state machine, durable jobs, dependencies, leases, locks, retries, and restart recovery
+- manual Envato handoff, project license attestation, watched downloads, quarantine, and content-addressed originals
+- FFprobe inspection, declared/actual conflict evidence, proxies, contact sheets, rotation-aware resolution policy, and FFmpeg black/freeze analysis
+- narration splitting into visual shots no longer than seven seconds
+- SRT and WebVTT captions
+- synchronized H.264/AAC-LC render pipeline with two-pass EBU R128 normalization, 30 fps progressive BT.709 output checks, duration QC, and fast-start verification
+- approval fingerprints binding final-render and publishing-package inputs
+- private-first YouTube workflow with persisted resumable sessions, offset recovery, duplicate-hash guard, processing polling, timed captions, thumbnails, optional playlist, and configurable synthetic-media disclosure
+- verified automatic SQLite backups, configurable daily/weekly/monthly retention, restart-safe restore, safety copy, and missing-original report
+- allowlisted IPC, top-frame validation, managed-path containment, external URL allowlist, and secret redaction
+- power-save blocking during render and upload
 
-1. License and download the asset requested by the Downloads screen.
-2. Approve the completed private YouTube upload.
+## Routine operator actions
 
-Uncertain mappings, media failures, location conflicts, rights gaps, and no-upscale violations become exceptions rather than unsafe automatic guesses.
+1. License and download the assets requested by the Downloads screen.
+2. Review the processed private YouTube video and approve publishing or scheduling.
 
-## Development prerequisites
+Uncertain mappings, media failures, factual/location conflicts, rights gaps, and quality-policy failures become explicit exceptions.
 
-- Windows 10 or Windows 11
-- Node.js 22.12+ LTS recommended; Node.js 24 is also supported
-- npm
-- Sufficient local media storage
+## Development
+
+Prerequisites:
+
+- Node.js 22.12+ LTS or Node.js 24
+- npm 10+
+- Windows 10/11 for Windows SAPI narration and target-platform testing
 
 FFmpeg and FFprobe are included through static packages. Paths can be overridden in Settings.
 
-## Run on Windows
-
-1. Fully extract the ZIP to a local folder such as `D:\VideoFactoryDesktop`.
-2. Double-click `RUN-ON-WINDOWS.cmd`.
-3. Leave the terminal open while the development build is running.
-
-The first launch installs the declared npm dependencies. The application uses Electron’s bundled SQLite runtime, so no native SQLite compiler toolchain is required. A failed launch no longer disappears: the terminal stays open and writes `VideoFactory-Last-Startup.log` beside the launcher.
-
-Manual equivalent:
-
 ```powershell
-npm install --include=dev --no-fund --no-audit
+npm ci
 npm run doctor
 npm run dev
 ```
 
-## Validate
+On Windows, fully extract the repository and run `RUN-ON-WINDOWS.cmd`. The launcher preserves errors in `VideoFactory-Last-Startup.log`.
+
+## Validation and packaging
 
 ```powershell
 npm run validate
-```
-
-This runs TypeScript checking, automated tests, and the production bundle build.
-
-## Package for Windows
-
-```powershell
+npm run doctor
 npm run package:win
 ```
 
-Artifacts are written to `release/`.
+`npm run validate` performs TypeScript checking, the automated test suite, and the production Electron/Vite build. Windows artifacts are written to `release/`. GitHub Actions validates on Linux and builds unsigned Windows NSIS/ZIP artifacts; a successful CI package is not the same as a clean-machine installation test.
 
 ## First-run walkthrough
 
-1. Open **Library**.
-2. Import the 26K-row XLSX or CSV.
-3. Review the detected field mapping and commit the import.
-4. Open **Settings** and set the media library, watched download folder, narrator, optional LLM endpoint, and YouTube OAuth credentials.
-5. Run diagnostics.
-6. Open **Autopilot** and start the next video.
-7. In **Downloads**, copy the Envato project name, open each requested asset, license/download it, and record the license.
-8. The watcher ingests completed downloads, generates proxies and segments, and verifies 1080p eligibility.
-9. Autopilot renders the draft and final MP4.
-10. Review the private upload in **Final Review** and approve publishing or scheduling.
+1. In Library, import the footage XLSX or CSV and commit the detected mapping.
+2. In Settings, configure storage, backup policy, narrator, optional LLM, and YouTube OAuth.
+3. Run diagnostics.
+4. Start an Autopilot project.
+5. In Downloads, use the displayed Envato project name, license/download each requested asset, and record its license.
+6. Let the watcher ingest, analyze, and verify stable files.
+7. Render the draft and final video.
+8. Upload privately, wait for YouTube processing and attachments, then review and publish or schedule.
 
-## Demo catalog and media
+The sample catalog is `samples/demo-catalog.csv`. Generate matching synthetic clips with `npm run demo:media`; sample Envato URLs are intentionally non-operational.
 
-A small sample catalog is included at:
+## Data and security
 
-```text
-samples/demo-catalog.csv
-```
+Default data is stored under `Documents\VideoFactory` in separate data, ingest, media, projects, output, and backup folders. Originals are stored once by SHA-256 and never overwritten.
 
-Generate matching local test videos with:
-
-```powershell
-npm run demo:media
-```
-
-The sample URLs are intentionally non-operational placeholders. Use **Map downloaded file** to attach the generated clips to sample acquisition items.
-
-## Data locations
-
-The first run defaults to:
-
-```text
-Documents\VideoFactory\
-  data\
-  ingest\envato\
-  media\
-  projects\
-  output\
-  backups\
-```
-
-Originals are stored once by SHA-256. Projects reference files and segments rather than copying multi-gigabyte media.
-
-## Security
-
-- Renderer has no Node.js access.
-- IPC is allowlisted and schema-validated.
-- External navigation is deny-by-default.
-- Only allowlisted Envato and YouTube HTTPS links can open.
-- API credentials and OAuth tokens use Electron `safeStorage`.
-- Logs redact common secret patterns.
-- The active SQLite WAL database remains local.
-- Uploads begin private.
+The renderer has no Node.js access. IPC inputs are schema-validated, navigation is deny-by-default, only allowlisted Envato/YouTube HTTPS URLs may open, credentials use Electron `safeStorage`, logs redact common secret forms, and uploads begin private.
 
 ## Output policy
 
-Default final output:
-
-```text
-MP4
-H.264
-AAC
-1920×1080
-30 fps
-yuv420p
-48 kHz audio
-fast-start metadata
-```
-
-No AI or conventional upscaling is silently applied. A source that cannot fill 1080p is blocked or must be intentionally reframed as an inset. The architecture includes a qualified-4K policy, while the current vertical slice renders final 1080p.
-
-## Current release level
-
-This repository is a functional **vertical-slice alpha**, not yet a production-validated release. The full release gate in the included specification requires five representative pilot videos and completion of all P0 acceptance tests. See:
-
-- `docs/IMPLEMENTATION-COVERAGE.md`
-- `docs/PRODUCTION-HARDENING.md`
-- `docs/spec/`
+Default final output is MP4, H.264, AAC-LC stereo at 48 kHz, 1920×1080, 30 fps progressive, yuv420p, BT.709 SDR, with fast-start metadata. Full-screen sources that cannot satisfy 1080p without enlargement fail QC. A qualified 4K final profile remains future work.

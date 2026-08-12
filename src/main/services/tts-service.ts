@@ -57,9 +57,10 @@ export class TtsService {
     await requireSuccess(ffmpeg, [
       '-y', '-hide_banner',
       '-f', 'lavfi',
-      '-i', `anullsrc=channel_layout=stereo:sample_rate=48000`,
+      '-i', 'sine=frequency=220:sample_rate=48000',
+      '-af', 'volume=0.08',
       '-t', String(durationSeconds),
-      '-c:a', 'pcm_s16le',
+      '-ac', '2', '-c:a', 'pcm_s16le',
       outputPath
     ]);
     return { durationMs: Math.round(durationSeconds * 1000) };

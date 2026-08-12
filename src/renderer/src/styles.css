@@ -702,6 +702,10 @@ details pre { overflow: auto; max-height: 240px; padding: 12px; border-radius: 8
 .asset-editor-form { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; padding: 20px; overflow: auto; }
 .asset-editor-form label.full { grid-column: 1 / -1; }
 .asset-editor-form textarea { min-height: 90px; padding: 10px; }
+.revision-list { display: grid; gap: 8px; padding: 18px 22px; border-top: 1px solid var(--border); overflow: auto; }
+.revision-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.revision-row > div { display: grid; gap: 3px; }
+.revision-row span { color: var(--muted); font-size: 12px; }
 .asset-editor footer { margin-top: auto; }
 
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; align-items: start; }

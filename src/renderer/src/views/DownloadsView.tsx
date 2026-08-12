@@ -27,7 +27,7 @@ export function DownloadsView({
 
   const downloadProjects = projects.filter(project =>
     project.acquisitionCount > 0
-    && !['PUBLISHED', 'FAILED'].includes(project.state)
+    && !['PUBLISHED', 'ANALYTICS_ACTIVE', 'FAILED', 'CANCELLED', 'ARCHIVED'].includes(project.state)
   );
 
   useEffect(() => {

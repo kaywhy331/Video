@@ -18,6 +18,7 @@ import { RenderService } from './services/render-service';
 import { YouTubeService } from './services/youtube-service';
 import { FinalReviewService } from './services/final-review-service';
 import { ExceptionService } from './services/exception-service';
+import { BackupService } from './services/backup-service';
 import { IPC } from '@shared/ipc-channels';
 
 export class AppContext {
@@ -37,12 +38,18 @@ export class AppContext {
   readonly finalReview: FinalReviewService;
   readonly exceptions: ExceptionService;
   readonly watcher: DownloadWatcher;
+  readonly backups: BackupService;
 
   private settingsValue: AppSettings;
+  private powerBlockerChanged?: (active: boolean) => void;
+  private backupTimer?: NodeJS.Timeout;
+  private backupStartupTimer?: NodeJS.Timeout;
+  private started = false;
 
   constructor(private readonly mainWindow: () => BrowserWindow | null) {
     const defaults = buildDefaultSettings();
     ensureSettingsPaths(defaults);
+    BackupService.applyPendingRestore(defaults.databasePath);
     this.db = new AppDatabase(defaults.databasePath);
     this.settingsValue = this.db.getAppSettings(defaults);
     ensureSettingsPaths(this.settingsValue);
@@ -99,13 +106,22 @@ export class AppContext {
         });
       }
     );
-    this.finalReview = new FinalReviewService(this.projects);
+    this.finalReview = new FinalReviewService(this.db, this.projects);
+    this.backups = new BackupService(this.db, () => this.settingsValue);
     this.watcher = new DownloadWatcher(
       this.db,
       this.media,
       () => this.settingsValue,
       message => this.notify(message)
     );
+  }
+
+  setPowerBlockerHandler(handler: (active: boolean) => void): void {
+    this.powerBlockerChanged = handler;
+  }
+
+  setLongOperationActive(active: boolean): void {
+    this.powerBlockerChanged?.(active);
   }
 
   settings(): AppSettings {
@@ -121,6 +137,7 @@ export class AppContext {
     this.settingsValue = next;
     this.db.saveAppSettings(next);
     await this.watcher.start();
+    if (this.started) this.startBackupScheduler();
     this.emitState();
     return this.settings();
   }
@@ -128,7 +145,7 @@ export class AppContext {
   queueSummary(): QueueSummary {
     const project = this.db.raw.prepare(`
       SELECT
-        sum(CASE WHEN state NOT IN ('PUBLISHED','FAILED','PAUSED') THEN 1 ELSE 0 END) AS active,
+        sum(CASE WHEN state NOT IN ('PUBLISHED','ANALYTICS_ACTIVE','FAILED','CANCELLED','ARCHIVED','PAUSED') THEN 1 ELSE 0 END) AS active,
         sum(CASE WHEN state = 'WAITING_FOR_DOWNLOADS' THEN 1 ELSE 0 END) AS downloads,
         sum(CASE WHEN state = 'WAITING_FINAL_APPROVAL' THEN 1 ELSE 0 END) AS approval
       FROM projects
@@ -138,7 +155,7 @@ export class AppContext {
     `).get() as { count: number };
     const jobs = this.db.raw.prepare(`
       SELECT
-        sum(CASE WHEN state IN ('QUEUED','RETRY_WAIT') THEN 1 ELSE 0 END) AS queued,
+        sum(CASE WHEN state IN ('QUEUED','READY','RETRY_SCHEDULED') THEN 1 ELSE 0 END) AS queued,
         sum(CASE WHEN state = 'RUNNING' THEN 1 ELSE 0 END) AS running
       FROM jobs
     `).get() as Record<string, number | null>;
@@ -186,10 +203,33 @@ export class AppContext {
 
   async start(): Promise<void> {
     await this.watcher.start();
+    this.started = true;
+    this.startBackupScheduler();
   }
 
   async stop(): Promise<void> {
+    this.started = false;
+    if (this.backupStartupTimer) clearTimeout(this.backupStartupTimer);
+    if (this.backupTimer) clearInterval(this.backupTimer);
     await this.watcher.stop();
     this.db.close();
+  }
+
+  private startBackupScheduler(): void {
+    if (this.backupStartupTimer) clearTimeout(this.backupStartupTimer);
+    if (this.backupTimer) clearInterval(this.backupTimer);
+    const sweep = (): void => {
+      try {
+        const backup = this.backups.createIfDue();
+        if (backup) this.logger.info('Automatic backup completed', { path: backup.path, checksum: backup.checksum });
+      } catch (error) {
+        this.logger.error('Automatic backup failed', error);
+        this.notify(`Automatic backup failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+    this.backupStartupTimer = setTimeout(sweep, 1_000);
+    this.backupStartupTimer.unref();
+    this.backupTimer = setInterval(sweep, 60 * 60 * 1_000);
+    this.backupTimer.unref();
   }
 }

@@ -125,6 +125,15 @@ export class AiService {
     let responseText = '';
     let requestId: string | null = null;
     try {
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+      const spend = this.db.raw.prepare(`
+        SELECT coalesce(sum(estimated_cost_usd), 0) AS total FROM provider_calls WHERE created_at >= ?
+      `).get(monthStart.toISOString()) as { total: number };
+      if (Number(spend.total) >= settings.monthlyBudgetUsd) {
+        throw new Error('Monthly provider budget is exhausted; no LLM request was sent.');
+      }
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {

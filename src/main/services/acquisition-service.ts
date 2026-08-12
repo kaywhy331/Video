@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import type { AppDatabase } from '../database/database';
 import type { AcquisitionItem } from '@shared/types';
 import type { MediaService } from './media-service';
+import { ProjectStateService } from './project-state-service';
 
 function jsonArray(value: unknown): string[] {
   try {
@@ -50,10 +51,14 @@ export function validateEnvatoUrl(value: string): URL {
 }
 
 export class AcquisitionService {
+  private readonly projectStates: ProjectStateService;
+
   constructor(
     private readonly db: AppDatabase,
     private readonly media: MediaService
-  ) {}
+  ) {
+    this.projectStates = new ProjectStateService(db);
+  }
 
   list(projectId?: string): AcquisitionItem[] {
     const rows = this.db.raw.prepare(`
@@ -155,6 +160,7 @@ export class AcquisitionService {
     transaction();
 
     if (isLicenseOnly && item.local_file_id) {
+      const projectId = String(item.project_id);
       const segments = this.db.raw.prepare(`
         SELECT id, duration_ms FROM media_segments
         WHERE asset_file_id = ? AND eligible_1080p = 1
@@ -164,7 +170,7 @@ export class AcquisitionService {
         SELECT id FROM project_scenes
         WHERE project_id = ? AND selected_asset_id = ?
         ORDER BY ordinal
-      `).all(item.project_id, item.asset_id) as Array<{ id: string }>;
+      `).all(projectId, item.asset_id) as Array<{ id: string }>;
       const attach = this.db.raw.transaction(() => {
         scenes.forEach((scene, index) => {
           const segment = segments[index % Math.max(1, segments.length)];
@@ -179,15 +185,38 @@ export class AcquisitionService {
         const pending = this.db.raw.prepare(`
           SELECT count(*) AS count FROM acquisition_items
           WHERE project_id = ? AND state NOT IN ('COMPLETE','SKIPPED')
-        `).get(item.project_id) as { count: number };
+        `).get(projectId) as { count: number };
         if (pending.count === 0) {
           const unverified = this.db.raw.prepare(`
             SELECT count(*) AS count FROM project_scenes
             WHERE project_id = ? AND verification_state NOT IN ('verified','graphic')
-          `).get(item.project_id) as { count: number };
-          this.db.raw.prepare(`
-            UPDATE projects SET state = ?, progress = ?, updated_at = ? WHERE id = ?
-          `).run(unverified.count ? 'BLOCKED' : 'STORYBOARD_FINAL', unverified.count ? 0.5 : 0.55, now, item.project_id);
+          `).get(projectId) as { count: number };
+          const project = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as { state: import('@shared/types').ProjectState };
+          if (project.state === 'WAITING_FOR_DOWNLOADS') {
+            this.projectStates.transition(projectId, 'INGESTING_MEDIA', {
+              progress: 0.48,
+              reason: 'All acquisition items have a local file or license-only completion'
+            });
+          }
+          this.projectStates.transition(projectId, 'VERIFYING_FOOTAGE', {
+            progress: 0.5,
+            reason: 'Reused local media assigned to project scenes'
+          });
+          this.projectStates.transition(projectId, unverified.count ? 'BLOCKED_EXCEPTION' : 'FINALIZING_SCRIPT', {
+            progress: unverified.count ? 0.5 : 0.53,
+            reason: unverified.count ? 'One or more scenes lack verified footage' : 'All reused footage passed project verification',
+            prerequisites: { unverifiedScenes: unverified.count }
+          });
+          if (!unverified.count) {
+            this.projectStates.transition(projectId, 'GENERATING_VOICE', {
+              progress: 0.54,
+              reason: 'Final script locked after footage verification'
+            });
+            this.projectStates.transition(projectId, 'BUILDING_TIMELINE', {
+              progress: 0.55,
+              reason: 'Verified scenes are ready for narration and timeline assembly'
+            });
+          }
         }
       });
       attach();

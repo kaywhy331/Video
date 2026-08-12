@@ -60,9 +60,10 @@ export function ExceptionsView({
                 <Button
                   variant="secondary"
                   busy={busy === row.id}
+                  disabled={['BLOCKER', 'HIGH'].includes(row.severity)}
                   onClick={() => void resolve(row.id)}
                 >
-                  <CheckCircle2 size={15} /> Mark resolved
+                  <CheckCircle2 size={15} /> {['BLOCKER', 'HIGH'].includes(row.severity) ? 'Repair required' : 'Acknowledge'}
                 </Button>
               </div>
               {row.recommendedAction ? (

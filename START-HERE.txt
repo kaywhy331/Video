@@ -1,8 +1,8 @@
-VIDEOFACTORY DESKTOP alpha.2 — WINDOWS START
+VIDEOFACTORY DESKTOP alpha.3 — WINDOWS START
 
 1. Delete or ignore the previous alpha.1 folder. Do not mix the two versions.
 2. Fully extract this ZIP to a local folder, for example:
-     D:\VideoFactoryDesktop-alpha2
+     D:\VideoFactoryDesktop-alpha3
 3. Double-click:
      RUN-ON-WINDOWS.cmd
 

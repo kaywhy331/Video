@@ -16,7 +16,8 @@ import type {
   CatalogImportPreview,
   CatalogSearchResult,
   CatalogStats,
-  CoverageCluster
+  CoverageCluster,
+  MetadataRevision
 } from '@shared/types';
 import { Button, EmptyState, MetricCard, Panel, StatusPill } from '../components/ui';
 
@@ -361,6 +362,11 @@ function AssetEditDrawer({
     verificationStatus: asset.verificationStatus
   });
   const [busy, setBusy] = useState(false);
+  const [revisions, setRevisions] = useState<MetadataRevision[]>([]);
+
+  useEffect(() => {
+    void window.videoFactory.catalog.revisions(asset.id).then(setRevisions).catch(() => setRevisions([]));
+  }, [asset.id]);
 
   async function save(): Promise<void> {
     setBusy(true);
@@ -427,6 +433,37 @@ function AssetEditDrawer({
             <input type="range" min="0" max="1" step="0.01" value={form.locationConfidence} onChange={event => setForm({ ...form, locationConfidence: Number(event.target.value) })} />
           </label>
         </div>
+        {revisions.length ? (
+          <div className="revision-list">
+            <span className="field-label">RECENT CHANGES</span>
+            {revisions.slice(0, 8).map(revision => (
+              <div key={revision.id} className="revision-row">
+                <div>
+                  <strong>{revision.fieldName}</strong>
+                  <span>{revision.reason ?? 'Operator edit'} · {new Date(revision.createdAt).toLocaleString()}</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  disabled={Boolean(revision.revertedAt)}
+                  onClick={() => void (async () => {
+                    setBusy(true);
+                    setError(null);
+                    try {
+                      await window.videoFactory.catalog.revertRevision(revision.id);
+                      await onSaved();
+                    } catch (error) {
+                      setError(error instanceof Error ? error.message : String(error));
+                    } finally {
+                      setBusy(false);
+                    }
+                  })()}
+                >
+                  {revision.revertedAt ? 'Reverted' : 'Undo'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <footer>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button busy={busy} onClick={() => void save()}><Check size={16} /> Save verified override</Button>

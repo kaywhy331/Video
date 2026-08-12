@@ -3,6 +3,7 @@ import { IPC } from '@shared/ipc-channels';
 import type {
   AppBootstrap,
   AppSettings,
+  BackupRecord,
   CatalogImportPreview,
   CatalogImportResult,
   CatalogSearchRequest,
@@ -14,10 +15,12 @@ import type {
   ExceptionRecord,
   FinalReview,
   JobRecord,
+  MetadataRevision,
   ProgressEvent,
   ProjectDetail,
   ProjectSummary,
   RenderRecord,
+  RestoreReport,
   SecretStatus,
   YouTubeConnectionStatus
 } from '@shared/types';
@@ -38,6 +41,11 @@ const api = {
   },
   diagnostics: {
     run: (): Promise<DiagnosticsReport> => ipcRenderer.invoke(IPC.diagnosticsRun)
+  },
+  backups: {
+    create: (): Promise<BackupRecord> => ipcRenderer.invoke(IPC.backupCreate),
+    list: (): Promise<BackupRecord[]> => ipcRenderer.invoke(IPC.backupList),
+    restore: (path?: string): Promise<RestoreReport | null> => ipcRenderer.invoke(IPC.backupRestore, path)
   },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.settingsGet),
@@ -64,7 +72,9 @@ const api = {
       assetId: string;
       patch: Record<string, unknown>;
       reason?: string;
-    }) => ipcRenderer.invoke(IPC.catalogUpdateAsset, request)
+    }) => ipcRenderer.invoke(IPC.catalogUpdateAsset, request),
+    revisions: (assetId: string): Promise<MetadataRevision[]> => ipcRenderer.invoke(IPC.catalogRevisions, assetId),
+    revertRevision: (revisionId: string) => ipcRenderer.invoke(IPC.catalogRevertRevision, revisionId)
   },
   projects: {
     list: (): Promise<ProjectSummary[]> => ipcRenderer.invoke(IPC.projectsList),

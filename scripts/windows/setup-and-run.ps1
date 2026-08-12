@@ -83,7 +83,7 @@ try {
 
   $package = Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json
   if (-not $package.dependencies -or -not $package.devDependencies -or -not $package.devDependencies.electron) {
-    throw 'This source package is incomplete because required npm dependencies are missing from package.json. Download the corrected alpha.2 package.'
+    throw 'This source package is incomplete because required npm dependencies are missing from package.json. Download the complete alpha.3 package.'
   }
 
   Invoke-LoggedCommand -Executable $nodeCommand.Source -Arguments @('scripts/preflight.mjs', '--before-install') -Label 'Preflight check'

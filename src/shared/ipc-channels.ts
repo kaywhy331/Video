@@ -1,6 +1,9 @@
 export const IPC = {
   bootstrap: 'app:bootstrap',
   diagnosticsRun: 'diagnostics:run',
+  backupCreate: 'backup:create',
+  backupList: 'backup:list',
+  backupRestore: 'backup:restore',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   secretsUpdate: 'secrets:update',
@@ -12,6 +15,8 @@ export const IPC = {
   catalogStats: 'catalog:stats',
   catalogCoverage: 'catalog:coverage',
   catalogUpdateAsset: 'catalog:update-asset',
+  catalogRevisions: 'catalog:revisions',
+  catalogRevertRevision: 'catalog:revert-revision',
   projectsList: 'projects:list',
   projectGet: 'project:get',
   projectCreateAutopilot: 'project:create-autopilot',
