@@ -4,7 +4,7 @@ Generated: 2026-08-12T13:04:46-07:00 (America/Los_Angeles)
 
 ## Outcome
 
-The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing and semantic footage verification implemented. Full local source validation passes, including real FFmpeg media operations. GitHub Actions evidence for this branch remains pending publication. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
+The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing and semantic footage verification implemented. Full local source validation and the semantic implementation's GitHub Actions run pass, including real FFmpeg media operations and Windows packaging. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
 
 ## Local validation
 
@@ -23,13 +23,13 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with a
 
 ## GitHub Actions validation
 
-The last merged `main` run [31627007086](https://github.com/kaywhy331/Video/actions/runs/31627007086) passed before this semantic milestone. Branch CI evidence is pending publication.
+PR run [31636652585](https://github.com/kaywhy331/Video/actions/runs/31636652585) passed for semantic implementation commit `0c9068f` (GitHub pull-request merge ref `8ed45f5`):
 
 | Job | Result |
 |---|---|
-| Prior `main` Linux `validate` | Passed |
-| Prior `main` Windows `package-windows` | Passed |
-| This semantic branch | Pending |
+| Linux `validate` | Passed in 40 seconds |
+| Windows `package-windows` | Passed in 5 minutes 30 seconds |
+| Unsigned NSIS/ZIP workflow artifact | Uploaded; 512,279,275 bytes; retained through 2026-08-26 |
 
 This proves the Windows packages can be produced by the hosted runner. It does not replace a clean-machine installation and runtime test.
 
