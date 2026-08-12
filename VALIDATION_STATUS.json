@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-12T14:29:35Z",
+  "generated_at": "2026-08-12T14:37:36Z",
   "release": "0.1.0-alpha.3",
   "preflight_source_check": "passed",
   "full_typescript_typecheck": "passed",
@@ -10,7 +10,8 @@
   "electron_vite_bundle": "passed",
   "git_diff_check": "passed",
   "migration_source_resource_parity": "passed",
-  "windows_ci_packaging": "pending_github_actions",
+  "github_actions_linux_validate": "passed_run_31607257297",
+  "windows_ci_packaging": "passed_unsigned_nsis_zip_run_31607257297",
   "windows_clean_machine_runtime": "unverified",
   "five_video_pilot": "unverified",
   "live_envato_workflow": "unverified",

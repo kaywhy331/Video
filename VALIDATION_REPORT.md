@@ -1,6 +1,6 @@
 # VideoFactory Desktop alpha.3 — Validation Report
 
-Generated: 2026-08-12T07:29:35-07:00 (America/Los_Angeles)
+Generated: 2026-08-12T07:37:36-07:00 (America/Los_Angeles)
 
 ## Outcome
 
@@ -19,6 +19,18 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3. Local 
 | Source/resource migration parity | Passed |
 | Electron/Vite main, preload, renderer build | Passed |
 | `git diff --check` | Passed |
+
+## GitHub Actions validation
+
+PR run [31607257297](https://github.com/kaywhy331/Video/actions/runs/31607257297) passed on commit `aeedb52`:
+
+| Job | Result |
+|---|---|
+| Linux `validate` | Passed |
+| Windows `package-windows` | Passed |
+| Unsigned NSIS/ZIP workflow artifact | Uploaded; 512,239,541 bytes before release extraction |
+
+This proves the Windows packages can be produced by the hosted runner. It does not replace a clean-machine installation and runtime test.
 
 ## Validated changes
 
