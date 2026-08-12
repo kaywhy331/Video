@@ -115,6 +115,31 @@ function addReadyMedia(db: AppDatabase, assetId: string): void {
       created_at, updated_at
     ) VALUES(?, 'project-1', ?, 'VERIFIED', 'YT-TEST-0001', ?, ?)
   `).run(`license-${assetId}`, assetId, now, now);
+  db.raw.prepare(`
+    INSERT INTO footage_verifications(
+      id, project_id, scene_id, asset_id, asset_file_id, provider, model,
+      input_hash, status, geography_status, semantic_status, confidence,
+      assessment_json, evidence_json, created_at
+    ) VALUES(?, 'project-1', 'scene-1', ?, ?, 'test', 'test', ?,
+      'verified', 'match', 'not_required', 1, '{}', '{}', ?)
+  `).run(
+    `verification-${assetId}`,
+    assetId,
+    `file-${assetId}`,
+    `verification-input-${assetId}`,
+    now
+  );
+}
+
+function removeSemanticReceipt(db: AppDatabase, assetId: string): void {
+  db.raw.prepare('DELETE FROM footage_verifications WHERE asset_id = ?').run(assetId);
+}
+
+function setSemanticStatus(db: AppDatabase, assetId: string, status: 'uncertain' | 'error'): void {
+  db.raw.prepare(`
+    UPDATE footage_verifications SET status = ?, geography_status = 'unknown',
+      semantic_status = 'unknown' WHERE asset_id = ?
+  `).run(status, assetId);
 }
 
 describe('automated repair service', () => {
@@ -178,6 +203,43 @@ describe('automated repair service', () => {
     expect(db.raw.prepare(`
       SELECT selected_asset_id, verification_state FROM project_scenes WHERE id = 'scene-1'
     `).get()).toEqual({ selected_asset_id: 'primary', verification_state: 'rejected' });
+    db.close();
+  });
+
+  it('does not promote technically safe licensed media without a semantic receipt', () => {
+    const { db, repair } = createDatabase();
+    addAsset(db, 'primary');
+    addAsset(db, 'alternate', { local: true });
+    addScene(db);
+    addCandidate(db, 'primary', 1, 'selected');
+    addCandidate(db, 'alternate', 2);
+    addReadyMedia(db, 'alternate');
+    removeSemanticReceipt(db, 'alternate');
+
+    expect(repair.routeFootageFailure('project-1', 'scene-1', 'NO_SAFE_SEGMENT'))
+      .toMatchObject({ status: 'waiting_acquisition', replacementAssetId: 'alternate' });
+    expect(db.raw.prepare(`
+      SELECT selected_asset_id, verification_state FROM project_scenes WHERE id = 'scene-1'
+    `).get()).toEqual({ selected_asset_id: 'primary', verification_state: 'rejected' });
+    db.close();
+  });
+
+  it('does not leave a terminally uncertain alternate waiting forever', () => {
+    const { db, repair } = createDatabase();
+    addAsset(db, 'primary');
+    addAsset(db, 'alternate', { local: true });
+    addScene(db);
+    addCandidate(db, 'primary', 1, 'selected');
+    addCandidate(db, 'alternate', 2);
+    addReadyMedia(db, 'alternate');
+    setSemanticStatus(db, 'alternate', 'uncertain');
+
+    const route = repair.routeFootageFailure('project-1', 'scene-1', 'NO_SAFE_SEGMENT');
+
+    expect(route).toMatchObject({ status: 'operator_required', replacementAssetId: null });
+    expect(db.raw.prepare(`
+      SELECT status FROM shot_candidates WHERE asset_id = 'alternate'
+    `).get()).toEqual({ status: 'rejected' });
     db.close();
   });
 

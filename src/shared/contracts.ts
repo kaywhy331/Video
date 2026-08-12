@@ -49,6 +49,10 @@ export const SettingsPatchSchema = z.object({
   llmProvider: z.enum(['mock', 'openai_compatible']).optional(),
   llmBaseUrl: z.string().url().max(2_000).optional(),
   llmModel: z.string().trim().min(1).max(200).optional(),
+  visionProvider: z.enum(['disabled', 'openai_compatible']).optional(),
+  visionBaseUrl: z.string().url().max(2_000).optional(),
+  visionModel: z.string().trim().min(1).max(200).optional(),
+  visionMinimumConfidence: z.number().min(0.5).max(0.99).optional(),
   youtubeCategoryId: z.string().regex(/^\d{1,4}$/).optional(),
   youtubePlaylistId: z.string().max(200).optional(),
   youtubePrivacy: z.literal('private').optional(),
@@ -83,10 +87,35 @@ export const ImportRequestSchema = z.object({
 
 export const SecretPatchSchema = z.object({
   llmApiKey: z.string().optional(),
+  visionApiKey: z.string().optional(),
   httpTtsApiKey: z.string().optional(),
   youtubeClientId: z.string().optional(),
   youtubeClientSecret: z.string().optional(),
   youtubeApiKey: z.string().optional()
+}).strict();
+
+const VisionRequirementAssessmentSchema = z.object({
+  requirement: z.string().trim().min(1).max(250),
+  present: z.boolean().nullable(),
+  confidence: z.number().min(0).max(1),
+  evidence: z.string().trim().max(1_000)
+}).strict();
+
+export const VisionFootageAssessmentSchema = z.object({
+  geography: z.object({
+    verdict: z.enum(['match', 'mismatch', 'unknown']),
+    confidence: z.number().min(0).max(1),
+    country: z.string().trim().max(120).nullable(),
+    city: z.string().trim().max(120).nullable(),
+    location: z.string().trim().max(250).nullable(),
+    granularity: z.enum(['country', 'region', 'city', 'neighborhood', 'landmark', 'feature', 'unknown']),
+    evidence: z.array(z.string().trim().max(1_000)).max(12)
+  }).strict(),
+  objects: z.array(VisionRequirementAssessmentSchema).max(40),
+  activities: z.array(VisionRequirementAssessmentSchema).max(40),
+  disallowedContent: z.array(z.string().trim().max(500)).max(20),
+  technicalConcerns: z.array(z.string().trim().max(500)).max(20),
+  summary: z.string().trim().min(1).max(2_000)
 }).strict();
 
 export const PathChoiceRequestSchema = z.object({
@@ -140,6 +169,7 @@ export const ExceptionResolveSchema = z.object({
   id: IdSchema,
   resolution: z.record(z.string().max(100), z.unknown()).optional()
 }).strict();
+export const SemanticVerificationRetrySchema = z.object({ exceptionId: IdSchema }).strict();
 export const BackupRestoreSchema = FilePathSchema.optional();
 export const ExternalUrlSchema = z.string().url().max(2_000);
 export const OpenPathSchema = FilePathSchema;

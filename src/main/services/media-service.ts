@@ -10,7 +10,12 @@ import {
 } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import type { AppDatabase } from '../database/database';
-import type { AppSettings, AssetFile, MediaSegment } from '@shared/types';
+import type {
+  AppSettings,
+  AssetFile,
+  MediaSegment,
+  SemanticVerificationRetryResult
+} from '@shared/types';
 import { calculateEffectiveResolution, generateSlidingWindows } from '@shared/media-policy';
 import {
   intervalCoverage,
@@ -23,6 +28,7 @@ import { resolveFfmpeg, resolveFfprobe } from '../tool-paths';
 import { requireSuccess, runProcess } from './process-utils';
 import { ProjectStateService } from './project-state-service';
 import { RepairService } from './repair-service';
+import type { FootageVerificationService } from './footage-verification-service';
 
 interface ProbeStream {
   codec_type?: string;
@@ -113,6 +119,7 @@ export class MediaService {
   constructor(
     private readonly db: AppDatabase,
     private readonly settings: () => AppSettings,
+    private readonly footageVerification: FootageVerificationService,
     private readonly progress: (projectId: string | null, phase: string, progress: number, message: string) => void
   ) {
     this.projectStates = new ProjectStateService(db);
@@ -267,7 +274,7 @@ export class MediaService {
         throw new Error(`This physical file is already assigned to a different catalog asset and was quarantined at ${quarantinePath}.`);
       }
       if (existsSync(detectedPath)) unlinkSync(detectedPath);
-      this.attachExisting(acquisitionId, assetId, projectId, file.id);
+      await this.attachExisting(acquisitionId, assetId, projectId, file.id);
       return file;
     }
 
@@ -386,7 +393,6 @@ export class MediaService {
           operator_attested_at = COALESCE(operator_attested_at, ?), updated_at = ?
         WHERE project_id = ? AND asset_id = ?
       `).run(now, now, projectId, assetId);
-      this.assignSegments(projectId, assetId, fileId, segments);
       this.recordMetadataConflict(acquisition, projectId, assetId, {
         width: videoWidth,
         height: videoHeight,
@@ -395,29 +401,34 @@ export class MediaService {
       });
     });
     transaction();
+    this.progress(projectId, 'semantic-verification', 0.78, 'Verifying footage against current scene contracts');
+    await this.assignSegments(projectId, assetId, fileId, segments);
     this.repairs.reconcileFootageRepairs(projectId);
-    this.progress(projectId, 'verified', 0.9, 'Footage ingested and candidate segments created');
+    this.progress(projectId, 'verification-complete', 0.9, 'Footage ingest and scene-contract verification completed');
     this.updateProjectAfterAcquisition(projectId);
     return toAssetFile(this.db.raw.prepare('SELECT * FROM asset_files WHERE id = ?').get(fileId) as Record<string, unknown>);
   }
 
-  private assignSegments(
+  private async assignSegments(
     projectId: string,
     assetId: string,
     fileId: string,
     segments: MediaSegment[]
-  ): void {
+  ): Promise<void> {
     const scenes = this.db.raw.prepare(`
-      SELECT id, ordinal FROM project_scenes
-      WHERE project_id = ? AND selected_asset_id = ?
+      SELECT DISTINCT s.id, s.ordinal, s.selected_asset_id
+      FROM project_scenes s
+      LEFT JOIN shot_candidates c ON c.scene_id = s.id AND c.asset_id = ?
+      WHERE s.project_id = ? AND (s.selected_asset_id = ? OR c.asset_id IS NOT NULL)
       ORDER BY ordinal
-    `).all(projectId, assetId) as Array<{ id: string; ordinal: number }>;
+    `).all(assetId, projectId, assetId) as Array<{ id: string; ordinal: number; selected_asset_id: string | null }>;
+    const selectedScenes = scenes.filter(scene => scene.selected_asset_id === assetId);
     const eligible = segments.filter(segment =>
       segment.eligible1080p && segment.blackFrameRisk < 0.35 && segment.freezeRisk < 0.5
     );
     if (!eligible.length) {
       const now = new Date().toISOString();
-      for (const scene of scenes) {
+      for (const scene of selectedScenes) {
         const route = this.repairs.routeFootageFailure(projectId, scene.id, 'NO_SAFE_SEGMENT', {
           assetId,
           fileId,
@@ -436,9 +447,56 @@ export class MediaService {
       return;
     }
 
-    scenes.forEach((scene, index) => {
+    const decisions = new Map<string, Awaited<ReturnType<FootageVerificationService['verifyScene']>>>();
+    for (const scene of scenes) {
+      const decision = await this.footageVerification.verifyScene(projectId, scene.id, assetId, fileId);
+      decisions.set(scene.id, decision);
+      const pendingAlternate = this.db.raw.prepare(`
+        SELECT 1 FROM repair_attempts
+        WHERE project_id = ? AND scene_id = ? AND replacement_asset_id = ?
+          AND status = 'waiting_acquisition'
+        LIMIT 1
+      `).get(projectId, scene.id, assetId);
+      if (
+        pendingAlternate
+        && (decision.status === 'provider_required' || decision.status === 'error')
+      ) {
+        this.recordSemanticVerificationBlocker(projectId, scene, assetId, fileId, decision);
+      }
+    }
+
+    selectedScenes.forEach((scene, index) => {
       const segment = eligible[index % eligible.length];
       if (!segment) return;
+      const decision = decisions.get(scene.id);
+      if (decision?.status !== 'verified') {
+        if (!decision || decision.status === 'provider_required' || decision.status === 'error') {
+          this.recordSemanticVerificationBlocker(projectId, scene, assetId, fileId, decision);
+          this.db.raw.prepare(`
+            UPDATE project_scenes SET verification_state = 'rejected', updated_at = ? WHERE id = ?
+          `).run(new Date().toISOString(), scene.id);
+          return;
+        }
+        const route = this.repairs.routeFootageFailure(
+          projectId,
+          scene.id,
+          'SEMANTIC_FOOTAGE_VERIFICATION',
+          {
+            assetId,
+            fileId,
+            sceneId: scene.id,
+            sceneOrdinal: scene.ordinal,
+            verificationId: decision?.id ?? null,
+            verificationStatus: decision?.status ?? 'error',
+            verificationReasons: decision?.reasons ?? ['No semantic verification decision was produced.']
+          }
+        );
+        if (route.status === 'verified') return;
+        this.db.raw.prepare(`
+          UPDATE project_scenes SET verification_state = ?, updated_at = ? WHERE id = ?
+        `).run(route.status === 'waiting_acquisition' ? 'download_required' : 'rejected', new Date().toISOString(), scene.id);
+        return;
+      }
       this.db.raw.prepare(`
         UPDATE project_scenes SET
           selected_file_id = ?,
@@ -455,6 +513,46 @@ export class MediaService {
         scene.id
       );
     });
+  }
+
+  private recordSemanticVerificationBlocker(
+    projectId: string,
+    scene: { id: string; ordinal: number },
+    assetId: string,
+    fileId: string,
+    decision?: Awaited<ReturnType<FootageVerificationService['verifyScene']>>
+  ): void {
+    const existing = this.db.raw.prepare(`
+      SELECT id FROM exceptions
+      WHERE project_id = ? AND status = 'OPEN' AND code = 'SEMANTIC_PROVIDER_REQUIRED'
+        AND json_extract(evidence_json, '$.sceneId') = ?
+      LIMIT 1
+    `).get(projectId, scene.id);
+    if (existing) return;
+    this.db.raw.prepare(`
+      INSERT INTO exceptions(
+        id, project_id, severity, stage, code, title, message, evidence_json,
+        recommended_action, safe_alternatives_json, status, created_at
+      ) VALUES(?, ?, 'BLOCKER', 'media', 'SEMANTIC_PROVIDER_REQUIRED',
+        'Footage semantic verification is unavailable',
+        'This scene cannot be marked verified without a valid semantic provider result or human-verified scene evidence.',
+        ?, 'Configure the semantic vision provider and retry verification, or human-verify the footage/place evidence.',
+        ?, 'OPEN', ?)
+    `).run(
+      randomUUID(),
+      projectId,
+      JSON.stringify({
+        sceneId: scene.id,
+        sceneOrdinal: scene.ordinal,
+        assetId,
+        fileId,
+        verificationId: decision?.id ?? null,
+        verificationStatus: decision?.status ?? 'error',
+        reasons: decision?.reasons ?? ['No semantic verification decision was produced.']
+      }),
+      JSON.stringify(['Configure provider and retry', 'Human-verify evidence', 'Use a truthful graphic treatment']),
+      new Date().toISOString()
+    );
   }
 
   private recordMetadataConflict(
@@ -486,7 +584,7 @@ export class MediaService {
     }), new Date().toISOString());
   }
 
-  private attachExisting(acquisitionId: string, assetId: string, projectId: string, fileId: string): void {
+  private async attachExisting(acquisitionId: string, assetId: string, projectId: string, fileId: string): Promise<void> {
     const rows = this.db.raw.prepare(`
       SELECT * FROM media_segments WHERE asset_file_id = ? ORDER BY quality_score DESC
     `).all(fileId) as Array<Record<string, unknown>>;
@@ -515,11 +613,226 @@ export class MediaService {
           mapping_confidence = 1, updated_at = ?, error = NULL
         WHERE id = ?
       `).run(fileId, now, acquisitionId);
-      this.assignSegments(projectId, assetId, fileId, segments);
     });
     transaction();
+    await this.assignSegments(projectId, assetId, fileId, segments);
     this.repairs.reconcileFootageRepairs(projectId);
     this.updateProjectAfterAcquisition(projectId);
+  }
+
+  async verifyLocalAsset(projectId: string, assetId: string, fileId: string): Promise<void> {
+    const rows = this.db.raw.prepare(`
+      SELECT * FROM media_segments WHERE asset_file_id = ? ORDER BY quality_score DESC, start_ms
+    `).all(fileId) as Array<Record<string, unknown>>;
+    const segments: MediaSegment[] = rows.map(row => ({
+      id: String(row.id),
+      assetFileId: String(row.asset_file_id),
+      startMs: Number(row.start_ms),
+      endMs: Number(row.end_ms),
+      durationMs: Number(row.duration_ms),
+      qualityScore: Number(row.quality_score),
+      blackFrameRisk: Number(row.black_frame_risk),
+      freezeRisk: Number(row.freeze_risk),
+      effectiveWidth: Number(row.effective_width),
+      effectiveHeight: Number(row.effective_height),
+      eligible1080p: Boolean(row.eligible_1080p),
+      eligible4k: Boolean(row.eligible_4k),
+      previewPath: row.preview_path ? String(row.preview_path) : null
+    }));
+    await this.assignSegments(projectId, assetId, fileId, segments);
+    this.repairs.reconcileFootageRepairs(projectId);
+    this.updateProjectAfterAcquisition(projectId);
+  }
+
+  async recoverPendingSemanticAlternates(): Promise<number> {
+    const rows = this.db.raw.prepare(`
+      SELECT DISTINCT r.project_id, r.scene_id, r.replacement_asset_id,
+        coalesce(q.mapped_file_id, a.local_file_id) AS file_id
+      FROM repair_attempts r
+      JOIN assets a ON a.id = r.replacement_asset_id
+      LEFT JOIN acquisition_items q
+        ON q.project_id = r.project_id AND q.asset_id = r.replacement_asset_id
+      WHERE r.status = 'waiting_acquisition'
+        AND r.scene_id IS NOT NULL
+        AND coalesce(q.mapped_file_id, a.local_file_id) IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM footage_verifications v
+          WHERE v.scene_id = r.scene_id
+            AND v.asset_file_id = coalesce(q.mapped_file_id, a.local_file_id)
+        )
+      ORDER BY r.project_id, r.scene_id
+    `).all() as Array<Record<string, unknown>>;
+    for (const row of rows) {
+      await this.verifyLocalAsset(
+        String(row.project_id),
+        String(row.replacement_asset_id),
+        String(row.file_id)
+      );
+    }
+    return rows.length;
+  }
+
+  async retrySemanticVerification(exceptionId: string): Promise<SemanticVerificationRetryResult> {
+    const exception = this.db.raw.prepare(`
+      SELECT * FROM exceptions WHERE id = ?
+    `).get(exceptionId) as Record<string, unknown> | undefined;
+    if (!exception) throw new Error('Semantic verification exception not found.');
+    if (exception.code !== 'SEMANTIC_PROVIDER_REQUIRED') {
+      throw new Error('Only semantic provider exceptions support this retry action.');
+    }
+    if (exception.status !== 'OPEN') throw new Error('This semantic verification exception is already closed.');
+    const evidence = (() => {
+      try {
+        const parsed = JSON.parse(String(exception.evidence_json ?? '{}'));
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? parsed as Record<string, unknown>
+          : {};
+      } catch {
+        return {};
+      }
+    })();
+    const projectId = String(exception.project_id ?? '');
+    const sceneId = String(evidence.sceneId ?? '');
+    const assetId = String(evidence.assetId ?? '');
+    const fileId = String(evidence.fileId ?? '');
+    if (!projectId || !sceneId || !assetId || !fileId) {
+      throw new Error('Semantic verification exception is missing its persisted scene/file evidence.');
+    }
+    const target = this.db.raw.prepare(`
+      SELECT 1
+      FROM project_scenes s
+      JOIN asset_files f ON f.id = ? AND f.asset_id = ?
+      WHERE s.id = ? AND s.project_id = ?
+    `).get(fileId, assetId, sceneId, projectId);
+    if (!target) throw new Error('The semantic verification target no longer exists.');
+
+    this.progress(projectId, 'semantic-verification-retry', 0.5, 'Retrying semantic footage verification');
+    const decision = await this.footageVerification.verifyScene(projectId, sceneId, assetId, fileId);
+    let exceptionResolved = false;
+    if (decision.status === 'verified') {
+      const segment = this.bestEligibleSegment(fileId);
+      if (!segment) throw new Error('Semantic evidence passed, but no technically safe segment remains for this footage.');
+      const now = new Date().toISOString();
+      this.db.raw.transaction(() => {
+        this.db.raw.prepare(`
+          UPDATE project_scenes SET selected_file_id = ?, selected_segment_id = ?,
+            target_duration_ms = min(target_duration_ms, ?), verification_state = 'verified',
+            updated_at = ?
+          WHERE id = ? AND project_id = ? AND selected_asset_id = ?
+        `).run(fileId, segment.id, Math.min(7000, segment.durationMs), now, sceneId, projectId, assetId);
+        this.db.raw.prepare(`
+          UPDATE exceptions SET status = 'RESOLVED', resolved_at = ?, resolution_json = ?
+          WHERE id = ? AND status = 'OPEN'
+        `).run(now, JSON.stringify({ method: 'semantic_verification_retry', verificationId: decision.id }), exceptionId);
+        this.db.raw.prepare(`
+          INSERT INTO audit_log(
+            project_id, action, actor, entity_type, entity_id,
+            before_json, after_json, metadata_json, created_at
+          ) VALUES(?, 'semantic_verification.retry_succeeded', 'operator', 'scene', ?, ?, ?, ?, ?)
+        `).run(
+          projectId,
+          sceneId,
+          JSON.stringify({ verificationState: 'rejected', exceptionStatus: 'OPEN' }),
+          JSON.stringify({ verificationState: 'verified', exceptionStatus: 'RESOLVED' }),
+          JSON.stringify({ exceptionId, verificationId: decision.id, assetId, fileId }),
+          now
+        );
+      })();
+      exceptionResolved = true;
+      this.repairs.reconcileFootageRepairs(projectId);
+      this.updateProjectAfterAcquisition(projectId);
+    } else if (decision.status !== 'provider_required' && decision.status !== 'error') {
+      const activeAlternate = this.db.raw.prepare(`
+        SELECT failure_code FROM repair_attempts
+        WHERE project_id = ? AND scene_id = ? AND replacement_asset_id = ?
+          AND status = 'waiting_acquisition'
+        ORDER BY attempt_number DESC LIMIT 1
+      `).get(projectId, sceneId, assetId) as { failure_code: string } | undefined;
+      const repairEvidence = {
+        assetId,
+        fileId,
+        sceneId,
+        verificationId: decision.id,
+        verificationStatus: decision.status,
+        verificationReasons: decision.reasons,
+        trigger: 'operator_retry'
+      };
+      const route = this.repairs.routeFootageFailure(
+        projectId,
+        sceneId,
+        activeAlternate?.failure_code ?? 'SEMANTIC_FOOTAGE_VERIFICATION',
+        repairEvidence
+      );
+      const now = new Date().toISOString();
+      this.db.raw.transaction(() => {
+        if (!activeAlternate && route.status !== 'verified') {
+          this.db.raw.prepare(`
+            UPDATE project_scenes SET verification_state = ?, updated_at = ? WHERE id = ?
+          `).run(route.status === 'waiting_acquisition' ? 'download_required' : 'rejected', now, sceneId);
+        }
+        this.db.raw.prepare(`
+          UPDATE exceptions SET status = 'RESOLVED', resolved_at = ?, resolution_json = ?
+          WHERE id = ? AND status = 'OPEN'
+        `).run(now, JSON.stringify({
+          method: 'semantic_provider_responded',
+          verificationId: decision.id,
+          verificationStatus: decision.status,
+          repairAttemptId: route.attemptId
+        }), exceptionId);
+      })();
+      exceptionResolved = true;
+      this.updateProjectAfterAcquisition(projectId);
+    } else {
+      this.db.raw.prepare(`
+        UPDATE exceptions SET evidence_json = ? WHERE id = ?
+      `).run(JSON.stringify({
+        ...evidence,
+        verificationId: decision.id,
+        verificationStatus: decision.status,
+        reasons: decision.reasons,
+        lastRetryAt: new Date().toISOString()
+      }), exceptionId);
+    }
+    const project = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as {
+      state: SemanticVerificationRetryResult['projectState'];
+    };
+    this.progress(projectId, 'semantic-verification-retry', 1, exceptionResolved
+      ? 'Semantic footage verification passed'
+      : 'Semantic footage verification remains blocked');
+    return {
+      exceptionId,
+      projectId,
+      sceneId,
+      verificationId: decision.id,
+      status: decision.status,
+      reasons: decision.reasons,
+      exceptionResolved,
+      projectState: project.state
+    };
+  }
+
+  private bestEligibleSegment(fileId: string): MediaSegment | null {
+    const row = this.db.raw.prepare(`
+      SELECT * FROM media_segments
+      WHERE asset_file_id = ? AND eligible_1080p = 1
+        AND black_frame_risk < 0.35 AND freeze_risk < 0.5
+      ORDER BY quality_score DESC, start_ms, id LIMIT 1
+    `).get(fileId) as Record<string, unknown> | undefined;
+    return row ? {
+      id: String(row.id),
+      assetFileId: String(row.asset_file_id),
+      startMs: Number(row.start_ms),
+      endMs: Number(row.end_ms),
+      durationMs: Number(row.duration_ms),
+      qualityScore: Number(row.quality_score),
+      blackFrameRisk: Number(row.black_frame_risk),
+      freezeRisk: Number(row.freeze_risk),
+      effectiveWidth: Number(row.effective_width),
+      effectiveHeight: Number(row.effective_height),
+      eligible1080p: Boolean(row.eligible_1080p),
+      eligible4k: Boolean(row.eligible_4k),
+      previewPath: row.preview_path ? String(row.preview_path) : null
+    } : null;
   }
 
   private updateProjectAfterAcquisition(projectId: string): void {
@@ -535,7 +848,9 @@ export class MediaService {
       `).get(projectId) as { total: number; complete: number | null };
       const progress = 0.27 + 0.25 * (Number(counts.complete ?? 0) / Math.max(1, counts.total));
       const state = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as { state: import('@shared/types').ProjectState };
-      if (state.state === 'INGESTING_MEDIA') {
+      if (state.state === 'BLOCKED_EXCEPTION') {
+        this.projectStates.resume(projectId, 'Semantic provider prerequisite cleared; pending acquisitions remain', 'WAITING_FOR_DOWNLOADS');
+      } else if (state.state === 'INGESTING_MEDIA') {
         this.projectStates.transition(projectId, 'WAITING_FOR_DOWNLOADS', {
           progress,
           reason: 'Additional mandatory acquisition files are still pending',
@@ -556,9 +871,16 @@ export class MediaService {
     `).get(projectId) as { rejected: number | null; unresolved: number | null };
     const rejectedCount = Number(unresolved.rejected ?? 0);
     const unresolvedCount = Number(unresolved.unresolved ?? 0);
-    const waitingRepair = unresolvedCount > 0 && rejectedCount === 0;
+    const providerBlockers = this.db.raw.prepare(`
+      SELECT count(*) AS count FROM exceptions
+      WHERE project_id = ? AND status = 'OPEN' AND code = 'SEMANTIC_PROVIDER_REQUIRED'
+    `).get(projectId) as { count: number };
+    const providerBlockerCount = Number(providerBlockers.count ?? 0);
+    const waitingRepair = unresolvedCount > 0 && rejectedCount === 0 && providerBlockerCount === 0;
     const current = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as { state: import('@shared/types').ProjectState };
-    if (current.state === 'WAITING_FOR_DOWNLOADS') {
+    if (current.state === 'BLOCKED_EXCEPTION' && providerBlockerCount === 0) {
+      this.projectStates.resume(projectId, 'Previously blocked footage evidence is ready for verification', 'VERIFYING_FOOTAGE');
+    } else if (current.state === 'WAITING_FOR_DOWNLOADS') {
       this.projectStates.transition(projectId, 'INGESTING_MEDIA', {
         progress: 0.48,
         reason: 'All mandatory acquisition files are mapped and ingested'
@@ -575,10 +897,16 @@ export class MediaService {
         progress: unresolvedCount ? 0.5 : 0.53,
         reason: waitingRepair
           ? 'A verified alternate was queued for failed footage'
+          : providerBlockerCount
+            ? 'Semantic verification requires a configured and responsive provider'
           : rejectedCount
             ? 'One or more scenes exhausted safe footage repair'
             : 'Every scene has a verified visual treatment',
-        prerequisites: { rejectedScenes: rejectedCount, unresolvedScenes: unresolvedCount }
+        prerequisites: {
+          rejectedScenes: rejectedCount,
+          unresolvedScenes: unresolvedCount,
+          semanticProviderBlockers: providerBlockerCount
+        }
       }
     );
     if (!unresolvedCount) {
@@ -604,6 +932,7 @@ export class MediaService {
     const existing = this.db.raw.prepare(`
       SELECT id FROM exceptions
       WHERE project_id = ? AND status = 'OPEN' AND stage = 'media'
+        AND code = 'NO_SAFE_FOOTAGE_ALTERNATE'
         AND json_extract(evidence_json, '$.sceneId') = ?
       LIMIT 1
     `).get(projectId, sceneId);

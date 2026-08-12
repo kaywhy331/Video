@@ -9,6 +9,7 @@ import { ProjectStateService } from './project-state-service';
 import { assertPlanningCapacity, evaluateCoverage } from './planning-policy';
 import { RepairService } from './repair-service';
 import { shouldAcquireAlternate } from '@shared/repair-policy';
+import type { PlaceService } from './place-service';
 
 function jsonArray(value: unknown): string[] {
   if (!value) return [];
@@ -54,6 +55,7 @@ function sceneFromRow(row: Record<string, unknown>): ProjectScene {
     requiredCountry: row.required_country ? String(row.required_country) : null,
     requiredCity: row.required_city ? String(row.required_city) : null,
     requiredLocation: row.required_location ? String(row.required_location) : null,
+    requiredPlaceId: row.required_place_id ? String(row.required_place_id) : null,
     requiredGranularity: row.required_granularity as ProjectScene['requiredGranularity'],
     requiredObjects: jsonArray(row.required_objects_json),
     requiredActivities: jsonArray(row.required_activities_json),
@@ -79,7 +81,8 @@ export class ProjectService {
     private readonly db: AppDatabase,
     private readonly catalog: CatalogService,
     private readonly ai: AiService,
-    private readonly settings: () => AppSettings
+    private readonly settings: () => AppSettings,
+    private readonly places: PlaceService
   ) {
     this.states = new ProjectStateService(db);
     this.repairs = new RepairService(db);
@@ -411,10 +414,10 @@ export class ProjectService {
         INSERT INTO project_scenes(
           id, project_id, script_version_id, ordinal, chapter, narration,
           target_duration_ms, required_country, required_city, required_location,
-          required_granularity, required_objects_json, required_activities_json,
+          required_granularity, required_place_id, required_objects_json, required_activities_json,
           preferred_shots_json, visual_treatment, selected_asset_id, selected_file_id,
           score, score_explanation_json, verification_state, created_at, updated_at
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const transaction = this.db.raw.transaction(() => {
@@ -456,6 +459,12 @@ export class ProjectService {
             });
           }
           const sceneId = randomUUID();
+          const requiredPlaceId = this.places.ensureHierarchy({
+            country: scene.requiredCountry,
+            city: scene.requiredCity,
+            location: scene.requiredLocation,
+            granularity: scene.requiredGranularity
+          })?.id ?? null;
           insertScene.run(
             sceneId,
             projectId,
@@ -468,6 +477,7 @@ export class ProjectService {
             scene.requiredCity,
             scene.requiredLocation,
             scene.requiredGranularity,
+            requiredPlaceId,
             JSON.stringify(scene.requiredObjects),
             JSON.stringify(scene.requiredActivities),
             JSON.stringify(scene.preferredShots),

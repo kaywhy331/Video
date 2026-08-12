@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-12 after the automated repair-routing milestone.
+Updated 2026-08-12 after the semantic footage-verification milestone.
 
 Status meanings:
 
@@ -15,15 +15,15 @@ Status meanings:
 |---|---|---|
 | Desktop shell and sandbox | Implemented + tested | Electron/Vite production bundle, IPC/security tests |
 | Clean Windows install/runtime | Implemented, external validation pending | CI builds unsigned NSIS/ZIP; clean-machine launch remains unrun |
-| SQLite schema and migration | Implemented + tested | Migrations 001/002/003, integrity and reopen/idempotency tests |
+| SQLite schema and migration | Implemented + tested | Migrations 001/002/003/004, integrity and reopen/idempotency tests |
 | Catalog XLSX/CSV import and search | Implemented + tested | Existing import/normalization/geography tests; 26K-row UI performance not benchmarked |
 | Metadata revisions and undo | Implemented + tested | Revision persistence and UI; bulk edit/merge/split/export remain partial |
-| Geographic evidence model | Partial | Exact-location metadata gate exists; canonical place IDs/evidence A–E are not complete |
+| Geographic evidence model | Partial | Canonical hierarchy, parent-aware lookup, imported/vision/human assertions, evidence precedence, and exact-location hard gates are implemented; geocoder/coordinate and broader alias workflows remain |
 | Topic opportunity engine | Partial | Explainable catalog coverage, queue, spend, and duplicate gates; live demand/competition adapters absent |
 | Research and fact pack | Partial | Catalog-backed sources/claims and scene links; web research, freshness/conflict orchestration absent |
 | Script/storyboard pipeline | Partial | Provisional structured scripts are locked; full post-ingest rewrite and word alignment absent |
 | Acquisition and licensing | Implemented, external validation pending | Manual Envato handoff and project attestation; live account workflow unrun |
-| Media ingest and verification | Partial | Hashing, quarantine, FFprobe, conflict evidence, black/freeze analysis, rotation/no-upscale gates, ranked candidates, and bounded verified-alternate repair; semantic vision remains absent |
+| Media ingest and verification | Partial | Hashing, quarantine, FFprobe, conflict evidence, black/freeze analysis, rotation/no-upscale gates, scene-specific contact-sheet semantic verification, strict provider receipts, explicit retry, startup recovery, and bounded verified-alternate repair; expanded shot analysis/QC remain |
 | Narration | Partial | Windows SAPI plus visual-shot splitting; pronunciation, word timing, and section cache incomplete |
 | Captions | Implemented + tested | SRT and WebVTT generation; alignment is scene/shot based rather than word-aligned |
 | Render and media QC | Implemented + tested | Real FFmpeg fixtures plus classified failures, two-attempt smallest-safe output reroute, artifact versions, and repair receipts |
@@ -45,8 +45,9 @@ Status meanings:
 - narration splitting and source-duration fail-closed rules;
 - render concat ordering and two-pass output profile checks;
 - approval fingerprints, final-review gates, resumable-upload ranges, and caption reuse;
-- planning capacity, spend, coverage, and duplicate-topic gates.
-- ranked shot-candidate persistence, residual-risk alternate planning, late-bound geography/license/file/media checks, bounded alternate promotion, QC repair classification, and artifact-versioned retry/exhaustion.
+- planning capacity, spend, coverage, and duplicate-topic gates;
+- ranked shot-candidate persistence, residual-risk alternate planning, late-bound geography/license/file/media checks, bounded alternate promotion, QC repair classification, and artifact-versioned retry/exhaustion;
+- canonical place hierarchy/assertion precedence, strict contact-sheet-only vision contracts, cache and malformed-response handling, semantic receipt gates, explicit provider retry, and legacy alternate re-verification.
 
 ## Production qualification gates
 

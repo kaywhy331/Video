@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RefreshCw, RotateCcw } from 'lucide-react';
 import type { ExceptionRecord } from '@shared/types';
 import { Button, EmptyState, Panel, StatusPill } from '../components/ui';
 
@@ -33,6 +33,23 @@ export function ExceptionsView({
     }
   }
 
+  async function retrySemanticVerification(id: string): Promise<void> {
+    setBusy(id);
+    setError(null);
+    try {
+      const result = await window.videoFactory.exceptions.retrySemanticVerification(id);
+      if (!result.exceptionResolved) {
+        setError(`Verification remains blocked: ${result.reasons.join(' ')}`);
+      }
+      await load();
+      await onRefresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="view-stack">
       <div className="page-heading">
@@ -57,14 +74,24 @@ export function ExceptionsView({
                   <h3>{row.title}</h3>
                   <p>{row.message}</p>
                 </div>
-                <Button
-                  variant="secondary"
-                  busy={busy === row.id}
-                  disabled={['BLOCKER', 'HIGH'].includes(row.severity)}
-                  onClick={() => void resolve(row.id)}
-                >
-                  <CheckCircle2 size={15} /> {['BLOCKER', 'HIGH'].includes(row.severity) ? 'Repair required' : 'Acknowledge'}
-                </Button>
+                {row.code === 'SEMANTIC_PROVIDER_REQUIRED' ? (
+                  <Button
+                    variant="secondary"
+                    busy={busy === row.id}
+                    onClick={() => void retrySemanticVerification(row.id)}
+                  >
+                    <RotateCcw size={15} /> Retry verification
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    busy={busy === row.id}
+                    disabled={['BLOCKER', 'HIGH'].includes(row.severity)}
+                    onClick={() => void resolve(row.id)}
+                  >
+                    <CheckCircle2 size={15} /> {['BLOCKER', 'HIGH'].includes(row.severity) ? 'Repair required' : 'Acknowledge'}
+                  </Button>
+                )}
               </div>
               {row.recommendedAction ? (
                 <div className="recommended-action">

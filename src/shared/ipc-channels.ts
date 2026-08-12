@@ -36,6 +36,7 @@ export const IPC = {
   youtubeApprove: 'youtube:approve',
   exceptionsList: 'exceptions:list',
   exceptionResolve: 'exception:resolve',
+  semanticVerificationRetry: 'semantic-verification:retry',
   jobsList: 'jobs:list',
   jobsRetry: 'jobs:retry',
   mediaOpenPath: 'media:open-path',

@@ -20,11 +20,17 @@ import { FinalReviewService } from './services/final-review-service';
 import { ExceptionService } from './services/exception-service';
 import { BackupService } from './services/backup-service';
 import { IPC } from '@shared/ipc-channels';
+import { PlaceService } from './services/place-service';
+import { VisionService } from './services/vision-service';
+import { FootageVerificationService } from './services/footage-verification-service';
 
 export class AppContext {
   readonly db: AppDatabase;
   readonly logger: Logger;
   readonly secrets: SecretStore;
+  readonly places: PlaceService;
+  readonly vision: VisionService;
+  readonly footageVerification: FootageVerificationService;
   readonly catalog: CatalogService;
   readonly diagnostics: DiagnosticsService;
   readonly ai: AiService;
@@ -57,16 +63,26 @@ export class AppContext {
 
     this.logger = new Logger(join(this.settingsValue.dataRoot, 'logs', 'videofactory.jsonl'));
     this.secrets = new SecretStore(join(app.getPath('userData'), 'secrets.vf'));
-    this.catalog = new CatalogService(this.db);
+    this.places = new PlaceService(this.db);
+    this.places.syncAssetsMissingAssertions();
+    this.catalog = new CatalogService(this.db, this.places);
     this.jobs = new JobService(this.db);
     this.jobs.recoverInterrupted();
     this.exceptions = new ExceptionService(this.db);
     this.diagnostics = new DiagnosticsService(this.db, () => this.settingsValue, app.getVersion());
     this.ai = new AiService(this.db, this.secrets, () => this.settingsValue);
-    this.projects = new ProjectService(this.db, this.catalog, this.ai, () => this.settingsValue);
+    this.vision = new VisionService(this.db, this.secrets, () => this.settingsValue);
+    this.footageVerification = new FootageVerificationService(
+      this.db,
+      () => this.settingsValue,
+      this.places,
+      this.vision
+    );
+    this.projects = new ProjectService(this.db, this.catalog, this.ai, () => this.settingsValue, this.places);
     this.media = new MediaService(
       this.db,
       () => this.settingsValue,
+      this.footageVerification,
       (projectId, phase, progress, message) => {
         this.emitProgress({
           jobId: `media-${projectId ?? 'global'}`,
@@ -203,6 +219,7 @@ export class AppContext {
 
   async start(): Promise<void> {
     await this.watcher.start();
+    await this.media.recoverPendingSemanticAlternates();
     this.started = true;
     this.startBackupScheduler();
   }

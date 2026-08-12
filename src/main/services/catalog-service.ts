@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import * as XLSX from 'xlsx';
 import type { AppDatabase } from '../database/database';
+import type { PlaceService } from './place-service';
 import type {
   CatalogAsset,
   CatalogImportPreview,
@@ -167,7 +168,10 @@ interface NormalizedRow {
 }
 
 export class CatalogService {
-  constructor(private readonly db: AppDatabase) {}
+  constructor(
+    private readonly db: AppDatabase,
+    private readonly places: PlaceService
+  ) {}
 
   private readWorkbook(filePath: string): XLSX.WorkBook {
     return XLSX.readFile(filePath, {
@@ -473,6 +477,7 @@ export class CatalogService {
       }
     });
     transaction();
+    this.places.syncAssetsForImport(importId);
 
     if (!mapping.canonicalPageUrl) warnings.push('No URL column was detected.');
     if (!mapping.title) warnings.push('No title column was detected.');
@@ -708,6 +713,13 @@ export class CatalogService {
       `).run(JSON.stringify(overrides), now, assetId);
     });
     transaction();
+
+    if (changes.some(([key]) => [
+      'country', 'city', 'locationName', 'locationGranularity',
+      'locationConfidence', 'verificationStatus'
+    ].includes(key))) {
+      this.places.syncAsset(assetId, 'human');
+    }
 
     return toAsset(this.db.raw.prepare('SELECT * FROM assets WHERE id = ?').get(assetId) as Record<string, unknown>);
   }

@@ -6,7 +6,7 @@ VideoFactory Desktop is a single-user Windows application that turns a licensed 
 
 ## Current status
 
-The repository is a production-hardened alpha. The application builds and its local automated suite covers database migration, durable project/job state, IPC and path security, real FFmpeg analysis/rendering, backup/restore, approval fingerprints, and resumable-upload protocol helpers. It is not yet production-qualified because these external acceptance gates have not been performed:
+The repository is a production-hardened alpha. The application builds and its local automated suite covers database migration, durable project/job state, IPC and path security, canonical geographic evidence, scene-specific semantic footage verification, real FFmpeg analysis/rendering, backup/restore, approval fingerprints, and resumable-upload protocol helpers. It is not yet production-qualified because these external acceptance gates have not been performed:
 
 - clean Windows 10/11 installer and runtime test on a machine without developer tooling;
 - five representative 4–6 minute videos completed with real licensed assets;
@@ -25,6 +25,7 @@ The repository is a production-hardened alpha. The application builds and its lo
 - canonical audited project state machine, durable jobs, dependencies, leases, locks, retries, and restart recovery
 - manual Envato handoff, project license attestation, watched downloads, quarantine, and content-addressed originals
 - FFprobe inspection, declared/actual conflict evidence, proxies, contact sheets, rotation-aware resolution policy, and FFmpeg black/freeze analysis
+- canonical place hierarchy and evidence precedence, configurable contact-sheet vision verification, persisted scene/file receipts, fail-closed provider handling, and operator retry/recovery
 - narration splitting into visual shots no longer than seven seconds
 - SRT and WebVTT captions
 - synchronized H.264/AAC-LC render pipeline with two-pass EBU R128 normalization, 30 fps progressive BT.709 output checks, duration QC, and fast-start verification
@@ -72,7 +73,7 @@ npm run package:win
 ## First-run walkthrough
 
 1. In Library, import the footage XLSX or CSV and commit the detected mapping.
-2. In Settings, configure storage, backup policy, narrator, optional LLM, and YouTube OAuth.
+2. In Settings, configure storage, backup policy, narrator, semantic vision provider, optional LLM, and YouTube OAuth.
 3. Run diagnostics.
 4. Start an Autopilot project.
 5. In Downloads, use the displayed Envato project name, license/download each requested asset, and record its license.

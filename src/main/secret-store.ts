@@ -5,6 +5,7 @@ import type { SecretStatus } from '@shared/types';
 
 export interface Secrets {
   llmApiKey?: string;
+  visionApiKey?: string;
   httpTtsApiKey?: string;
   youtubeClientId?: string;
   youtubeClientSecret?: string;
@@ -48,6 +49,7 @@ export class SecretStore {
   status(secrets = this.getAll()): SecretStatus {
     return {
       llmApiKeyConfigured: Boolean(secrets.llmApiKey),
+      visionApiKeyConfigured: Boolean(secrets.visionApiKey),
       httpTtsApiKeyConfigured: Boolean(secrets.httpTtsApiKey),
       youtubeClientConfigured: Boolean(secrets.youtubeClientId && secrets.youtubeClientSecret),
       youtubeAuthorized: Boolean(secrets.youtubeRefreshToken),
