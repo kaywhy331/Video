@@ -59,6 +59,21 @@ export function assertPlanningCapacity(db: AppDatabase, settings: AppSettings, p
   `).get(monthStart.toISOString()) as { total: number };
   if (Number(spend.total) >= settings.monthlyBudgetUsd) throw new Error('Monthly provider budget is exhausted.');
 
+  const configuredProviders = new Set<string>([
+    ...(settings.researchProvider === 'tavily' ? ['tavily'] : []),
+    ...(settings.llmProvider === 'openai_compatible' ? ['openai_compatible'] : []),
+    ...(settings.visionProvider === 'openai_compatible' ? ['openai_compatible_vision'] : [])
+  ]);
+  const health = (db.raw.prepare(`
+    SELECT provider, status, message FROM provider_health
+    WHERE status IN ('auth_invalid','quota_exhausted')
+    ORDER BY checked_at DESC
+  `).all() as Array<{ provider: string; status: string; message: string | null }>)
+    .find(row => configuredProviders.has(row.provider));
+  if (health) {
+    throw new Error(health.message ?? `${health.provider} ${health.status.replace('_', ' ')}; no project or provider call was started.`);
+  }
+
   const existing = db.raw.prepare(`
     SELECT title FROM projects WHERE state NOT IN ('FAILED','CANCELLED','ARCHIVED') ORDER BY created_at DESC LIMIT 250
   `).all() as Array<{ title: string }>;

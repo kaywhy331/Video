@@ -100,7 +100,14 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   });
   handle(IPC.secretsUpdate, (_event, payload) => {
     const patch = SecretPatchSchema.parse(payload);
-    return context.secrets.update(patch);
+    const status = context.secrets.update(patch);
+    const providers = [
+      ...(patch.researchApiKey !== undefined ? ['tavily'] : []),
+      ...(patch.llmApiKey !== undefined ? ['openai_compatible'] : []),
+      ...(patch.visionApiKey !== undefined ? ['openai_compatible_vision'] : [])
+    ];
+    for (const provider of providers) context.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
+    return status;
   });
   handle(IPC.pathsChoose, async (_event, payload) => {
     const request = PathChoiceRequestSchema.parse(payload);

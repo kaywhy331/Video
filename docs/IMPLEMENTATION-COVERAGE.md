@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-12 after the semantic footage-verification milestone.
+Updated 2026-08-12 after the sourced-research and provider-preflight milestone.
 
 Status meanings:
 
@@ -20,7 +20,7 @@ Status meanings:
 | Metadata revisions and undo | Implemented + tested | Revision persistence and UI; bulk edit/merge/split/export remain partial |
 | Geographic evidence model | Partial | Canonical hierarchy, parent-aware lookup, imported/vision/human assertions, evidence precedence, and exact-location hard gates are implemented; geocoder/coordinate and broader alias workflows remain |
 | Topic opportunity engine | Partial | Explainable catalog coverage, queue, spend, and duplicate gates; live demand/competition adapters absent |
-| Research and fact pack | Partial | Catalog-backed sources/claims and scene links; web research, freshness/conflict orchestration absent |
+| Research and fact pack | Implemented, external validation pending | Configurable Tavily Search/Extract, real-URL/app-owned source records, strict claim extraction, unknown-ID rejection, relational citations, category freshness, conflict/stale omission, scene claim IDs, and explicit conflict exceptions; live provider rehearsal unrun |
 | Script/storyboard pipeline | Partial | Provisional structured scripts are locked; full post-ingest rewrite and word alignment absent |
 | Acquisition and licensing | Implemented, external validation pending | Manual Envato handoff and project attestation; live account workflow unrun |
 | Media ingest and verification | Partial | Hashing, quarantine, FFprobe, conflict evidence, black/freeze analysis, rotation/no-upscale gates, scene-specific contact-sheet semantic verification, strict provider receipts, explicit retry, startup recovery, and bounded verified-alternate repair; expanded shot analysis/QC remain |
@@ -31,7 +31,7 @@ Status meanings:
 | YouTube private-first publishing | Implemented, external validation pending | Persisted resumable session protocol, duplicate guard, polling/attachment receipts; live OAuth/API rehearsal unrun |
 | Durable project/job recovery | Implemented + tested | Canonical transitions, fail-closed blocked state, audits, dependencies, leases, stale-process recovery, project locks |
 | Backup/restore/retention | Implemented + tested | Scheduled verified backups, configurable rotation, staged restore, safety copy, missing-original scan |
-| Cost/quota controls | Partial | Provider call records, monthly spend gate, bounded retries; per-project accounting and all-provider quotas incomplete |
+| Cost/quota controls | Implemented + tested | Cached calls are exempt; call receipts, monthly and project-snapshot hard budgets, and persisted auth/quota preflight cover research, LLM, and vision adapters; live quota behavior remains an external qualification gate |
 | Analytics learning loop | Not implemented | P1 per PRD |
 
 ## Automated test coverage added in alpha.3
@@ -48,6 +48,8 @@ Status meanings:
 - planning capacity, spend, coverage, and duplicate-topic gates;
 - ranked shot-candidate persistence, residual-risk alternate planning, late-bound geography/license/file/media checks, bounded alternate promotion, QC repair classification, and artifact-versioned retry/exhaustion;
 - canonical place hierarchy/assertion precedence, strict contact-sheet-only vision contracts, cache and malformed-response handling, semantic receipt gates, explicit provider retry, and legacy alternate re-verification.
+- Tavily search/extract contract validation and cache receipts, app-issued source/claim linkage, strict one-retry claim extraction, stale/conflict/invented-source omission, and database-enforced accepted-claim citations;
+- project budget/policy snapshots and centralized monthly, per-project, auth, and quota preflight across research, language, and vision calls.
 
 ## Production qualification gates
 
@@ -61,3 +63,4 @@ Promotion beyond alpha requires recorded evidence for all of the following:
 6. Forced-restart drills during ingest, render, and upload.
 7. Backup/restore drill on representative production data.
 8. Completion or explicit release-scope disposition of remaining P0 partial items above.
+9. Live Tavily and language-model research rehearsal with representative fresh, stale, conflicting, malformed, auth-failed, and quota-exhausted cases.

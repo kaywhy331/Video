@@ -10,6 +10,10 @@ import { assertPlanningCapacity, evaluateCoverage } from './planning-policy';
 import { RepairService } from './repair-service';
 import { shouldAcquireAlternate } from '@shared/repair-policy';
 import type { PlaceService } from './place-service';
+import type { ResearchService } from './research-service';
+import type { VisionService } from './vision-service';
+import { evaluateClaims, type EvaluatedClaim } from '@shared/research';
+import { createHash } from 'node:crypto';
 
 function jsonArray(value: unknown): string[] {
   if (!value) return [];
@@ -82,7 +86,9 @@ export class ProjectService {
     private readonly catalog: CatalogService,
     private readonly ai: AiService,
     private readonly settings: () => AppSettings,
-    private readonly places: PlaceService
+    private readonly places: PlaceService,
+    private readonly research?: ResearchService,
+    private readonly vision?: VisionService
   ) {
     this.states = new ProjectStateService(db);
     this.repairs = new RepairService(db);
@@ -270,6 +276,18 @@ export class ProjectService {
     const destination = cluster.locationName ?? cluster.city ?? cluster.country ?? 'Selected destination';
     const title = `A Visual Guide to ${destination}`;
     assertPlanningCapacity(this.db, settings, title);
+    if (settings.researchProvider === 'tavily' && !this.research?.configured()) {
+      throw new Error('Tavily research is enabled but its encrypted API key is not configured; no project or provider call was started.');
+    }
+    if (settings.llmProvider === 'openai_compatible' && !this.ai.configured()) {
+      throw new Error('The language provider is enabled but its encrypted API key is not configured; no project or provider call was started.');
+    }
+    if (settings.researchProvider === 'tavily' && settings.llmProvider !== 'openai_compatible') {
+      throw new Error('Web research requires the configured language provider and encrypted API key for cited claim extraction; no project or provider call was started.');
+    }
+    if (settings.visionProvider === 'openai_compatible' && !this.vision?.configured()) {
+      throw new Error('The semantic vision provider is enabled but its encrypted API key is not configured; no project or provider call was started.');
+    }
     const targetMinutes = request.targetMinutes ?? settings.targetVideoMinutes;
     const planning = evaluateCoverage(cluster, targetMinutes);
     if (!planning.qualified) {
@@ -291,8 +309,9 @@ export class ProjectService {
       INSERT INTO projects(
         id, sequence, slug, title, topic, description, destination_key, destination,
         state, progress, envato_project_name, target_duration_ms, opportunity_score,
+        provider_budget_usd, provider_policy_json,
         created_at, updated_at
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', 0.02, ?, ?, ?, ?, ?)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', 0.02, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       projectId,
       sequence,
@@ -305,6 +324,15 @@ export class ProjectService {
       envatoProjectName,
       Math.round(targetMinutes * 60_000),
       planning.opportunityScore,
+      settings.projectBudgetUsd,
+      JSON.stringify({
+        monthlyBudgetUsd: settings.monthlyBudgetUsd,
+        projectBudgetUsd: settings.projectBudgetUsd,
+        researchProvider: settings.researchProvider,
+        llmProvider: settings.llmProvider,
+        visionProvider: settings.visionProvider,
+        capturedAt: now
+      }),
       now,
       now
     );
@@ -368,9 +396,59 @@ export class ProjectService {
         );
         catalogSourceIds.set(asset.id, sourceId);
       }
+      let acceptedResearchClaims: EvaluatedClaim[] = [];
+      if (settings.researchProvider === 'tavily') {
+        if (!this.research) throw new Error('Research service is unavailable.');
+        const search = await this.research.search({
+          projectId,
+          queries: [
+            `${destination} official visitor information`,
+            `${destination} history geography`,
+            `${destination} opening hours admission transport`
+          ],
+          languageCode: 'en',
+          maxResultsPerQuery: settings.researchMaxResultsPerQuery
+        });
+        const extracted = await this.research.extract(projectId, search.data.map(result => result.url));
+        const searchByUrl = new Map(search.data.map(result => [result.url, result]));
+        const sourceInput = extracted.data.map(result => {
+          const candidate = searchByUrl.get(result.url);
+          const sourceId = randomUUID();
+          const contentHash = createHash('sha256').update(result.rawContent).digest('hex');
+          const publisher = new URL(result.url).hostname;
+          const excerpt = candidate?.content ?? result.rawContent.slice(0, 2_000);
+          this.db.raw.prepare(`
+            INSERT INTO research_sources(
+              id, project_id, url, title, publisher, published_at, accessed_at, summary,
+              raw_json, source_type, content_hash, excerpt, status
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'web', ?, ?, 'active')
+          `).run(
+            sourceId, projectId, result.url, candidate?.title ?? result.url, publisher,
+            candidate?.publishedAt ?? null, now, excerpt, JSON.stringify({
+              provider: search.provider, requestId: search.requestId, score: candidate?.score ?? null,
+              extractedCharacters: result.rawContent.length
+            }), contentHash, excerpt
+          );
+          return {
+            id: sourceId, url: result.url, title: candidate?.title ?? result.url, publisher,
+            publishedAt: candidate?.publishedAt ?? null, excerpt, content: result.rawContent
+          };
+        });
+        const extractedClaims = await this.ai.extractClaims({ projectId, topicTitle: title, destination, sources: sourceInput });
+        const claimCandidates = extractedClaims.map(claim => ({ ...claim, id: randomUUID() }));
+        const evaluated = evaluateClaims(claimCandidates, new Set(sourceInput.map(source => source.id)), new Date(now));
+        for (const claim of evaluated) {
+          this.persistResearchClaim(projectId, claim, now);
+        }
+        acceptedResearchClaims = evaluated.filter(claim => claim.status === 'accepted');
+        const conflicts = evaluated.filter(claim => claim.status === 'conflict');
+        if (conflicts.length) this.persistResearchConflict(projectId, conflicts, now);
+      }
       this.states.transition(projectId, 'SCRIPTING_PROVISIONAL', {
         progress: 0.12,
-        reason: 'Generating provisional script from verified catalog metadata'
+        reason: acceptedResearchClaims.length
+          ? 'Generating provisional script from accepted sourced claims and verified catalog metadata'
+          : 'Generating provisional script from verified catalog metadata'
       });
       const script = await this.ai.generateScript({
         projectId,
@@ -378,8 +456,21 @@ export class ProjectService {
         destination,
         targetMinutes,
         coverage: cluster,
-        assets
+        assets,
+        acceptedClaims: acceptedResearchClaims.map(claim => ({ id: claim.id, text: claim.text, category: claim.category, sourceIds: claim.sourceIds }))
       });
+      const acceptedClaimIds = new Set(acceptedResearchClaims.map(claim => claim.id));
+      const acceptedClaimText = new Map(acceptedResearchClaims.map(claim => [claim.id, claim.text]));
+      for (const scene of script.scenes) {
+        const unknown = scene.claimIds.filter(claimId => !acceptedClaimIds.has(claimId));
+        if (unknown.length) throw new Error(`Script contains unknown or unaccepted claim IDs: ${unknown.join(', ')}`);
+        for (const claimId of scene.claimIds) {
+          const supported = acceptedClaimText.get(claimId);
+          if (supported && !scene.narration.toLowerCase().includes(supported.toLowerCase())) {
+            throw new Error(`Script wording exceeds or changes accepted claim ${claimId}.`);
+          }
+        }
+      }
       const scriptId = randomUUID();
       const scriptHash = BunLikeHash(JSON.stringify({ script, assets: assets.map(asset => asset.id) }));
       this.db.raw.prepare(`
@@ -527,8 +618,8 @@ export class ProjectService {
               this.db.raw.prepare(`
                 INSERT INTO fact_claims(
                   id, project_id, text, place_key, category, confidence, stability,
-                  valid_as_of, source_ids_json, status, created_at
-                ) VALUES(?, ?, ?, ?, 'visual_observation', ?, 'stable', ?, ?, 'accepted', ?)
+                  valid_as_of, source_ids_json, status, material, normalized_key, updated_at, created_at
+                ) VALUES(?, ?, ?, ?, 'visual_observation', ?, 'stable', ?, ?, 'proposed', 1, ?, ?, ?)
               `).run(
                 claimId,
                 projectId,
@@ -537,12 +628,20 @@ export class ProjectService {
                 Math.max(0, Math.min(1, selected.asset.locationConfidence)),
                 now.slice(0, 10),
                 JSON.stringify([sourceId]),
+                `visual-observation:${sceneId}`,
+                now,
                 now
               );
               this.db.raw.prepare(`
-                INSERT INTO project_scene_claims(scene_id, claim_id) VALUES(?, ?)
-              `).run(sceneId, claimId);
+                INSERT INTO fact_claim_sources(claim_id, source_id, support_type, excerpt, created_at)
+                VALUES(?, ?, 'supports', ?, ?)
+              `).run(claimId, sourceId, scene.narration, now);
+              this.db.raw.prepare(`UPDATE fact_claims SET status = 'accepted' WHERE id = ?`).run(claimId);
+              this.db.raw.prepare(`INSERT INTO project_scene_claims(scene_id, claim_id) VALUES(?, ?)`).run(sceneId, claimId);
             }
+          }
+          for (const claimId of scene.claimIds) {
+            this.db.raw.prepare(`INSERT OR IGNORE INTO project_scene_claims(scene_id, claim_id) VALUES(?, ?)`).run(sceneId, claimId);
           }
         });
 
@@ -650,6 +749,41 @@ export class ProjectService {
       );
       throw error;
     }
+  }
+
+  private persistResearchClaim(projectId: string, claim: EvaluatedClaim, now: string): void {
+    this.db.raw.prepare(`
+      INSERT INTO fact_claims(
+        id, project_id, text, category, confidence, stability, valid_as_of, source_ids_json,
+        status, material, normalized_key, freshness_days, expires_at, conflict_group,
+        omission_reason, evidence_json, updated_at, created_at
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      claim.id, projectId, claim.text, claim.category, claim.confidence, claim.stability,
+      claim.validAsOf, JSON.stringify(claim.sourceIds), claim.material ? 1 : 0,
+      claim.normalizedKey, claim.freshnessDays, claim.expiresAt, claim.conflictGroup,
+      claim.omissionReason, JSON.stringify({ policyEvaluatedAt: now }), now, now
+    );
+    for (const sourceId of claim.sourceIds) {
+      this.db.raw.prepare(`INSERT INTO fact_claim_sources(claim_id, source_id, support_type, excerpt, created_at) VALUES(?, ?, 'supports', ?, ?)`).run(claim.id, sourceId, claim.text, now);
+    }
+    this.db.raw.prepare(`UPDATE fact_claims SET status = ? WHERE id = ?`).run(claim.status, claim.id);
+  }
+
+  private persistResearchConflict(projectId: string, claims: EvaluatedClaim[], now: string): void {
+    this.db.raw.prepare(`
+      INSERT INTO exceptions(
+        id, project_id, severity, stage, code, title, message, evidence_json,
+        recommended_action, safe_alternatives_json, status, created_at
+      ) VALUES(?, ?, 'HIGH', 'research', 'MATERIAL_SOURCE_CONFLICT',
+        'Material research sources disagree',
+        'Conflicting material claims were omitted from the script.', ?,
+        'Review the cited sources or leave the claims omitted.', ?, 'OPEN', ?)
+    `).run(
+      randomUUID(), projectId,
+      JSON.stringify({ claims: claims.map(claim => ({ id: claim.id, text: claim.text, sourceIds: claim.sourceIds, conflictGroup: claim.conflictGroup })) }),
+      JSON.stringify(['omit_claims', 'operator_review_sources']), now
+    );
   }
 
   delete(projectId: string): void {

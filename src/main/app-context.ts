@@ -23,6 +23,8 @@ import { IPC } from '@shared/ipc-channels';
 import { PlaceService } from './services/place-service';
 import { VisionService } from './services/vision-service';
 import { FootageVerificationService } from './services/footage-verification-service';
+import { ResearchService } from './services/research-service';
+import { ProviderPolicyService } from './services/provider-policy';
 
 export class AppContext {
   readonly db: AppDatabase;
@@ -31,6 +33,8 @@ export class AppContext {
   readonly places: PlaceService;
   readonly vision: VisionService;
   readonly footageVerification: FootageVerificationService;
+  readonly providerPolicy: ProviderPolicyService;
+  readonly research: ResearchService;
   readonly catalog: CatalogService;
   readonly diagnostics: DiagnosticsService;
   readonly ai: AiService;
@@ -70,7 +74,9 @@ export class AppContext {
     this.jobs.recoverInterrupted();
     this.exceptions = new ExceptionService(this.db);
     this.diagnostics = new DiagnosticsService(this.db, () => this.settingsValue, app.getVersion());
-    this.ai = new AiService(this.db, this.secrets, () => this.settingsValue);
+    this.providerPolicy = new ProviderPolicyService(this.db, () => this.settingsValue);
+    this.ai = new AiService(this.db, this.secrets, () => this.settingsValue, this.providerPolicy);
+    this.research = new ResearchService(this.db, this.secrets, () => this.settingsValue);
     this.vision = new VisionService(this.db, this.secrets, () => this.settingsValue);
     this.footageVerification = new FootageVerificationService(
       this.db,
@@ -78,7 +84,15 @@ export class AppContext {
       this.places,
       this.vision
     );
-    this.projects = new ProjectService(this.db, this.catalog, this.ai, () => this.settingsValue, this.places);
+    this.projects = new ProjectService(
+      this.db,
+      this.catalog,
+      this.ai,
+      () => this.settingsValue,
+      this.places,
+      this.research,
+      this.vision
+    );
     this.media = new MediaService(
       this.db,
       () => this.settingsValue,
@@ -150,6 +164,11 @@ export class AppContext {
       throw new Error('Changing the active database path requires a controlled migration and is not supported in this alpha.');
     }
     ensureSettingsPaths(next);
+    const healthToReset = new Set<string>();
+    if (next.researchProvider !== this.settingsValue.researchProvider || next.researchBaseUrl !== this.settingsValue.researchBaseUrl) healthToReset.add('tavily');
+    if (next.llmProvider !== this.settingsValue.llmProvider || next.llmBaseUrl !== this.settingsValue.llmBaseUrl) healthToReset.add('openai_compatible');
+    if (next.visionProvider !== this.settingsValue.visionProvider || next.visionBaseUrl !== this.settingsValue.visionBaseUrl) healthToReset.add('openai_compatible_vision');
+    for (const provider of healthToReset) this.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
     this.settingsValue = next;
     this.db.saveAppSettings(next);
     await this.watcher.start();

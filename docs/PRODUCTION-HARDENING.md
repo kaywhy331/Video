@@ -1,6 +1,6 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-12 after the semantic footage-verification milestone.
+Updated 2026-08-12 after the sourced-research and provider-preflight milestone.
 
 Alpha.3 closes the highest-risk local durability, security, rendering, backup, and publishing defects found during the production-readiness audit. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
@@ -10,13 +10,12 @@ Alpha.3 closes the highest-risk local durability, security, rendering, backup, a
 - Run the five-video representative pilot with real licensed footage and preserve receipts for location grounding, rights, render QC, and human approval.
 - Rehearse live Envato account handoff, license naming, download watcher mapping, ambiguity handling, and certificate attachment.
 - Rehearse live YouTube OAuth, resumable interruption/restart, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish.
-- Add sourced web research with freshness/conflict policy for non-visual material claims.
+- Rehearse live Tavily Search/Extract plus LLM claim extraction, including real URLs, freshness, disagreement, malformed output, auth failure, and quota exhaustion.
 - Implement the final post-ingest script rewrite against verified footage, plus pronunciation and word-level/forced alignment.
 - Extend automated repair beyond the implemented bounded alternate/output/semantic loop to post-ingest script rewriting and scene/range-only rendering.
 - Complete maps, labels, chapter cards, lower thirds, and scene/range render modes required by the full editing PRD.
 - Expand QC for duplicate/near-duplicate shots, severe crops, letterboxing, clipping/silence, caption overlap/line length, unsupported package claims, and thumbnail file limits.
 - Add project export and deterministic derivative rebuild after restore.
-- Complete per-project provider budgets and quota/auth preflight across all configured providers.
 - Perform ingest, render, upload, and restore interruption drills on representative data.
 
 ## Release engineering

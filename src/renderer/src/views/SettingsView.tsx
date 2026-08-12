@@ -29,6 +29,7 @@ export function SettingsView({
   type SecretDraft = {
     llmApiKey: string;
     visionApiKey: string;
+    researchApiKey: string;
     youtubeClientId: string;
     youtubeClientSecret: string;
     youtubeApiKey: string;
@@ -36,6 +37,7 @@ export function SettingsView({
   const [secrets, setSecrets] = useState<SecretDraft>({
     llmApiKey: '',
     visionApiKey: '',
+    researchApiKey: '',
     youtubeClientId: '',
     youtubeClientSecret: '',
     youtubeApiKey: ''
@@ -76,7 +78,7 @@ export function SettingsView({
       ) as Record<string, string | undefined>;
       if (Object.keys(secretPatch).length) {
         await window.videoFactory.settings.updateSecrets(secretPatch);
-        setSecrets({ llmApiKey: '', visionApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
+        setSecrets({ llmApiKey: '', visionApiKey: '', researchApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
       }
       setDiagnostics(await window.videoFactory.diagnostics.run());
       await onRefresh();
@@ -142,6 +144,7 @@ export function SettingsView({
           <div className="settings-form two-column">
             <NumberField label="Target minutes" value={form.targetVideoMinutes} min={1} max={30} set={value => setForm({ ...form, targetVideoMinutes: value })} />
             <NumberField label="Monthly API budget ($)" value={form.monthlyBudgetUsd} min={0} max={10000} set={value => setForm({ ...form, monthlyBudgetUsd: value })} />
+            <NumberField label="Per-project API budget ($)" value={form.projectBudgetUsd} min={0} max={10000} set={value => setForm({ ...form, projectBudgetUsd: value })} />
             <NumberField label="Active projects" value={form.maxActiveProjects} min={1} max={10} set={value => setForm({ ...form, maxActiveProjects: value })} />
             <NumberField label="Waiting downloads" value={form.maxWaitingDownloads} min={1} max={10} set={value => setForm({ ...form, maxWaitingDownloads: value })} />
             <NumberField label="Minimum free disk (GB)" value={form.minFreeDiskGb} min={5} max={1000} set={value => setForm({ ...form, minFreeDiskGb: value })} />
@@ -195,6 +198,28 @@ export function SettingsView({
             </label>
             <label><span>Voice name</span><input value={form.narratorVoice} onChange={event => setForm({ ...form, narratorVoice: event.target.value })} placeholder="Blank uses Windows default" /></label>
             <NumberField label="Voice rate" value={form.narratorRate} min={-10} max={10} set={value => setForm({ ...form, narratorRate: value })} />
+          </div>
+        </Panel>
+
+        <Panel title="Web research" subtitle="Accepted material facts retain real URLs and are omitted when stale or conflicting">
+          <div className="settings-form">
+            <label>
+              <span>Provider</span>
+              <select value={form.researchProvider} onChange={event => setForm({ ...form, researchProvider: event.target.value as AppSettings['researchProvider'] })}>
+                <option value="disabled">Disabled — visual observations only</option>
+                <option value="tavily">Tavily Search + Extract</option>
+              </select>
+            </label>
+            <label><span>Base URL</span><input value={form.researchBaseUrl} onChange={event => setForm({ ...form, researchBaseUrl: event.target.value })} /></label>
+            <label>
+              <span>Search depth</span>
+              <select value={form.researchSearchDepth} onChange={event => setForm({ ...form, researchSearchDepth: event.target.value as AppSettings['researchSearchDepth'] })}>
+                <option value="basic">Basic</option>
+                <option value="advanced">Advanced</option>
+              </select>
+            </label>
+            <NumberField label="Results per query" value={form.researchMaxResultsPerQuery} min={1} max={5} set={value => setForm({ ...form, researchMaxResultsPerQuery: value })} />
+            <label><span>Research API key {bootstrap.secrets.researchApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.researchApiKey} onChange={event => setSecrets({ ...secrets, researchApiKey: event.target.value })} placeholder={bootstrap.secrets.researchApiKeyConfigured ? 'Leave blank to keep current key' : 'Required when Tavily is enabled'} /></label>
           </div>
         </Panel>
 

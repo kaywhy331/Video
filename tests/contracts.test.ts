@@ -14,6 +14,8 @@ describe('IPC request contracts', () => {
     expect(SettingsPatchSchema.safeParse({ backupIntervalHours: 0 }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ visionProvider: 'openai_compatible', visionMinimumConfidence: 0.82 }).success).toBe(true);
     expect(SettingsPatchSchema.safeParse({ visionMinimumConfidence: 0.2 }).success).toBe(false);
+    expect(SettingsPatchSchema.safeParse({ researchProvider: 'tavily', researchMaxResultsPerQuery: 5, projectBudgetUsd: 15 }).success).toBe(true);
+    expect(SettingsPatchSchema.safeParse({ researchMaxResultsPerQuery: 50 }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ arbitrarySql: 'DROP TABLE assets' }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ youtubePrivacy: 'public' }).success).toBe(false);
   });

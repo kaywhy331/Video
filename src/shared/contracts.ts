@@ -34,6 +34,7 @@ export const SettingsPatchSchema = z.object({
   ffmpegPath: z.string().max(32_767).optional(),
   ffprobePath: z.string().max(32_767).optional(),
   monthlyBudgetUsd: z.number().min(0).max(100_000).optional(),
+  projectBudgetUsd: z.number().min(0).max(100_000).optional(),
   minFreeDiskGb: z.number().min(1).max(100_000).optional(),
   maxActiveProjects: z.number().int().min(1).max(20).optional(),
   maxWaitingDownloads: z.number().int().min(1).max(20).optional(),
@@ -53,6 +54,10 @@ export const SettingsPatchSchema = z.object({
   visionBaseUrl: z.string().url().max(2_000).optional(),
   visionModel: z.string().trim().min(1).max(200).optional(),
   visionMinimumConfidence: z.number().min(0.5).max(0.99).optional(),
+  researchProvider: z.enum(['disabled', 'tavily']).optional(),
+  researchBaseUrl: z.string().url().max(2_000).optional(),
+  researchSearchDepth: z.enum(['basic', 'advanced']).optional(),
+  researchMaxResultsPerQuery: z.number().int().min(1).max(5).optional(),
   youtubeCategoryId: z.string().regex(/^\d{1,4}$/).optional(),
   youtubePlaylistId: z.string().max(200).optional(),
   youtubePrivacy: z.literal('private').optional(),
@@ -88,6 +93,7 @@ export const ImportRequestSchema = z.object({
 export const SecretPatchSchema = z.object({
   llmApiKey: z.string().optional(),
   visionApiKey: z.string().optional(),
+  researchApiKey: z.string().optional(),
   httpTtsApiKey: z.string().optional(),
   youtubeClientId: z.string().optional(),
   youtubeClientSecret: z.string().optional(),
@@ -234,7 +240,8 @@ export const StructuredScriptSchema = z.object({
       'CONTEXTUAL_VERIFIED_FOOTAGE',
       'MAP_OR_GRAPHIC',
       'TEXT_OR_ARCHIVAL'
-    ])
+    ]),
+    claimIds: z.array(z.string().trim().min(1).max(200)).max(20).default([])
   })).min(3)
 });
 
@@ -250,6 +257,7 @@ export interface StructuredScriptScene {
   requiredActivities: string[];
   preferredShots: string[];
   visualTreatment: VisualTreatment;
+  claimIds: string[];
 }
 
 export interface StructuredScript {

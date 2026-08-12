@@ -98,8 +98,8 @@ describe('OpenAI-compatible vision adapter', () => {
     });
     expect(body.messages[1].content[1].image_url.url).toMatch(/^data:image\/jpeg;base64,/);
     expect(db.raw.prepare(`
-      SELECT error, retry_count FROM provider_calls WHERE operation = 'verify_footage'
-    `).get()).toEqual({ error: null, retry_count: 0 });
+      SELECT error, retry_count, estimated_cost_usd FROM provider_calls WHERE operation = 'verify_footage'
+    `).get()).toEqual({ error: null, retry_count: 0, estimated_cost_usd: 0.02 });
     db.close();
   });
 
@@ -112,8 +112,8 @@ describe('OpenAI-compatible vision adapter', () => {
     expect(await first.service.assess(first.input)).toMatchObject({ cached: false });
     expect(retryFetch).toHaveBeenCalledTimes(2);
     expect(first.db.raw.prepare(`
-      SELECT retry_count, error FROM provider_calls WHERE operation = 'verify_footage'
-    `).get()).toEqual({ retry_count: 1, error: null });
+      SELECT retry_count, error, estimated_cost_usd FROM provider_calls WHERE operation = 'verify_footage'
+    `).get()).toEqual({ retry_count: 1, error: null, estimated_cost_usd: 0.04 });
     first.db.close();
 
     const second = fixture();
@@ -122,10 +122,11 @@ describe('OpenAI-compatible vision adapter', () => {
     await expect(second.service.assess(second.input)).rejects.toThrow();
     expect(invalidFetch).toHaveBeenCalledTimes(2);
     const errorRow = second.db.raw.prepare(`
-      SELECT error, retry_count FROM provider_calls WHERE operation = 'verify_footage'
-    `).get() as { error: string; retry_count: number };
+      SELECT error, retry_count, estimated_cost_usd FROM provider_calls WHERE operation = 'verify_footage'
+    `).get() as { error: string; retry_count: number; estimated_cost_usd: number };
     expect(errorRow.error).toBeTruthy();
     expect(errorRow.retry_count).toBe(1);
+    expect(errorRow.estimated_cost_usd).toBe(0.04);
     second.db.close();
   });
 });
