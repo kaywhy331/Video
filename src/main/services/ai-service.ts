@@ -52,6 +52,12 @@ export class AiService {
     private readonly policy?: ProviderPolicyService
   ) {}
 
+  configured(): boolean {
+    const settings = this.settings();
+    return settings.llmProvider === 'mock'
+      || (settings.llmProvider === 'openai_compatible' && Boolean(this.secretStore.getAll().llmApiKey));
+  }
+
   async extractClaims(input: ExtractClaimsInput): Promise<ExtractedClaim[]> {
     const settings = this.settings();
     const secret = this.secretStore.getAll().llmApiKey;
@@ -75,42 +81,52 @@ export class AiService {
       if (pack.claims.some(claim => claim.sourceIds.some(sourceId => !allowedSourceIds.has(sourceId)))) throw new Error('Cached claim pack contains an unknown source ID.');
       return pack.claims;
     }
-    this.policy?.assertCanCall({ projectId: input.projectId, provider: 'openai_compatible', configured: true, estimatedCostUsd: 0.05 });
+    this.policy?.assertCanCall({ projectId: input.projectId, provider: 'openai_compatible', configured: true, estimatedCostUsd: 0.1 });
     const endpoint = `${settings.llmBaseUrl.replace(/\/$/, '')}/chat/completions`;
     const started = Date.now();
     let responseText = '';
     let requestId: string | null = null;
     let lastError: unknown;
+    let attemptsSent = 0;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
+        attemptsSent += 1;
         const response = await fetch(endpoint, {
           method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
           body: JSON.stringify({ model: settings.llmModel, temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify({ ...prompt, correction: attempt ? 'Prior output was invalid. Return exactly the required schema and supplied source IDs.' : undefined }) }] })
         });
         requestId = response.headers.get('x-request-id');
-        if (!response.ok) throw new Error(`LLM provider returned ${response.status}: ${await response.text()}`);
+        if (!response.ok) {
+          const message = `LLM provider returned ${response.status}: ${await response.text()}`;
+          this.policy?.classifyHttpFailure('openai_compatible', response.status, message);
+          throw new Error(message);
+        }
         const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
         responseText = body.choices?.[0]?.message?.content ?? '';
         const pack = ExtractedClaimPackSchema.parse(JSON.parse(stripCodeFence(responseText)));
         const unknown = pack.claims.flatMap(claim => claim.sourceIds).filter(sourceId => !allowedSourceIds.has(sourceId));
         if (unknown.length) throw new Error(`Claim pack contains unknown source IDs: ${[...new Set(unknown)].join(', ')}`);
-        this.recordProviderResult(input.projectId, settings.llmModel, 'fact_extraction', inputHash, requestId, Date.now() - started, attempt, pack, null, 0.05);
+        this.policy?.recordHealth('openai_compatible', 'healthy', 200, null);
+        this.recordProviderResult(input.projectId, settings.llmModel, 'fact_extraction', inputHash, requestId, Date.now() - started, attempt, pack, null, 0.05 * attemptsSent);
         return pack.claims;
       } catch (error) {
         lastError = error;
-        if (attempt === 0 && (error instanceof SyntaxError || (error instanceof Error && (error.name === 'ZodError' || error.message.includes('unknown source IDs'))))) continue;
+        if (attempt === 0 && this.correctableProviderOutput(error)) continue;
         break;
       }
     }
-    this.recordProviderResult(input.projectId, settings.llmModel, 'fact_extraction', inputHash, requestId, Date.now() - started, 1, responseText ? { raw: responseText } : null, lastError, 0.05);
+    this.recordProviderResult(input.projectId, settings.llmModel, 'fact_extraction', inputHash, requestId, Date.now() - started, Math.max(0, attemptsSent - 1), responseText ? { raw: responseText } : null, lastError, 0.05 * attemptsSent);
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
   async generateScript(input: GenerateScriptInput): Promise<StructuredScript> {
     const settings = this.settings();
     const secrets = this.secretStore.getAll();
-    if (settings.llmProvider !== 'openai_compatible' || !secrets.llmApiKey) {
+    if (settings.llmProvider !== 'openai_compatible') {
       return this.generateLocalVisualScript(input);
+    }
+    if (!secrets.llmApiKey) {
+      throw new Error('The configured language provider API key is missing; local fallback was not used.');
     }
 
     const eligible = input.assets.slice(0, 180).map(asset => ({
@@ -177,9 +193,18 @@ export class AiService {
       .digest('hex');
 
     const acceptedClaimIds = new Set((input.acceptedClaims ?? []).map(claim => claim.id));
+    const acceptedClaimText = new Map((input.acceptedClaims ?? []).map(claim => [claim.id, claim.text]));
     const validateScriptClaims = (script: StructuredScript): StructuredScript => {
       const unknown = script.scenes.flatMap(scene => scene.claimIds).filter(claimId => !acceptedClaimIds.has(claimId));
       if (unknown.length) throw new Error(`Script contains unknown or unaccepted claim IDs: ${[...new Set(unknown)].join(', ')}`);
+      for (const scene of script.scenes) {
+        for (const claimId of scene.claimIds) {
+          const supported = acceptedClaimText.get(claimId);
+          if (supported && !scene.narration.toLowerCase().includes(supported.toLowerCase())) {
+            throw new Error(`Script wording exceeds or changes accepted claim ${claimId}.`);
+          }
+        }
+      }
       return script;
     };
     const cached = this.db.raw.prepare(`
@@ -198,77 +223,53 @@ export class AiService {
     const endpoint = `${settings.llmBaseUrl.replace(/\/$/, '')}/chat/completions`;
     let responseText = '';
     let requestId: string | null = null;
-    try {
-      if (this.policy) {
-        this.policy.assertCanCall({ projectId: input.projectId, provider: 'openai_compatible', configured: true, estimatedCostUsd: 0.05 });
-      } else {
+    let lastError: unknown;
+    let attemptsSent = 0;
+    if (this.policy) {
+      this.policy.assertCanCall({ projectId: input.projectId, provider: 'openai_compatible', configured: true, estimatedCostUsd: 0.1 });
+    } else {
         const monthStart = new Date();
         monthStart.setUTCDate(1);
         monthStart.setUTCHours(0, 0, 0, 0);
         const spend = this.db.raw.prepare(`SELECT coalesce(sum(estimated_cost_usd), 0) AS total FROM provider_calls WHERE created_at >= ?`).get(monthStart.toISOString()) as { total: number };
         if (Number(spend.total) >= settings.monthlyBudgetUsd) throw new Error('Monthly provider budget is exhausted; no LLM request was sent.');
-      }
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${secrets.llmApiKey}`
-        },
-        body: JSON.stringify({
-          model: settings.llmModel,
-          temperature: 0.35,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: JSON.stringify(prompt) }
-          ]
-        })
-      });
-      requestId = response.headers.get('x-request-id');
-      if (!response.ok) {
-        throw new Error(`LLM provider returned ${response.status}: ${await response.text()}`);
-      }
-      const body = await response.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      responseText = body.choices?.[0]?.message?.content ?? '';
-      const parsed = validateScriptClaims(StructuredScriptSchema.parse(JSON.parse(stripCodeFence(responseText))));
-      this.db.raw.prepare(`
-        INSERT OR REPLACE INTO provider_calls(
-          id, project_id, provider, model, operation, input_hash, output_hash,
-          request_id, estimated_cost_usd, latency_ms, retry_count, response_json, created_at
-        ) VALUES(lower(hex(randomblob(16))), ?, 'openai_compatible', ?, 'generate_script', ?, ?,
-          ?, 0.05, ?, 0, ?, ?)
-      `).run(
-        input.projectId,
-        settings.llmModel,
-        inputHash,
-        createHash('sha256').update(JSON.stringify(parsed)).digest('hex'),
-        requestId,
-        Date.now() - started,
-        JSON.stringify(parsed),
-        new Date().toISOString()
-      );
-      return parsed;
-    } catch (error) {
-      this.db.raw.prepare(`
-        INSERT OR REPLACE INTO provider_calls(
-          id, project_id, provider, model, operation, input_hash, request_id,
-          estimated_cost_usd, latency_ms, retry_count, response_json, error, created_at
-        ) VALUES(lower(hex(randomblob(16))), ?, 'openai_compatible', ?, 'generate_script', ?,
-          ?, 0.05, ?, 0, ?, ?, ?)
-      `).run(
-        input.projectId,
-        settings.llmModel,
-        inputHash,
-        requestId,
-        Date.now() - started,
-        responseText ? JSON.stringify({ raw: responseText }) : null,
-        error instanceof Error ? error.message : String(error),
-        new Date().toISOString()
-      );
-      throw error;
     }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        attemptsSent += 1;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${secrets.llmApiKey}` },
+          body: JSON.stringify({
+            model: settings.llmModel,
+            temperature: 0.35,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: JSON.stringify({ ...prompt, correction: attempt ? 'The prior response was invalid. Return exactly the required schema, app-issued claim IDs, and verbatim accepted claim text.' : undefined }) }
+            ]
+          })
+        });
+        requestId = response.headers.get('x-request-id');
+        if (!response.ok) {
+          const message = `LLM provider returned ${response.status}: ${await response.text()}`;
+          this.policy?.classifyHttpFailure('openai_compatible', response.status, message);
+          throw new Error(message);
+        }
+        const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+        responseText = body.choices?.[0]?.message?.content ?? '';
+        const parsed = validateScriptClaims(StructuredScriptSchema.parse(JSON.parse(stripCodeFence(responseText))));
+        this.policy?.recordHealth('openai_compatible', 'healthy', 200, null);
+        this.recordProviderResult(input.projectId, settings.llmModel, 'generate_script', inputHash, requestId, Date.now() - started, attempt, parsed, null, 0.05 * attemptsSent);
+        return parsed;
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0 && this.correctableProviderOutput(error)) continue;
+        break;
+      }
+    }
+    this.recordProviderResult(input.projectId, settings.llmModel, 'generate_script', inputHash, requestId, Date.now() - started, Math.max(0, attemptsSent - 1), responseText ? { raw: responseText } : null, lastError, 0.05 * attemptsSent);
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
   private generateLocalVisualScript(input: GenerateScriptInput): StructuredScript {
@@ -324,5 +325,14 @@ export class AiService {
 
   private recordProviderResult(projectId: string, model: string, operation: string, inputHash: string, requestId: string | null, latencyMs: number, retryCount: number, data: unknown, error: unknown, cost: number): void {
     this.db.raw.prepare(`INSERT OR REPLACE INTO provider_calls(id, project_id, provider, model, operation, input_hash, output_hash, request_id, estimated_cost_usd, latency_ms, retry_count, response_json, error, created_at) VALUES(lower(hex(randomblob(16))), ?, 'openai_compatible', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(projectId, model, operation, inputHash, data === null ? null : createHash('sha256').update(JSON.stringify(data)).digest('hex'), requestId, cost, latencyMs, retryCount, data === null ? null : JSON.stringify(data), error ? (error instanceof Error ? error.message : String(error)) : null, new Date().toISOString());
+  }
+
+  private correctableProviderOutput(error: unknown): boolean {
+    if (error instanceof SyntaxError) return true;
+    if (!(error instanceof Error)) return false;
+    return error.name === 'ZodError'
+      || error.message.includes('unknown source IDs')
+      || error.message.includes('unknown or unaccepted claim IDs')
+      || error.message.includes('wording exceeds or changes accepted claim');
   }
 }

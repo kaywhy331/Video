@@ -11,6 +11,7 @@ import { RepairService } from './repair-service';
 import { shouldAcquireAlternate } from '@shared/repair-policy';
 import type { PlaceService } from './place-service';
 import type { ResearchService } from './research-service';
+import type { VisionService } from './vision-service';
 import { evaluateClaims, type EvaluatedClaim } from '@shared/research';
 import { createHash } from 'node:crypto';
 
@@ -86,7 +87,8 @@ export class ProjectService {
     private readonly ai: AiService,
     private readonly settings: () => AppSettings,
     private readonly places: PlaceService,
-    private readonly research?: ResearchService
+    private readonly research?: ResearchService,
+    private readonly vision?: VisionService
   ) {
     this.states = new ProjectStateService(db);
     this.repairs = new RepairService(db);
@@ -276,6 +278,15 @@ export class ProjectService {
     assertPlanningCapacity(this.db, settings, title);
     if (settings.researchProvider === 'tavily' && !this.research?.configured()) {
       throw new Error('Tavily research is enabled but its encrypted API key is not configured; no project or provider call was started.');
+    }
+    if (settings.llmProvider === 'openai_compatible' && !this.ai.configured()) {
+      throw new Error('The language provider is enabled but its encrypted API key is not configured; no project or provider call was started.');
+    }
+    if (settings.researchProvider === 'tavily' && settings.llmProvider !== 'openai_compatible') {
+      throw new Error('Web research requires the configured language provider and encrypted API key for cited claim extraction; no project or provider call was started.');
+    }
+    if (settings.visionProvider === 'openai_compatible' && !this.vision?.configured()) {
+      throw new Error('The semantic vision provider is enabled but its encrypted API key is not configured; no project or provider call was started.');
     }
     const targetMinutes = request.targetMinutes ?? settings.targetVideoMinutes;
     const planning = evaluateCoverage(cluster, targetMinutes);

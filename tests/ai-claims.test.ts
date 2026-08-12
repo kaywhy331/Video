@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import { AiService } from '@main/services/ai-service';
 import type { AppSettings } from '@shared/types';
+import type { CatalogAsset, CoverageCluster } from '@shared/types';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -28,6 +29,18 @@ function response(content: string): Response {
 }
 
 describe('LLM claim extraction', () => {
+  it('does not silently downgrade an explicitly configured provider with a missing key', async () => {
+    const { db } = fixture();
+    const settings = { llmProvider: 'openai_compatible', llmBaseUrl: 'https://llm.test/v1', llmModel: 'test', monthlyBudgetUsd: 100 } as AppSettings;
+    const service = new AiService(db, { getAll: () => ({}) } as never, () => settings);
+    await expect(service.generateScript({
+      projectId: 'p1', topicTitle: 'Museum', destination: 'Paris', targetMinutes: 1,
+      coverage: { key: 'Paris' } as CoverageCluster,
+      assets: []
+    })).rejects.toThrow('local fallback was not used');
+    db.close();
+  });
+
   it('accepts only app-issued source IDs and records a cacheable receipt', async () => {
     const { db, service } = fixture();
     const valid = { claims: [{ text: 'Open daily.', normalizedKey: 'museum-hours', category: 'hours', confidence: 0.9, stability: 'time_sensitive', validAsOf: '2026-08-12', sourceIds: ['source-1'], material: true }] };
@@ -49,6 +62,32 @@ describe('LLM claim extraction', () => {
     await expect(service.extractClaims({ projectId: 'p1', topicTitle: 'Museum', destination: 'Paris', sources: [{ id: 'source-1', url: 'https://example.test', title: 'Official', publisher: null, publishedAt: null, excerpt: 'Open daily.', content: 'Open daily.' }] })).rejects.toThrow('unknown source IDs');
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(db.raw.prepare(`SELECT retry_count FROM provider_calls WHERE operation = 'fact_extraction'`).get()).toEqual({ retry_count: 1 });
+    db.close();
+  });
+
+  it('corrects an invented script claim once and records both billed attempts', async () => {
+    const { db, service } = fixture();
+    const scene = {
+      chapter: 'Visit', narration: 'Open daily.', targetDurationMs: 3000,
+      requiredCountry: 'France', requiredCity: 'Paris', requiredLocation: 'Museum',
+      requiredGranularity: 'landmark', requiredObjects: ['museum'], requiredActivities: [],
+      preferredShots: ['wide'], visualTreatment: 'EXACT_LOCATION_FOOTAGE'
+    };
+    const invalid = { title: 'Museum', topic: 'Museum', destination: 'Paris', summary: 'Visit', scenes: Array.from({ length: 3 }, () => ({ ...scene, claimIds: ['invented'] })) };
+    const valid = { ...invalid, scenes: Array.from({ length: 3 }, () => ({ ...scene, claimIds: ['claim-1'] })) };
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => Promise.resolve(response(JSON.stringify(invalid))))
+      .mockImplementationOnce(() => Promise.resolve(response(JSON.stringify(valid))));
+    vi.stubGlobal('fetch', fetchMock);
+    const script = await service.generateScript({
+      projectId: 'p1', topicTitle: 'Museum', destination: 'Paris', targetMinutes: 1,
+      coverage: { key: 'Paris', country: 'France', city: 'Paris', locationName: 'Museum', assetCount: 12, uniqueShotTypes: 4, uniqueActivities: 1, uniqueTimes: 1, landscapeCount: 12, fourKCount: 0, downloadedCount: 0, verifiedCount: 12, coverageScore: 80 } as CoverageCluster,
+      assets: [{ id: 'asset-1', title: 'Museum', country: 'France', city: 'Paris', locationName: 'Museum', locationGranularity: 'landmark' } as CatalogAsset],
+      acceptedClaims: [{ id: 'claim-1', text: 'Open daily.', category: 'hours', sourceIds: ['source-1'] }]
+    });
+    expect(script.scenes[0]?.claimIds).toEqual(['claim-1']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(db.raw.prepare(`SELECT retry_count, estimated_cost_usd FROM provider_calls WHERE operation = 'generate_script'`).get()).toEqual({ retry_count: 1, estimated_cost_usd: 0.1 });
     db.close();
   });
 });

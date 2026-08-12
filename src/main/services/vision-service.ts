@@ -92,7 +92,7 @@ export class VisionService {
       projectId: input.projectId,
       provider: 'openai_compatible_vision',
       configured: true,
-      estimatedCostUsd: 0.02
+      estimatedCostUsd: 0.04
     });
     const imageUrl = `data:${imageMime(input.contactSheetPath)};base64,${readFileSync(input.contactSheetPath).toString('base64')}`;
     const endpoint = `${settings.visionBaseUrl.replace(/\/$/, '')}/chat/completions`;
@@ -106,8 +106,10 @@ export class VisionService {
     let responseText = '';
     let requestId: string | null = null;
     let lastError: unknown;
+    let attemptsSent = 0;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
+        attemptsSent += 1;
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
@@ -163,7 +165,8 @@ export class VisionService {
       requestId,
       Date.now() - started,
       responseText,
-      lastError
+      lastError,
+      attemptsSent
     );
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
@@ -225,7 +228,7 @@ export class VisionService {
     `).run(
       randomUUID(), input.projectId, model, inputHash,
       createHash('sha256').update(JSON.stringify(assessment)).digest('hex'),
-      requestId, 0.02, latencyMs, retryCount, JSON.stringify(assessment), new Date().toISOString()
+      requestId, 0.02 * (retryCount + 1), latencyMs, retryCount, JSON.stringify(assessment), new Date().toISOString()
     );
   }
 
@@ -236,15 +239,17 @@ export class VisionService {
     requestId: string | null,
     latencyMs: number,
     responseText: string,
-    error: unknown
+    error: unknown,
+    attemptsSent: number
   ): void {
     this.db.raw.prepare(`
       INSERT OR REPLACE INTO provider_calls(
         id, project_id, provider, model, operation, input_hash, request_id,
         estimated_cost_usd, latency_ms, retry_count, response_json, error, created_at
-      ) VALUES(?, ?, 'openai_compatible_vision', ?, 'verify_footage', ?, ?, 0.02, ?, 1, ?, ?, ?)
+      ) VALUES(?, ?, 'openai_compatible_vision', ?, 'verify_footage', ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      randomUUID(), input.projectId, model, inputHash, requestId, latencyMs,
+      randomUUID(), input.projectId, model, inputHash, requestId,
+      0.02 * attemptsSent, latencyMs, Math.max(0, attemptsSent - 1),
       responseText ? JSON.stringify({ raw: responseText }) : null,
       error instanceof Error ? error.message : String(error), new Date().toISOString()
     );

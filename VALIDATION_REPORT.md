@@ -13,7 +13,7 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with a
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
 | Focused research/provider/semantic/contracts suite | Passed; cache, auth/quota, budgets, citations, stale/conflict, invented-ID, and corrective-retry cases included |
-| Full Vitest suite | Passed; 33 files / 100 tests |
+| Full Vitest suite | Passed; 33 files / 103 tests |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
 | Application migration wrapper (001 + 002 + 003 + 004 + 005) | Passed in focused validation; versions recorded, accepted-claim trigger enforced, reopen idempotent, integrity `ok` |

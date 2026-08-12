@@ -84,7 +84,15 @@ export class AppContext {
       this.places,
       this.vision
     );
-    this.projects = new ProjectService(this.db, this.catalog, this.ai, () => this.settingsValue, this.places, this.research);
+    this.projects = new ProjectService(
+      this.db,
+      this.catalog,
+      this.ai,
+      () => this.settingsValue,
+      this.places,
+      this.research,
+      this.vision
+    );
     this.media = new MediaService(
       this.db,
       () => this.settingsValue,
