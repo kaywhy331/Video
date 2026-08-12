@@ -4,7 +4,7 @@ Generated: 2026-08-12T07:37:36-07:00 (America/Los_Angeles)
 
 ## Outcome
 
-The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3. Local source validation passes, including real FFmpeg media operations. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
+The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with the next automated repair-routing milestone implemented on the current branch. Local source validation passes, including real FFmpeg media operations. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
 
 ## Local validation
 
@@ -12,10 +12,10 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3. Local 
 |---|---|
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
-| Vitest suite | Passed; 21 files, 61 tests |
+| Vitest suite | Passed; 23 files / 69 tests (46 suite groups reported) |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
-| Application migration wrapper (001 + 002) | Passed; versions recorded, reopen idempotent, integrity `ok` |
+| Application migration wrapper (001 + 002 + 003) | Passed in focused validation; versions recorded, reopen idempotent, integrity `ok` |
 | Source/resource migration parity | Passed |
 | Electron/Vite main, preload, renderer build | Passed |
 | `git diff --check` | Passed |
@@ -44,6 +44,9 @@ This proves the Windows packages can be produced by the hosted runner. It does n
 - rights fail-closed checks, package/final-render fingerprints, and strict final approval receipts;
 - persisted resumable YouTube sessions, byte-offset recovery, duplicate final-hash guard, private-first metadata, processing polling, captions, thumbnails, playlist attachment, and configurable synthetic-media disclosure;
 - queue/spend/duplicate/coverage planning gates and catalog-backed sources/claims.
+- deterministic per-scene shot-candidate ranks and bounded residual-risk alternate acquisition;
+- automatic failed-footage routing that revalidates geography, on-disk source, no-upscale/black/freeze limits, and project license before promotion;
+- classified final-QC repair policy, monotonic artifact versions, two-attempt output retry, smallest-safe state routing, exhaustion stop, audit log, and operator-visible repair history.
 
 ## Historical alpha.2 validation
 

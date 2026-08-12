@@ -7,6 +7,8 @@ import type { AiService } from './ai-service';
 import { MatchingService } from './matching-service';
 import { ProjectStateService } from './project-state-service';
 import { assertPlanningCapacity, evaluateCoverage } from './planning-policy';
+import { RepairService } from './repair-service';
+import { shouldAcquireAlternate } from '@shared/repair-policy';
 
 function jsonArray(value: unknown): string[] {
   if (!value) return [];
@@ -71,6 +73,7 @@ function sceneFromRow(row: Record<string, unknown>): ProjectScene {
 export class ProjectService {
   private readonly matcher = new MatchingService();
   readonly states: ProjectStateService;
+  readonly repairs: RepairService;
 
   constructor(
     private readonly db: AppDatabase,
@@ -79,6 +82,7 @@ export class ProjectService {
     private readonly settings: () => AppSettings
   ) {
     this.states = new ProjectStateService(db);
+    this.repairs = new RepairService(db);
   }
 
   list(): ProjectSummary[] {
@@ -154,7 +158,8 @@ export class ProjectService {
       height: row.height === null || row.height === undefined ? null : Number(row.height),
       error: row.error ? String(row.error) : null,
       createdAt: String(row.created_at),
-      completedAt: row.completed_at ? String(row.completed_at) : null
+      completedAt: row.completed_at ? String(row.completed_at) : null,
+      artifactVersion: Number(row.artifact_version ?? 1)
     }));
 
     const packaging = (this.db.raw.prepare(`
@@ -188,6 +193,9 @@ export class ProjectService {
       status: row.status as QcResult['status'],
       message: String(row.message),
       evidence: JSON.parse(String(row.evidence_json ?? '{}')) as Record<string, unknown>,
+      repairClass: row.repair_class ? row.repair_class as QcResult['repairClass'] : null,
+      repairAttempted: Boolean(row.repair_attempted),
+      repairAction: row.repair_action ? String(row.repair_action) : null,
       createdAt: String(row.created_at)
     }));
 
@@ -201,7 +209,8 @@ export class ProjectService {
       acquisitions,
       renders,
       packaging,
-      qc
+      qc,
+      repairs: this.repairs.list(projectId)
     };
   }
 
@@ -389,7 +398,15 @@ export class ProjectService {
       );
 
       const useCount = new Map<string, number>();
-      const selectedByScene: Array<{ sceneOrdinal: number; assetId: string; score: number; reasons: string[] }> = [];
+      const plannedAlternateBudget = Math.max(1, Math.min(5, Math.ceil(script.scenes.length * 0.15)));
+      let plannedAlternates = 0;
+      const selectedByScene: Array<{
+        sceneOrdinal: number;
+        assetId: string;
+        score: number;
+        reasons: string[];
+        role: 'selected' | 'alternate';
+      }> = [];
       const insertScene = this.db.raw.prepare(`
         INSERT INTO project_scenes(
           id, project_id, script_version_id, ordinal, chapter, narration,
@@ -419,6 +436,14 @@ export class ProjectService {
             narration: scene.narration
           }, assets, useCount);
           const selected = ranked[0];
+          const alternates = selected && ranked[1] && plannedAlternates < plannedAlternateBudget && shouldAcquireAlternate({
+            score: selected.score,
+            locationConfidence: selected.asset.locationConfidence,
+            verificationStatus: selected.asset.verificationStatus,
+            localFileId: selected.asset.localFileId
+          }) && (ranked[1].asset.canonicalPageUrl || ranked[1].asset.localFileId)
+            ? ranked.slice(1, 2)
+            : [];
           const treatment = selected ? scene.visualTreatment : 'MAP_OR_GRAPHIC';
           if (selected) {
             useCount.set(selected.asset.id, (useCount.get(selected.asset.id) ?? 0) + 1);
@@ -426,7 +451,8 @@ export class ProjectService {
               sceneOrdinal: ordinal,
               assetId: selected.asset.id,
               score: selected.score,
-              reasons: selected.reasons
+              reasons: selected.reasons,
+              role: 'selected'
             });
           }
           const sceneId = randomUUID();
@@ -456,6 +482,34 @@ export class ProjectService {
             now,
             now
           );
+          ranked.slice(0, 3).forEach((candidate, rankIndex) => {
+            this.db.raw.prepare(`
+              INSERT INTO shot_candidates(
+                id, project_id, scene_id, asset_id, candidate_rank,
+                candidate_score, score_components_json, explanation_json,
+                status, created_at, updated_at
+              ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              randomUUID(), projectId, sceneId, candidate.asset.id, rankIndex + 1,
+              candidate.score, JSON.stringify(candidate.components), JSON.stringify(candidate.reasons),
+              rankIndex === 0 ? 'selected' : 'eligible', now, now
+            );
+          });
+          for (const alternate of alternates) {
+            plannedAlternates += 1;
+            useCount.set(alternate.asset.id, (useCount.get(alternate.asset.id) ?? 0) + 1);
+            selectedByScene.push({
+              sceneOrdinal: ordinal,
+              assetId: alternate.asset.id,
+              score: alternate.score,
+              reasons: [...alternate.reasons, `Planned alternate for scene ${ordinal}`],
+              role: 'alternate'
+            });
+            this.db.raw.prepare(`
+              UPDATE shot_candidates SET status = 'alternate', updated_at = ?
+              WHERE scene_id = ? AND asset_id = ?
+            `).run(now, sceneId, alternate.asset.id);
+          }
           if (selected) {
             const sourceId = catalogSourceIds.get(selected.asset.id);
             if (sourceId) {
@@ -482,20 +536,39 @@ export class ProjectService {
           }
         });
 
-        const grouped = new Map<string, { ordinals: number[]; score: number; reasons: string[] }>();
+        const grouped = new Map<string, {
+          ordinals: number[];
+          score: number;
+          reasons: string[];
+          selected: boolean;
+          alternate: boolean;
+        }>();
         for (const selected of selectedByScene) {
-          const current = grouped.get(selected.assetId) ?? { ordinals: [], score: selected.score, reasons: selected.reasons };
+          const current = grouped.get(selected.assetId) ?? {
+            ordinals: [],
+            score: selected.score,
+            reasons: selected.reasons,
+            selected: false,
+            alternate: false
+          };
           current.ordinals.push(selected.sceneOrdinal);
           current.score = Math.max(current.score, selected.score);
+          current.selected ||= selected.role === 'selected';
+          current.alternate ||= selected.role === 'alternate';
           grouped.set(selected.assetId, current);
         }
 
         let acqOrdinal = 1;
         for (const [assetId, data] of grouped) {
           const asset = assets.find(item => item.id === assetId);
-          if (!asset?.canonicalPageUrl) continue;
+          if (!asset) continue;
           const local = Boolean(asset.localFileId);
-          const role = data.ordinals.includes(1) ? 'hero' : local ? 'license_only' : 'primary';
+          if (!local && !asset.canonicalPageUrl) continue;
+          const role = local
+            ? 'license_only'
+            : data.selected && data.ordinals.includes(1)
+              ? 'hero'
+              : data.selected ? 'primary' : 'alternate';
           this.db.raw.prepare(`
             INSERT INTO acquisition_items(
               id, project_id, asset_id, ordinal, role, state, license_state,
@@ -509,7 +582,7 @@ export class ProjectService {
             acqOrdinal++,
             role,
             local ? 'LICENSE_ONLY_PENDING' : 'READY_TO_OPEN',
-            asset.canonicalPageUrl,
+            asset.canonicalPageUrl ?? `urn:videofactory:catalog:${asset.id}`,
             JSON.stringify(data.ordinals),
             data.score,
             JSON.stringify(data.reasons),

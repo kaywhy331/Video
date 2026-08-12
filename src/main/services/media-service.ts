@@ -22,6 +22,7 @@ import {
 import { resolveFfmpeg, resolveFfprobe } from '../tool-paths';
 import { requireSuccess, runProcess } from './process-utils';
 import { ProjectStateService } from './project-state-service';
+import { RepairService } from './repair-service';
 
 interface ProbeStream {
   codec_type?: string;
@@ -115,9 +116,11 @@ export class MediaService {
     private readonly progress: (projectId: string | null, phase: string, progress: number, message: string) => void
   ) {
     this.projectStates = new ProjectStateService(db);
+    this.repairs = new RepairService(db);
   }
 
   private readonly projectStates: ProjectStateService;
+  private readonly repairs: RepairService;
 
   async probe(path: string): Promise<ProbeOutput> {
     const ffprobe = resolveFfprobe(this.settings().ffprobePath);
@@ -392,6 +395,7 @@ export class MediaService {
       });
     });
     transaction();
+    this.repairs.reconcileFootageRepairs(projectId);
     this.progress(projectId, 'verified', 0.9, 'Footage ingested and candidate segments created');
     this.updateProjectAfterAcquisition(projectId);
     return toAssetFile(this.db.raw.prepare('SELECT * FROM asset_files WHERE id = ?').get(fileId) as Record<string, unknown>);
@@ -412,25 +416,23 @@ export class MediaService {
       segment.eligible1080p && segment.blackFrameRisk < 0.35 && segment.freezeRisk < 0.5
     );
     if (!eligible.length) {
-      this.db.raw.prepare(`
-        UPDATE project_scenes SET verification_state = 'rejected', updated_at = ?
-        WHERE project_id = ? AND selected_asset_id = ?
-      `).run(new Date().toISOString(), projectId, assetId);
-      this.db.raw.prepare(`
-        INSERT INTO exceptions(
-          id, project_id, severity, stage, code, title, message, evidence_json,
-          recommended_action, status, created_at
-        ) VALUES(?, ?, 'BLOCKER', 'media', 'NO_UPSCALE_BLOCK',
-          'Source cannot fill 1080p without upscaling',
-          'Downloaded footage has no segment that satisfies effective 1080p, black-frame, and freeze limits.',
-          ?, 'Acquire a higher-resolution alternative or use the source as an inset graphic.',
-          'OPEN', ?)
-      `).run(
-        randomUUID(),
-        projectId,
-        JSON.stringify({ assetId, fileId }),
-        new Date().toISOString()
-      );
+      const now = new Date().toISOString();
+      for (const scene of scenes) {
+        const route = this.repairs.routeFootageFailure(projectId, scene.id, 'NO_SAFE_SEGMENT', {
+          assetId,
+          fileId,
+          sceneId: scene.id,
+          sceneOrdinal: scene.ordinal,
+          failure: 'No segment satisfies 1080p, black-frame, and freeze limits.'
+        });
+        if (route.status === 'verified') continue;
+        this.db.raw.prepare(`
+          UPDATE project_scenes SET verification_state = ?, updated_at = ? WHERE id = ?
+        `).run(route.status === 'waiting_acquisition' ? 'download_required' : 'rejected', now, scene.id);
+        if (route.status !== 'waiting_acquisition') {
+          this.recordUnrepairableScene(projectId, scene.id, scene.ordinal, assetId, fileId, route);
+        }
+      }
       return;
     }
 
@@ -516,6 +518,7 @@ export class MediaService {
       this.assignSegments(projectId, assetId, fileId, segments);
     });
     transaction();
+    this.repairs.reconcileFootageRepairs(projectId);
     this.updateProjectAfterAcquisition(projectId);
   }
 
@@ -545,10 +548,15 @@ export class MediaService {
       return;
     }
 
-    const rejected = this.db.raw.prepare(`
-      SELECT count(*) AS count FROM project_scenes
-      WHERE project_id = ? AND verification_state = 'rejected'
-    `).get(projectId) as { count: number };
+    const unresolved = this.db.raw.prepare(`
+      SELECT
+        sum(CASE WHEN verification_state = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+        sum(CASE WHEN verification_state NOT IN ('verified','graphic') THEN 1 ELSE 0 END) AS unresolved
+      FROM project_scenes WHERE project_id = ?
+    `).get(projectId) as { rejected: number | null; unresolved: number | null };
+    const rejectedCount = Number(unresolved.rejected ?? 0);
+    const unresolvedCount = Number(unresolved.unresolved ?? 0);
+    const waitingRepair = unresolvedCount > 0 && rejectedCount === 0;
     const current = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as { state: import('@shared/types').ProjectState };
     if (current.state === 'WAITING_FOR_DOWNLOADS') {
       this.projectStates.transition(projectId, 'INGESTING_MEDIA', {
@@ -560,12 +568,20 @@ export class MediaService {
       progress: 0.5,
       reason: 'All ingested footage has technical and location candidates'
     });
-    this.projectStates.transition(projectId, rejected.count ? 'BLOCKED_EXCEPTION' : 'FINALIZING_SCRIPT', {
-      progress: rejected.count ? 0.5 : 0.53,
-      reason: rejected.count ? 'One or more scenes failed footage verification' : 'Every scene has a verified visual treatment',
-      prerequisites: { rejectedScenes: rejected.count }
-    });
-    if (!rejected.count) {
+    this.projectStates.transition(
+      projectId,
+      unresolvedCount ? (waitingRepair ? 'WAITING_FOR_DOWNLOADS' : 'BLOCKED_EXCEPTION') : 'FINALIZING_SCRIPT',
+      {
+        progress: unresolvedCount ? 0.5 : 0.53,
+        reason: waitingRepair
+          ? 'A verified alternate was queued for failed footage'
+          : rejectedCount
+            ? 'One or more scenes exhausted safe footage repair'
+            : 'Every scene has a verified visual treatment',
+        prerequisites: { rejectedScenes: rejectedCount, unresolvedScenes: unresolvedCount }
+      }
+    );
+    if (!unresolvedCount) {
       this.projectStates.transition(projectId, 'GENERATING_VOICE', {
         progress: 0.54,
         reason: 'Metadata-grounded final script locked for narration'
@@ -575,5 +591,38 @@ export class MediaService {
         reason: 'Verified scenes are ready for narration and timeline assembly'
       });
     }
+  }
+
+  private recordUnrepairableScene(
+    projectId: string,
+    sceneId: string,
+    sceneOrdinal: number,
+    assetId: string,
+    fileId: string,
+    route: { status: string; attemptId: string | null; replacementAssetId: string | null }
+  ): void {
+    const existing = this.db.raw.prepare(`
+      SELECT id FROM exceptions
+      WHERE project_id = ? AND status = 'OPEN' AND stage = 'media'
+        AND json_extract(evidence_json, '$.sceneId') = ?
+      LIMIT 1
+    `).get(projectId, sceneId);
+    if (existing) return;
+    this.db.raw.prepare(`
+      INSERT INTO exceptions(
+        id, project_id, severity, stage, code, title, message, evidence_json,
+        recommended_action, safe_alternatives_json, status, created_at
+      ) VALUES(?, ?, 'BLOCKER', 'media', 'NO_SAFE_FOOTAGE_ALTERNATE',
+        'No safe footage alternate remains',
+        'The source failed technical verification and bounded alternate selection could not produce verified replacement footage.',
+        ?, 'Acquire a new exact-location candidate, use a truthful inset/graphic treatment, or rewrite the affected beat.',
+        ?, 'OPEN', ?)
+    `).run(
+      randomUUID(),
+      projectId,
+      JSON.stringify({ sceneId, sceneOrdinal, assetId, fileId, repairAttemptId: route.attemptId }),
+      JSON.stringify(['Acquire exact-location alternate', 'Use non-upscaled graphic treatment', 'Rewrite affected narration beat']),
+      new Date().toISOString()
+    );
   }
 }

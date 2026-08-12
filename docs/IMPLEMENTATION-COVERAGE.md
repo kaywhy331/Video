@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-12 for 0.1.0-alpha.3.
+Updated 2026-08-12 after the automated repair-routing milestone.
 
 Status meanings:
 
@@ -15,7 +15,7 @@ Status meanings:
 |---|---|---|
 | Desktop shell and sandbox | Implemented + tested | Electron/Vite production bundle, IPC/security tests |
 | Clean Windows install/runtime | Implemented, external validation pending | CI builds unsigned NSIS/ZIP; clean-machine launch remains unrun |
-| SQLite schema and migration | Implemented + tested | Migrations 001/002, integrity and reopen/idempotency tests |
+| SQLite schema and migration | Implemented + tested | Migrations 001/002/003, integrity and reopen/idempotency tests |
 | Catalog XLSX/CSV import and search | Implemented + tested | Existing import/normalization/geography tests; 26K-row UI performance not benchmarked |
 | Metadata revisions and undo | Implemented + tested | Revision persistence and UI; bulk edit/merge/split/export remain partial |
 | Geographic evidence model | Partial | Exact-location metadata gate exists; canonical place IDs/evidence A–E are not complete |
@@ -23,10 +23,10 @@ Status meanings:
 | Research and fact pack | Partial | Catalog-backed sources/claims and scene links; web research, freshness/conflict orchestration absent |
 | Script/storyboard pipeline | Partial | Provisional structured scripts are locked; full post-ingest rewrite and word alignment absent |
 | Acquisition and licensing | Implemented, external validation pending | Manual Envato handoff and project attestation; live account workflow unrun |
-| Media ingest and verification | Partial | Hashing, quarantine, FFprobe, conflict evidence, black/freeze analysis, rotation/no-upscale gates; semantic vision and automated alternate repair absent |
+| Media ingest and verification | Partial | Hashing, quarantine, FFprobe, conflict evidence, black/freeze analysis, rotation/no-upscale gates, ranked candidates, and bounded verified-alternate repair; semantic vision remains absent |
 | Narration | Partial | Windows SAPI plus visual-shot splitting; pronunciation, word timing, and section cache incomplete |
 | Captions | Implemented + tested | SRT and WebVTT generation; alignment is scene/shot based rather than word-aligned |
-| Render and media QC | Implemented + tested | Real FFmpeg fixtures cover analysis, concat, two-pass normalization, H.264/AAC-LC, BT.709, fast-start |
+| Render and media QC | Implemented + tested | Real FFmpeg fixtures plus classified failures, two-attempt smallest-safe output reroute, artifact versions, and repair receipts |
 | Packaging/final review | Implemented + tested | Three packages, frame thumbnails, QC gate, approval fingerprint |
 | YouTube private-first publishing | Implemented, external validation pending | Persisted resumable session protocol, duplicate guard, polling/attachment receipts; live OAuth/API rehearsal unrun |
 | Durable project/job recovery | Implemented + tested | Canonical transitions, fail-closed blocked state, audits, dependencies, leases, stale-process recovery, project locks |
@@ -46,6 +46,7 @@ Status meanings:
 - render concat ordering and two-pass output profile checks;
 - approval fingerprints, final-review gates, resumable-upload ranges, and caption reuse;
 - planning capacity, spend, coverage, and duplicate-topic gates.
+- ranked shot-candidate persistence, residual-risk alternate planning, late-bound geography/license/file/media checks, bounded alternate promotion, QC repair classification, and artifact-versioned retry/exhaustion.
 
 ## Production qualification gates
 

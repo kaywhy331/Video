@@ -1,6 +1,6 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-12 for 0.1.0-alpha.3.
+Updated 2026-08-12 after the automated repair-routing milestone.
 
 Alpha.3 closes the highest-risk local durability, security, rendering, backup, and publishing defects found during the production-readiness audit. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
@@ -13,7 +13,7 @@ Alpha.3 closes the highest-risk local durability, security, rendering, backup, a
 - Add a configurable semantic vision provider for actual-footage/place/scene-contract verification.
 - Add sourced web research with freshness/conflict policy for non-visual material claims.
 - Implement the final post-ingest script rewrite against verified footage, plus pronunciation and word-level/forced alignment.
-- Implement automated alternate selection and smallest-safe repair routing for failed footage instead of stopping at exception/manual retry.
+- Extend automated repair beyond the implemented bounded alternate/output loop to post-ingest script rewriting, semantic footage decisions, and scene/range-only rendering.
 - Complete maps, labels, chapter cards, lower thirds, and scene/range render modes required by the full editing PRD.
 - Expand QC for duplicate/near-duplicate shots, severe crops, letterboxing, clipping/silence, caption overlap/line length, unsupported package claims, and thumbnail file limits.
 - Add project export and deterministic derivative rebuild after restore.

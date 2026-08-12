@@ -99,7 +99,8 @@ function renderFromRow(row: Record<string, unknown>): RenderRecord {
     height: row.height === null || row.height === undefined ? null : Number(row.height),
     error: row.error ? String(row.error) : null,
     createdAt: String(row.created_at),
-    completedAt: row.completed_at ? String(row.completed_at) : null
+    completedAt: row.completed_at ? String(row.completed_at) : null,
+    artifactVersion: Number(row.artifact_version ?? 1)
   };
 }
 
@@ -114,6 +115,13 @@ export class RenderService {
   ) {}
 
   async render(projectId: string, kind: 'draft' | 'final'): Promise<RenderRecord> {
+    const repairSequence = kind === 'final'
+      ? Number((this.db.raw.prepare(`
+          SELECT count(*) AS sequence
+          FROM repair_attempts
+          WHERE project_id = ? AND scene_id IS NULL
+        `).get(projectId) as { sequence: number }).sequence ?? 0)
+      : 0;
     const renderInput = this.db.raw.prepare(`
       SELECT s.id, s.narration, s.selected_segment_id, s.verification_state,
         g.start_ms, g.end_ms, f.sha256
@@ -122,7 +130,12 @@ export class RenderService {
       LEFT JOIN asset_files f ON f.id = s.selected_file_id
       WHERE s.project_id = ? ORDER BY s.ordinal
     `).all(projectId);
-    const job = this.jobs.create(`render_${kind}`, projectId, { projectId, kind, renderInput }, 2);
+    const job = this.jobs.create(
+      `render_${kind}`,
+      projectId,
+      { projectId, kind, renderInput, repairSequence },
+      2
+    );
     if (job.state === 'SUCCEEDED') {
       const latest = this.db.raw.prepare(`
         SELECT * FROM renders WHERE project_id = ? AND kind = ? AND state = 'SUCCEEDED'
@@ -136,6 +149,11 @@ export class RenderService {
     const settings = this.settings();
     const project = this.projects.get(projectId);
     const profile = kind === 'draft' ? 'draft_720p' : 'final_1080p';
+    const previousVersion = this.db.raw.prepare(`
+      SELECT coalesce(max(artifact_version), 0) AS version
+      FROM renders WHERE project_id = ? AND kind = ?
+    `).get(projectId, kind) as { version: number };
+    const artifactVersion = Number(previousVersion.version ?? 0) + 1;
     const outputDirectory = join(settings.outputFolder, kind === 'draft' ? 'draft' : 'review');
     const projectDirectory = join(settings.projectFolder, project.id);
     const workDirectory = join(projectDirectory, 'render-work', renderId);
@@ -155,15 +173,18 @@ export class RenderService {
     const now = new Date().toISOString();
     this.db.raw.prepare(`
       INSERT INTO renders(
-        id, project_id, kind, profile, state, manifest_path, output_path, created_at
-      ) VALUES(?, ?, ?, ?, 'RUNNING', ?, ?, ?)
-    `).run(renderId, projectId, kind, profile, manifestPath, outputPath, now);
+        id, project_id, kind, profile, state, manifest_path, output_path,
+        artifact_version, created_at
+      ) VALUES(?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?)
+    `).run(renderId, projectId, kind, profile, manifestPath, outputPath, artifactVersion, now);
     this.projects.states.transition(projectId, kind === 'draft' ? 'RENDERING_DRAFT' : 'RENDERING_FINAL', {
       progress: kind === 'draft' ? 0.63 : 0.78,
       reason: `${kind === 'draft' ? 'Draft' : 'Final'} render job started`,
       prerequisites: { renderId, profile }
     });
 
+    let retryAutomatically = false;
+    let currentAttemptCommitted = false;
     try {
       const sourceRows = this.db.raw.prepare(`
         SELECT
@@ -330,6 +351,7 @@ export class RenderService {
         projectTitle: project.title,
         scriptVersionId: project.scriptVersionId,
         profile,
+        artifactVersion,
         output: {
           container: 'mp4',
           videoCodec: 'h264',
@@ -390,23 +412,55 @@ export class RenderService {
         this.projects.generatePackaging(projectId);
         await this.generateThumbnailCandidates(projectId, outputPath, elapsed);
         const blockers = this.db.raw.prepare(`
-          SELECT code, severity, message, evidence_json FROM qc_results
+          SELECT id, code, category, severity, message, evidence_json FROM qc_results
           WHERE project_id = ? AND render_id = ? AND status = 'fail' AND severity IN ('BLOCKER','HIGH')
           ORDER BY CASE severity WHEN 'BLOCKER' THEN 0 ELSE 1 END, code
         `).all(projectId, renderId) as Array<{
+          id: string;
           code: string;
+          category: string;
           severity: 'BLOCKER' | 'HIGH';
           message: string;
           evidence_json: string;
         }>;
         if (blockers.length) {
-          this.recordQcExceptions(projectId, renderId, blockers);
-          this.projects.states.transition(projectId, 'BLOCKED_EXCEPTION', {
-            progress: 0.88,
-            reason: 'Final QC contains release blockers',
-            prerequisites: { blockerCount: blockers.length }
-          });
+          const route = this.projects.repairs.routeQcFailures(projectId, renderId, blockers.map(failure => ({
+            id: failure.id,
+            code: failure.code,
+            category: failure.category,
+            severity: failure.severity,
+            message: failure.message,
+            evidenceJson: failure.evidence_json
+          })));
+          if (route.retryAutomatically && route.targetState) {
+            retryAutomatically = true;
+            this.projects.states.transition(projectId, route.targetState, {
+              progress: 0.76,
+              reason: 'Correctable final QC failures routed to the smallest safe rebuild stage',
+              prerequisites: {
+                blockerCount: blockers.length,
+                failedRenderId: renderId,
+                failedArtifactVersion: artifactVersion,
+                retrySequence: route.retrySequence,
+                targetState: route.targetState
+              }
+            });
+          } else {
+            this.recordQcExceptions(projectId, renderId, blockers);
+            this.projects.states.transition(projectId, 'BLOCKED_EXCEPTION', {
+              progress: 0.88,
+              reason: route.exhausted
+                ? 'Automatic QC repair limit reached'
+                : 'Final QC contains a failure requiring operator action',
+              prerequisites: {
+                blockerCount: blockers.length,
+                repairExhausted: route.exhausted,
+                operatorRequired: route.operatorRequired
+              }
+            });
+          }
         } else {
+          this.projects.repairs.completeClearedRenderRepairs(projectId, renderId, new Set());
           this.projects.states.transition(projectId, 'WAITING_FINAL_APPROVAL', {
             progress: 0.9,
             reason: 'Final render and package passed local QC; private upload/final review is ready',
@@ -423,9 +477,15 @@ export class RenderService {
 
       const result = renderFromRow(this.db.raw.prepare('SELECT * FROM renders WHERE id = ?').get(renderId) as Record<string, unknown>);
       this.jobs.succeed(job.id, result);
+      currentAttemptCommitted = true;
+      if (retryAutomatically) {
+        this.emitProgress(job.id, projectId, 1, 'repair', 'QC repair routed; rebuilding final artifact automatically');
+        return this.render(projectId, 'final');
+      }
       this.emitProgress(job.id, projectId, 1, 'complete', `${kind === 'final' ? 'Final' : 'Draft'} render complete`);
       return result;
     } catch (error) {
+      if (currentAttemptCommitted) throw error;
       const message = error instanceof Error ? error.message : String(error);
       this.db.raw.prepare(`
         UPDATE renders SET state = 'FAILED', error = ?, completed_at = ? WHERE id = ?
@@ -580,7 +640,14 @@ export class RenderService {
   private recordQcExceptions(
     projectId: string,
     renderId: string,
-    failures: Array<{ code: string; severity: 'BLOCKER' | 'HIGH'; message: string; evidence_json: string }>
+    failures: Array<{
+      id: string;
+      code: string;
+      category: string;
+      severity: 'BLOCKER' | 'HIGH';
+      message: string;
+      evidence_json: string;
+    }>
   ): void {
     const now = new Date().toISOString();
     const insert = this.db.raw.prepare(`
@@ -611,7 +678,8 @@ export class RenderService {
         `Final QC failed: ${failure.code.replaceAll('_', ' ').toLowerCase()}`,
         failure.message,
         JSON.stringify({ renderId, qcCode: failure.code, qcEvidence }),
-        'Repair the source, rights record, or render profile, then generate and verify a new final render.',
+        String(this.db.raw.prepare('SELECT repair_action FROM qc_results WHERE id = ?').get(failure.id)?.repair_action
+          ?? 'Complete the recorded prerequisite, then generate and verify a new final render.'),
         now
       );
     }

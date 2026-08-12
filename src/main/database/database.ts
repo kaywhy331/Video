@@ -2,7 +2,6 @@ import { DatabaseSync, type StatementSync, type SQLInputValue } from 'node:sqlit
 import { existsSync, readFileSync, copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readdirSync } from 'node:fs';
-import { app } from 'electron';
 import type { AppSettings } from '@shared/types';
 
 type PragmaOptions = { simple?: boolean };
@@ -129,7 +128,6 @@ export class AppDatabase {
       join(process.cwd(), 'src', 'main', 'database'),
       join(process.cwd(), 'resources')
     ];
-    if (app && typeof app.getAppPath === 'function') directories.push(join(app.getAppPath(), 'resources'));
     if (process.resourcesPath) directories.push(join(process.resourcesPath, 'resources'), process.resourcesPath);
     for (const directory of directories) {
       if (!existsSync(directory)) continue;
