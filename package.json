@@ -19,8 +19,8 @@
     "test:watch": "vitest",
     "validate": "npm run typecheck && npm run test && npm run build",
     "package:dir": "npm run build && electron-builder --dir",
-    "package:win": "npm run build && electron-builder --win nsis zip",
-    "package:win:portable": "npm run build && electron-builder --win portable",
+    "package:win": "npm run build && electron-builder --win nsis zip --publish never",
+    "package:win:portable": "npm run build && electron-builder --win portable --publish never",
     "demo:media": "node scripts/generate-demo-media.mjs",
     "doctor": "node scripts/preflight.mjs"
   },
