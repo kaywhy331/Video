@@ -20,7 +20,8 @@ describe('application database migrations', () => {
       SELECT version, name FROM schema_migrations ORDER BY version
     `).all()).toEqual([
       { version: 1, name: 'initial' },
-      { version: 2, name: 'production_hardening' }
+      { version: 2, name: 'production_hardening' },
+      { version: 3, name: 'automated_repair' }
     ]);
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('projects') WHERE name = 'resume_state'
@@ -28,13 +29,19 @@ describe('application database migrations', () => {
     expect(database.raw.prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'backup_runs'
     `).get()).toEqual({ name: 'backup_runs' });
+    expect(database.raw.prepare(`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'repair_attempts'
+    `).get()).toEqual({ name: 'repair_attempts' });
+    expect(database.raw.prepare(`
+      SELECT name FROM pragma_table_info('renders') WHERE name = 'artifact_version'
+    `).get()).toEqual({ name: 'artifact_version' });
     expect(database.integrityCheck()).toBe('ok');
 
     database.close();
 
     const reopened = new AppDatabase(join(root, 'videofactory.sqlite'));
     expect(reopened.raw.prepare('SELECT count(*) AS count FROM schema_migrations').get())
-      .toEqual({ count: 2 });
+      .toEqual({ count: 3 });
     expect(reopened.integrityCheck()).toBe('ok');
     reopened.close();
   });

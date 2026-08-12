@@ -698,6 +698,11 @@ details pre { overflow: auto; max-height: 240px; padding: 12px; border-radius: 8
 .scene-audit-row > div { min-width: 0; }
 .scene-audit-row strong { display: block; overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .scene-audit-row span:not(.scene-number):not(.status-pill) { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--subtle); font-size: 8px; }
+.repair-audit { display: flex; flex-direction: column; gap: 5px; max-height: 280px; overflow: auto; }
+.repair-audit-row { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid rgba(255,255,255,.035); border-radius: 8px; background: rgba(105,228,255,.025); color: var(--accent); }
+.repair-audit-row > div { min-width: 0; }
+.repair-audit-row strong { display: block; color: #dce2ea; font-size: 9px; text-transform: lowercase; }
+.repair-audit-row span:not(.status-pill) { display: block; overflow: hidden; margin-top: 3px; color: var(--subtle); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .asset-editor { width: min(640px, 92vw); display: flex; flex-direction: column; }
 .asset-editor-form { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; padding: 20px; overflow: auto; }
 .asset-editor-form label.full { grid-column: 1 / -1; }

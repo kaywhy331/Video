@@ -46,4 +46,8 @@ describe('project state machine', () => {
     expect(canTransitionProject('BLOCKED_EXCEPTION', 'VERIFYING_FOOTAGE')).toBe(true);
     expect(canTransitionProject('ARCHIVED', 'CREATED')).toBe(false);
   });
+
+  it('allows final QC to route an automatic output repair back to final rendering', () => {
+    expect(canTransitionProject('QC_FINAL', 'QC_DRAFT')).toBe(true);
+  });
 });

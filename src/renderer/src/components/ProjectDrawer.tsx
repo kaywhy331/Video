@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react';
-import { ExternalLink, MapPin, X } from 'lucide-react';
+import { ExternalLink, MapPin, RotateCcw, X } from 'lucide-react';
 import type { ProjectDetail } from '@shared/types';
 import { Button, ProgressBar, StatusPill } from './ui';
 
@@ -66,6 +66,26 @@ export function ProjectDrawer({
                 ))}
               </div>
             </section>
+            {project.repairs.length ? (
+              <section>
+                <h3>Repair history</h3>
+                <div className="repair-audit">
+                  {project.repairs.map(repair => (
+                    <div key={repair.id} className="repair-audit-row">
+                      <RotateCcw size={14} />
+                      <div>
+                        <strong>{repair.failureCode.replaceAll('_', ' ')}</strong>
+                        <span>
+                          {repair.action}
+                          {repair.attemptNumber ? ` · attempt ${repair.attemptNumber}/${repair.maximumAttempts}` : ''}
+                        </span>
+                      </div>
+                      <StatusPill value={repair.status} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {project.youtubeVideoId ? (
               <Button
                 variant="secondary"

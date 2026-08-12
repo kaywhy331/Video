@@ -67,6 +67,22 @@ export type JobState =
 
 export type ExceptionSeverity = 'BLOCKER' | 'HIGH' | 'MEDIUM' | 'LOW';
 
+export type RepairClass =
+  | 'automatic'
+  | 'alternate'
+  | 'regenerate_range'
+  | 'acquisition'
+  | 'operator'
+  | 'fatal';
+
+export type RepairAttemptStatus =
+  | 'routed'
+  | 'waiting_acquisition'
+  | 'verified'
+  | 'exhausted'
+  | 'operator_required'
+  | 'failed';
+
 export type VisualTreatment =
   | 'EXACT_LOCATION_FOOTAGE'
   | 'CONTEXTUAL_VERIFIED_FOOTAGE'
@@ -368,6 +384,7 @@ export interface ProjectDetail extends ProjectSummary {
   renders: RenderRecord[];
   packaging: PackagingCandidate[];
   qc: QcResult[];
+  repairs: RepairAttempt[];
 }
 
 export interface ProjectScene {
@@ -498,6 +515,7 @@ export interface RenderRecord {
   error: string | null;
   createdAt: string;
   completedAt: string | null;
+  artifactVersion: number;
 }
 
 export interface PackagingCandidate {
@@ -526,7 +544,33 @@ export interface QcResult {
   status: 'pass' | 'warning' | 'fail' | 'repaired';
   message: string;
   evidence: Record<string, unknown>;
+  repairClass: RepairClass | null;
+  repairAttempted: boolean;
+  repairAction: string | null;
   createdAt: string;
+}
+
+export interface RepairAttempt {
+  id: string;
+  projectId: string;
+  sceneId: string | null;
+  renderId: string | null;
+  qcResultId: string | null;
+  failureCode: string;
+  repairClass: RepairClass;
+  action: string;
+  status: RepairAttemptStatus;
+  attemptNumber: number;
+  maximumAttempts: number;
+  sourceAssetId: string | null;
+  replacementAssetId: string | null;
+  replacementFileId: string | null;
+  replacementSegmentId: string | null;
+  sourceArtifactVersion: number | null;
+  targetState: ProjectState | null;
+  evidence: Record<string, unknown>;
+  createdAt: string;
+  completedAt: string | null;
 }
 
 export interface FinalReview {

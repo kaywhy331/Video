@@ -4,6 +4,7 @@ import type { AppDatabase } from '../database/database';
 import type { AcquisitionItem } from '@shared/types';
 import type { MediaService } from './media-service';
 import { ProjectStateService } from './project-state-service';
+import { RepairService } from './repair-service';
 
 function jsonArray(value: unknown): string[] {
   try {
@@ -52,12 +53,14 @@ export function validateEnvatoUrl(value: string): URL {
 
 export class AcquisitionService {
   private readonly projectStates: ProjectStateService;
+  private readonly repairs: RepairService;
 
   constructor(
     private readonly db: AppDatabase,
     private readonly media: MediaService
   ) {
     this.projectStates = new ProjectStateService(db);
+    this.repairs = new RepairService(db);
   }
 
   list(projectId?: string): AcquisitionItem[] {
@@ -158,6 +161,7 @@ export class AcquisitionService {
       );
     });
     transaction();
+    this.repairs.reconcileFootageRepairs(String(item.project_id));
 
     if (isLicenseOnly && item.local_file_id) {
       const projectId = String(item.project_id);
@@ -169,6 +173,7 @@ export class AcquisitionService {
       const scenes = this.db.raw.prepare(`
         SELECT id FROM project_scenes
         WHERE project_id = ? AND selected_asset_id = ?
+          AND verification_state <> 'verified'
         ORDER BY ordinal
       `).all(projectId, item.asset_id) as Array<{ id: string }>;
       const attach = this.db.raw.transaction(() => {
