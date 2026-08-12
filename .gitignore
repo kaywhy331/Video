@@ -1,0 +1,17 @@
+node_modules/
+out/
+dist/
+release/
+coverage/
+*.log
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+samples/generated-media/
+Video.zip
+VideoPRD.zip

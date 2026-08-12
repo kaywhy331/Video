@@ -1,0 +1,90 @@
+{
+  "policyVersion": 1,
+  "production": {
+    "defaultMode": "autopilot",
+    "targetDurationMs": 480000,
+    "minimumDurationMs": 360000,
+    "maximumDurationMs": 600000,
+    "aspectRatio": "16:9",
+    "languageCode": "en",
+    "maximumActiveProjects": 2,
+    "maximumWaitingForDownloads": 1,
+    "maximumWaitingForFinalApproval": 1
+  },
+  "topicSelection": {
+    "minimumOpportunityScore": 68,
+    "minimumVisualCoverageScore": 75,
+    "minimumLocationConfidenceScore": 80,
+    "minimumUniqueSourceAssets": 12,
+    "minimumShotCategoryCount": 4,
+    "minimumCandidateToFinalShotRatio": 1.35,
+    "maximumExpectedDownloads": 35,
+    "weights": {
+      "visualCoverageAndDiversity": 0.22,
+      "estimatedDemand": 0.18,
+      "lowCompetition": 0.16,
+      "exactLocationConfidence": 0.12,
+      "channelFit": 0.10,
+      "evergreenValue": 0.08,
+      "freshnessSeasonality": 0.06,
+      "productionEfficiency": 0.05,
+      "strategicPortfolioValue": 0.03
+    }
+  },
+  "geography": {
+    "minimumExactLocationConfidence": 0.85,
+    "minimumCityContextConfidence": 0.75,
+    "allowVisionOnlyExactLandmark": false,
+    "allowGenericSemanticFallback": false
+  },
+  "visualPacing": {
+    "minimumShotMs": 1500,
+    "preferredShotMs": 4500,
+    "maximumShotMs": 7000,
+    "maximumSameSourceUses": 2,
+    "maximumConsecutiveSameShotPattern": 3,
+    "forbidAdjacentDuplicateClusters": true
+  },
+  "acquisition": {
+    "heroCandidateCount": 3,
+    "mediumRiskAlternateCount": 1,
+    "highConfidenceAlternateCount": 0,
+    "retainUnusedDownloadsDays": 60,
+    "fileStablePollCount": 3,
+    "fileStablePollIntervalMs": 2000,
+    "automaticMappingThreshold": 0.85
+  },
+  "output": {
+    "defaultProfileId": "youtube-1080p-final",
+    "allowQualified4k": true,
+    "allowUpscaling": false,
+    "allowFrameInterpolation": false,
+    "colorSpace": "bt709",
+    "pixelFormat": "yuv420p"
+  },
+  "quality": {
+    "minimumNarrationVisualSupportPercent": 95,
+    "maximumUnresolvedLocationConflicts": 0,
+    "maximumUnsupportedClaims": 0,
+    "requireLicenseForEveryUsedAsset": true,
+    "finalUploadPrivacy": "private"
+  },
+  "automation": {
+    "autoRepairMaximumAttempts": 2,
+    "autoRewriteUnsupportedBeats": true,
+    "autoUseGraphicsForAbstractClaims": true,
+    "requireFinalHumanApproval": true
+  },
+  "costControls": {
+    "monthlyHardBudgetUsd": 250,
+    "perProjectSoftBudgetUsd": 20,
+    "maximumConcurrentAiCalls": 2,
+    "maximumProviderRetries": 3
+  },
+  "analyticsLearning": {
+    "minimumPublishedVideos": 10,
+    "minimumViewsForSceneInference": 1000,
+    "minimumVideosRepeatingPattern": 3,
+    "autoApplyWeightChanges": false
+  }
+}

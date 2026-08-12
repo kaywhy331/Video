@@ -1,0 +1,37 @@
+VideoFactory Desktop PRD + Technical Specification Package
+Version: 1.0
+Generated: 2026-07-30
+
+Contents:
+VideoFactory_Desktop_PRD_and_Technical_Spec_v1.0.docx
+VideoFactory_Desktop_PRD_and_Technical_Spec_v1.0.md
+build-specification/01-PRD.md
+build-specification/02-TECHNICAL-SPEC.md
+build-specification/03-DATA-MODEL.sql
+build-specification/04-STATE-MACHINE.md
+build-specification/05-IPC-AND-PROVIDER-CONTRACTS.md
+build-specification/06-ACCEPTANCE-TESTS.md
+build-specification/07-IMPLEMENTATION-PLAN.md
+build-specification/README.md
+build-specification/config/default-autopilot-policy.json
+build-specification/config/render-profiles.json
+build-specification/references.md
+build-specification/schemas/render-manifest.schema.json
+build-specification/schemas/scene-contract.schema.json
+
+SHA-256 checksums:
+82dbee2c6be27ac7b63f5df978c259473a9900c6a6ec283e748d44c5dbe4c388  ./VideoFactory_Desktop_PRD_and_Technical_Spec_v1.0.docx
+5ab36c681affaeba637723a3766ce497f78c0ff436857b9c8341032d9fa02215  ./VideoFactory_Desktop_PRD_and_Technical_Spec_v1.0.md
+280067e20e2a0d55464db8fb04c7f13f9a273018516fd5d17a600d7bdc169b11  ./build-specification/01-PRD.md
+8a2df3484fa7a15876775208cbfc95235ad1e16b7d1875de91198cb59f174936  ./build-specification/02-TECHNICAL-SPEC.md
+e85ca055d5a72d199738976dc8eb27ba7305b57968564ee75818b509e093a36c  ./build-specification/03-DATA-MODEL.sql
+f822ec236ba543b25adfe9d505644e6173f21cbf4acbe642d01f5a7b7be55c93  ./build-specification/04-STATE-MACHINE.md
+ea92f5daed2861a73ef8796b0b77342ea58d2ce34cccc3f0b26d604882b231a3  ./build-specification/05-IPC-AND-PROVIDER-CONTRACTS.md
+985398f020d0b757270924bbbae2776fd1d572b5f902c4585368ff9580dea39b  ./build-specification/06-ACCEPTANCE-TESTS.md
+dc895a917fe5e6270fb7e3f3ad82fb8ce830bd2203f2be3aff940b323589ebdc  ./build-specification/07-IMPLEMENTATION-PLAN.md
+a31cf03efb368be3b8aed5bb9f725d2ae87b8eb535bda4ad1fb08c78aa74071b  ./build-specification/README.md
+ab33876f66107d55cc4c852281d52f22c8b403d8a866736cdd7f0941acc37424  ./build-specification/config/default-autopilot-policy.json
+dec44bafdc650756519993e92eb6a8c4caa6247c83e19163fc275f85c3f4f929  ./build-specification/config/render-profiles.json
+085d264e66b53b67998fe5368cf78688942e3501b395f75f28c81b53c65de5c2  ./build-specification/references.md
+defd2ed7fd8438a5da57cf6d06b08b875c6a00a41055b7033b55b7e6036589fc  ./build-specification/schemas/render-manifest.schema.json
+799b02cde718fca3436fa01b8580e027aab0a09ddee6342e1018c7d69344a79e  ./build-specification/schemas/scene-contract.schema.json
