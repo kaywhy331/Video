@@ -104,6 +104,7 @@ export interface AppSettings {
   ffmpegPath: string;
   ffprobePath: string;
   monthlyBudgetUsd: number;
+  projectBudgetUsd: number;
   minFreeDiskGb: number;
   maxActiveProjects: number;
   maxWaitingDownloads: number;
@@ -123,6 +124,10 @@ export interface AppSettings {
   visionBaseUrl: string;
   visionModel: string;
   visionMinimumConfidence: number;
+  researchProvider: 'disabled' | 'tavily';
+  researchBaseUrl: string;
+  researchSearchDepth: 'basic' | 'advanced';
+  researchMaxResultsPerQuery: number;
   youtubeCategoryId: string;
   youtubePlaylistId: string;
   youtubePrivacy: 'private';
@@ -138,6 +143,7 @@ export interface AppSettings {
 export interface SecretStatus {
   llmApiKeyConfigured: boolean;
   visionApiKeyConfigured: boolean;
+  researchApiKeyConfigured: boolean;
   httpTtsApiKeyConfigured: boolean;
   youtubeClientConfigured: boolean;
   youtubeAuthorized: boolean;

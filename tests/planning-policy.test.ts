@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateCoverage, topicSimilarity } from '@main/services/planning-policy';
+import { assertPlanningCapacity, evaluateCoverage, topicSimilarity } from '@main/services/planning-policy';
 import type { CoverageCluster } from '@shared/types';
+import { AppDatabase } from '@main/database/database';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const qualified: CoverageCluster = {
   key: 'Vietnam|Da Nang|My Son', country: 'Vietnam', city: 'Da Nang', locationName: 'My Son',
@@ -28,5 +32,17 @@ describe('coverage-first planning policy', () => {
   it('detects materially duplicate topic signatures', () => {
     expect(topicSimilarity('A Visual Guide to Da Nang', 'Da Nang: A Visual Guide')).toBeGreaterThanOrEqual(0.8);
     expect(topicSimilarity('A Visual Guide to Da Nang', 'Inside Kyoto Temples')).toBeLessThan(0.3);
+  });
+
+  it('blocks project creation after known provider auth or quota exhaustion', () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-planning-preflight-'));
+    const db = new AppDatabase(join(root, 'db.sqlite'));
+    db.raw.prepare(`INSERT INTO provider_health(provider, status, status_code, message, checked_at) VALUES('tavily', 'quota_exhausted', 429, 'Research quota exhausted', ?)`).run(new Date().toISOString());
+    expect(() => assertPlanningCapacity(db, {
+      monthlyBudgetUsd: 100, maxActiveProjects: 2, maxWaitingDownloads: 1, maxPrivateApproval: 1,
+      researchProvider: 'tavily', llmProvider: 'mock', visionProvider: 'disabled'
+    } as import('@shared/types').AppSettings, 'New topic')).toThrow('Research quota exhausted');
+    db.close();
+    rmSync(root, { recursive: true, force: true });
   });
 });

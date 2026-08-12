@@ -98,8 +98,8 @@ describe('OpenAI-compatible vision adapter', () => {
     });
     expect(body.messages[1].content[1].image_url.url).toMatch(/^data:image\/jpeg;base64,/);
     expect(db.raw.prepare(`
-      SELECT error, retry_count FROM provider_calls WHERE operation = 'verify_footage'
-    `).get()).toEqual({ error: null, retry_count: 0 });
+      SELECT error, retry_count, estimated_cost_usd FROM provider_calls WHERE operation = 'verify_footage'
+    `).get()).toEqual({ error: null, retry_count: 0, estimated_cost_usd: 0.02 });
     db.close();
   });
 

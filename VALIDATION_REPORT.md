@@ -1,10 +1,10 @@
 # VideoFactory Desktop alpha.3 — Validation Report
 
-Generated: 2026-08-12T13:04:46-07:00 (America/Los_Angeles)
+Generated: 2026-08-12 (America/Los_Angeles); sourced-research validation pending GitHub CI receipt.
 
 ## Outcome
 
-The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing and semantic footage verification implemented. Full local source validation and the semantic implementation's GitHub Actions run pass, including real FFmpeg media operations and Windows packaging. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
+The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing, semantic footage verification, sourced web research, freshness/conflict orchestration, and provider preflight implemented. Full local source validation passes, including real FFmpeg media operations. The prior semantic milestone's GitHub Actions run passed; the current research milestone's CI receipt is added only after exact-head validation. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
 
 ## Local validation
 
@@ -12,11 +12,11 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with a
 |---|---|
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
-| Focused semantic/repair/contracts suite | Passed; recovery/provider/repair coverage included in full suite |
-| Full Vitest suite | Passed; 28 files / 87 tests |
+| Focused research/provider/semantic/contracts suite | Passed; cache, auth/quota, budgets, citations, stale/conflict, invented-ID, and corrective-retry cases included |
+| Full Vitest suite | Passed; 33 files / 100 tests |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
-| Application migration wrapper (001 + 002 + 003 + 004) | Passed in focused validation; versions recorded, reopen idempotent, integrity `ok` |
+| Application migration wrapper (001 + 002 + 003 + 004 + 005) | Passed in focused validation; versions recorded, accepted-claim trigger enforced, reopen idempotent, integrity `ok` |
 | Source/resource migration parity | Passed |
 | Electron/Vite main, preload, renderer build | Passed |
 | `git diff --check` | Passed |
@@ -51,6 +51,10 @@ This proves the Windows packages can be produced by the hosted runner. It does n
 - canonical geographic hierarchies with parent-aware disambiguation and human-over-vision evidence precedence;
 - scene-specific contact-sheet-only semantic provider requests with strict schema validation, one corrective retry, caching, persisted provider/error receipts, and fail-closed policy;
 - semantic receipt-gated media attachment and alternate promotion, explicit operator retry, blocker lifecycle handling, and startup re-verification for legacy waiting alternates.
+- bounded Tavily Search/Extract adapter with real HTTP(S) URL enforcement, response validation, app-owned source IDs, source-content hashes, provider receipts, and cache reuse;
+- strict one-corrective-retry factual extraction that rejects model-invented source or claim IDs, followed by deterministic category freshness, stale omission, and material-conflict exceptions;
+- relational claim citations with a database acceptance trigger, scene claim links, wording-fidelity checks, and per-project provider policy snapshots;
+- centralized cached-call-aware monthly/per-project budget and persisted auth/quota preflight for research, language, and vision calls before new network requests or new projects.
 
 ## Historical alpha.2 validation
 
@@ -66,6 +70,7 @@ Alpha.2 repaired the original incomplete package by restoring dependency declara
 | Live Envato licensing/download workflow | Unverified |
 | Live Google OAuth/YouTube private upload and publish rehearsal | Unverified |
 | Live semantic vision provider against representative licensed footage | Unverified; mocked protocol/policy coverage is not provider qualification |
+| Live Tavily plus LLM research against representative sources/conflicts | Unverified; mocked protocol/policy coverage is not provider qualification |
 | Forced restart during real ingest/render/upload | Unverified |
 | Representative production-data restore drill | Unverified |
 

@@ -8,6 +8,7 @@ import {
   VisionFootageAssessmentSchema
 } from '@shared/contracts';
 import type { VisionFootageAssessment } from '@shared/footage-verification';
+import { ProviderPolicyService } from './provider-policy';
 
 export interface VisionSceneContract {
   projectId: string;
@@ -44,11 +45,15 @@ function imageMime(path: string): string {
 }
 
 export class VisionService {
+  private readonly policy: ProviderPolicyService;
+
   constructor(
     private readonly db: AppDatabase,
     private readonly secrets: SecretStore,
     private readonly settings: () => AppSettings
-  ) {}
+  ) {
+    this.policy = new ProviderPolicyService(db, settings);
+  }
 
   configured(): boolean {
     const settings = this.settings();
@@ -83,7 +88,12 @@ export class VisionService {
         cached: true
       };
     }
-    this.assertMonthlyBudget(settings.monthlyBudgetUsd);
+    this.policy.assertCanCall({
+      projectId: input.projectId,
+      provider: 'openai_compatible_vision',
+      configured: true,
+      estimatedCostUsd: 0.02
+    });
     const imageUrl = `data:${imageMime(input.contactSheetPath)};base64,${readFileSync(input.contactSheetPath).toString('base64')}`;
     const endpoint = `${settings.visionBaseUrl.replace(/\/$/, '')}/chat/completions`;
     const system = [
@@ -123,10 +133,15 @@ export class VisionService {
           })
         });
         requestId = response.headers.get('x-request-id');
-        if (!response.ok) throw new Error(`Vision provider returned ${response.status}: ${await response.text()}`);
+        if (!response.ok) {
+          const message = `Vision provider returned ${response.status}: ${await response.text()}`;
+          this.policy.classifyHttpFailure('openai_compatible_vision', response.status, message);
+          throw new Error(message);
+        }
         const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
         responseText = body.choices?.[0]?.message?.content ?? '';
         const assessment = VisionFootageAssessmentSchema.parse(JSON.parse(stripCodeFence(responseText)));
+        this.policy.recordHealth('openai_compatible_vision', 'healthy', 200, null);
         this.recordSuccess(input, settings.visionModel, inputHash, requestId, Date.now() - started, attempt, assessment);
         return {
           provider: settings.visionProvider,
@@ -188,17 +203,6 @@ export class VisionService {
     };
   }
 
-  private assertMonthlyBudget(maximum: number): void {
-    const monthStart = new Date();
-    monthStart.setUTCDate(1);
-    monthStart.setUTCHours(0, 0, 0, 0);
-    const row = this.db.raw.prepare(`
-      SELECT coalesce(sum(estimated_cost_usd), 0) AS total
-      FROM provider_calls WHERE created_at >= ?
-    `).get(monthStart.toISOString()) as { total: number };
-    if (Number(row.total) >= maximum) throw new Error('Monthly provider budget is exhausted; no vision request was sent.');
-  }
-
   private correctable(error: unknown): boolean {
     if (!(error instanceof Error)) return false;
     return error.name === 'ZodError' || error instanceof SyntaxError;
@@ -217,11 +221,11 @@ export class VisionService {
       INSERT OR REPLACE INTO provider_calls(
         id, project_id, provider, model, operation, input_hash, output_hash,
         request_id, estimated_cost_usd, latency_ms, retry_count, response_json, created_at
-      ) VALUES(?, ?, 'openai_compatible_vision', ?, 'verify_footage', ?, ?, ?, 0, ?, ?, ?, ?)
+      ) VALUES(?, ?, 'openai_compatible_vision', ?, 'verify_footage', ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       randomUUID(), input.projectId, model, inputHash,
       createHash('sha256').update(JSON.stringify(assessment)).digest('hex'),
-      requestId, latencyMs, retryCount, JSON.stringify(assessment), new Date().toISOString()
+      requestId, 0.02, latencyMs, retryCount, JSON.stringify(assessment), new Date().toISOString()
     );
   }
 
@@ -238,7 +242,7 @@ export class VisionService {
       INSERT OR REPLACE INTO provider_calls(
         id, project_id, provider, model, operation, input_hash, request_id,
         estimated_cost_usd, latency_ms, retry_count, response_json, error, created_at
-      ) VALUES(?, ?, 'openai_compatible_vision', ?, 'verify_footage', ?, ?, 0, ?, 1, ?, ?, ?)
+      ) VALUES(?, ?, 'openai_compatible_vision', ?, 'verify_footage', ?, ?, 0.02, ?, 1, ?, ?, ?)
     `).run(
       randomUUID(), input.projectId, model, inputHash, requestId, latencyMs,
       responseText ? JSON.stringify({ raw: responseText }) : null,
