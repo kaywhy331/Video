@@ -37,6 +37,14 @@ const RANGE_REPAIR_CODES = new Set([
   'MUSIC_OVER_SPEECH'
 ]);
 
+const VOICE_REPAIR_CODES = new Set([
+  'WORD_TIMING',
+  'TRANSCRIPT_MISMATCH',
+  'MISSING_NARRATION',
+  'MISSING_VOICE_SECTION',
+  'CLIPPED_VOICE_SECTION'
+]);
+
 const FOOTAGE_REPAIR_CODES = new Set([
   'NO_SAFE_SEGMENT',
   'NO_UPSCALE_BLOCK',
@@ -69,6 +77,14 @@ const OPERATOR_CODES = new Set([
 
 export function repairPolicyFor(code: string, category?: string): RepairPolicy {
   const normalized = code.trim().toUpperCase().replace(/^QC_/, '');
+  if (VOICE_REPAIR_CODES.has(normalized)) {
+    return {
+      repairClass: 'regenerate_range',
+      action: 'Regenerate only the affected narration section and dependent timeline range.',
+      targetState: 'GENERATING_VOICE',
+      maximumAttempts: MAXIMUM_AUTOMATIC_REPAIR_ATTEMPTS
+    };
+  }
   if (OUTPUT_REPAIR_CODES.has(normalized)) {
     return {
       repairClass: 'automatic',
@@ -98,7 +114,7 @@ export function repairPolicyFor(code: string, category?: string): RepairPolicy {
       repairClass: 'regenerate_range',
       action: 'Rewrite only the unsupported beat against verified footage, then rebuild its range.',
       targetState: 'FINALIZING_SCRIPT',
-      maximumAttempts: 0
+      maximumAttempts: MAXIMUM_AUTOMATIC_REPAIR_ATTEMPTS
     };
   }
   if (OPERATOR_CODES.has(normalized) || category === 'rights' || category === 'publishing') {
@@ -133,6 +149,7 @@ const STAGE_ORDER: ProjectState[] = [
   'STORYBOARD_PROVISIONAL',
   'WAITING_FOR_DOWNLOADS',
   'FINALIZING_SCRIPT',
+  'GENERATING_VOICE',
   'BUILDING_TIMELINE',
   'QC_DRAFT'
 ];

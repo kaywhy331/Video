@@ -120,7 +120,17 @@ export class MediaService {
     private readonly db: AppDatabase,
     private readonly settings: () => AppSettings,
     private readonly footageVerification: FootageVerificationService,
-    private readonly progress: (projectId: string | null, phase: string, progress: number, message: string) => void
+    private readonly progress: (projectId: string | null, phase: string, progress: number, message: string) => void,
+    private readonly finalizeProduction: (projectId: string) => Promise<void> = async projectId => {
+      this.projectStates.transition(projectId, 'GENERATING_VOICE', {
+        progress: 0.54,
+        reason: 'Final script locked for narration'
+      });
+      this.projectStates.transition(projectId, 'BUILDING_TIMELINE', {
+        progress: 0.59,
+        reason: 'Narration and timeline inputs are ready'
+      });
+    }
   ) {
     this.projectStates = new ProjectStateService(db);
     this.repairs = new RepairService(db);
@@ -405,7 +415,7 @@ export class MediaService {
     await this.assignSegments(projectId, assetId, fileId, segments);
     this.repairs.reconcileFootageRepairs(projectId);
     this.progress(projectId, 'verification-complete', 0.9, 'Footage ingest and scene-contract verification completed');
-    this.updateProjectAfterAcquisition(projectId);
+    await this.updateProjectAfterAcquisition(projectId);
     return toAssetFile(this.db.raw.prepare('SELECT * FROM asset_files WHERE id = ?').get(fileId) as Record<string, unknown>);
   }
 
@@ -617,7 +627,7 @@ export class MediaService {
     transaction();
     await this.assignSegments(projectId, assetId, fileId, segments);
     this.repairs.reconcileFootageRepairs(projectId);
-    this.updateProjectAfterAcquisition(projectId);
+    await this.updateProjectAfterAcquisition(projectId);
   }
 
   async verifyLocalAsset(projectId: string, assetId: string, fileId: string): Promise<void> {
@@ -641,7 +651,7 @@ export class MediaService {
     }));
     await this.assignSegments(projectId, assetId, fileId, segments);
     this.repairs.reconcileFootageRepairs(projectId);
-    this.updateProjectAfterAcquisition(projectId);
+    await this.updateProjectAfterAcquisition(projectId);
   }
 
   async recoverPendingSemanticAlternates(): Promise<number> {
@@ -740,7 +750,7 @@ export class MediaService {
       })();
       exceptionResolved = true;
       this.repairs.reconcileFootageRepairs(projectId);
-      this.updateProjectAfterAcquisition(projectId);
+      await this.updateProjectAfterAcquisition(projectId);
     } else if (decision.status !== 'provider_required' && decision.status !== 'error') {
       const activeAlternate = this.db.raw.prepare(`
         SELECT failure_code FROM repair_attempts
@@ -781,7 +791,7 @@ export class MediaService {
         }), exceptionId);
       })();
       exceptionResolved = true;
-      this.updateProjectAfterAcquisition(projectId);
+      await this.updateProjectAfterAcquisition(projectId);
     } else {
       this.db.raw.prepare(`
         UPDATE exceptions SET evidence_json = ? WHERE id = ?
@@ -835,7 +845,7 @@ export class MediaService {
     } : null;
   }
 
-  private updateProjectAfterAcquisition(projectId: string): void {
+  private async updateProjectAfterAcquisition(projectId: string): Promise<void> {
     const pending = this.db.raw.prepare(`
       SELECT count(*) AS count FROM acquisition_items
       WHERE project_id = ? AND state NOT IN ('COMPLETE','SKIPPED')
@@ -910,14 +920,7 @@ export class MediaService {
       }
     );
     if (!unresolvedCount) {
-      this.projectStates.transition(projectId, 'GENERATING_VOICE', {
-        progress: 0.54,
-        reason: 'Metadata-grounded final script locked for narration'
-      });
-      this.projectStates.transition(projectId, 'BUILDING_TIMELINE', {
-        progress: 0.55,
-        reason: 'Verified scenes are ready for narration and timeline assembly'
-      });
+      await this.finalizeProduction(projectId);
     }
   }
 

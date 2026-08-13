@@ -95,7 +95,12 @@ const api = {
       ipcRenderer.invoke(IPC.acquisitionMapFile, request)
   },
   renders: {
-    start: (request: { projectId: string; kind: 'draft' | 'final' }): Promise<RenderRecord> =>
+    start: (request: {
+      projectId: string;
+      kind: 'range' | 'draft' | 'final';
+      startSceneOrdinal?: number;
+      endSceneOrdinal?: number;
+    }): Promise<RenderRecord> =>
       ipcRenderer.invoke(IPC.renderStart, request)
   },
   finalReview: {

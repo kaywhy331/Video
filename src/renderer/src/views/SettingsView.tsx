@@ -30,6 +30,7 @@ export function SettingsView({
     llmApiKey: string;
     visionApiKey: string;
     researchApiKey: string;
+    httpTtsApiKey: string;
     youtubeClientId: string;
     youtubeClientSecret: string;
     youtubeApiKey: string;
@@ -38,6 +39,7 @@ export function SettingsView({
     llmApiKey: '',
     visionApiKey: '',
     researchApiKey: '',
+    httpTtsApiKey: '',
     youtubeClientId: '',
     youtubeClientSecret: '',
     youtubeApiKey: ''
@@ -70,16 +72,16 @@ export function SettingsView({
 
   async function save(): Promise<void> {
     await run('save', async () => {
-      const next = await window.videoFactory.settings.update(form);
-      setForm(next);
       const secretPatch = Object.fromEntries(
         (Object.entries(secrets) as Array<[keyof SecretDraft, string]>)
           .filter(([, value]) => value.trim().length > 0)
       ) as Record<string, string | undefined>;
       if (Object.keys(secretPatch).length) {
         await window.videoFactory.settings.updateSecrets(secretPatch);
-        setSecrets({ llmApiKey: '', visionApiKey: '', researchApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
+        setSecrets({ llmApiKey: '', visionApiKey: '', researchApiKey: '', httpTtsApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
       }
+      const next = await window.videoFactory.settings.update(form);
+      setForm(next);
       setDiagnostics(await window.videoFactory.diagnostics.run());
       await onRefresh();
     });
@@ -187,17 +189,34 @@ export function SettingsView({
           </div>
         </Panel>
 
-        <Panel title="Narration" subtitle="Windows SAPI provides a no-cloud fallback for the first vertical slice">
-          <div className="settings-form two-column">
+        <Panel title="Narration" subtitle="Section voice is cached by final text, voice, model, settings, and pronunciation dictionary">
+          <div className="settings-form">
             <label>
               <span>Provider</span>
               <select value={form.narratorProvider} onChange={event => setForm({ ...form, narratorProvider: event.target.value as AppSettings['narratorProvider'] })}>
                 <option value="windows_sapi">Windows SAPI</option>
-                <option value="http_tts" disabled>HTTP TTS adapter (next phase)</option>
+                <option value="http_tts">Generic HTTP TTS</option>
               </select>
             </label>
+            <label><span>HTTP base URL</span><input value={form.narratorBaseUrl} onChange={event => setForm({ ...form, narratorBaseUrl: event.target.value })} /></label>
+            <label><span>Model</span><input value={form.narratorModel} onChange={event => setForm({ ...form, narratorModel: event.target.value })} /></label>
             <label><span>Voice name</span><input value={form.narratorVoice} onChange={event => setForm({ ...form, narratorVoice: event.target.value })} placeholder="Blank uses Windows default" /></label>
             <NumberField label="Voice rate" value={form.narratorRate} min={-10} max={10} set={value => setForm({ ...form, narratorRate: value })} />
+            <label><span>HTTP API key {bootstrap.secrets.httpTtsApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.httpTtsApiKey} onChange={event => setSecrets({ ...secrets, httpTtsApiKey: event.target.value })} placeholder={bootstrap.secrets.httpTtsApiKeyConfigured ? 'Leave blank to keep current key' : 'Required when HTTP TTS is enabled'} /></label>
+            <label>
+              <span>Pronunciation dictionary (one term = spoken form per line)</span>
+              <textarea
+                rows={6}
+                value={Object.entries(form.pronunciationDictionary).map(([term, pronunciation]) => `${term} = ${pronunciation}`).join('\n')}
+                onChange={event => setForm({
+                  ...form,
+                  pronunciationDictionary: Object.fromEntries(
+                    event.target.value.split(/\r?\n/).map(line => line.split('=').map(value => value.trim())).filter(parts => parts.length >= 2 && parts[0] && parts.slice(1).join('=').trim()).map(parts => [parts[0]!, parts.slice(1).join('=').trim()])
+                  )
+                })}
+                placeholder={'Oaxaca = wah-HAH-kah\nChichén Itzá = chee-CHEN eet-SAH'}
+              />
+            </label>
           </div>
         </Panel>
 

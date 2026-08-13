@@ -45,8 +45,14 @@ export const SettingsPatchSchema = z.object({
   preferredShotMaxSeconds: z.number().min(1.5).max(7).optional(),
   hardShotMaxSeconds: z.number().min(2).max(7).optional(),
   narratorProvider: z.enum(['windows_sapi', 'http_tts']).optional(),
+  narratorBaseUrl: z.string().url().max(2_000).optional(),
+  narratorModel: z.string().trim().min(1).max(200).optional(),
   narratorVoice: z.string().max(200).optional(),
   narratorRate: z.number().min(-10).max(10).optional(),
+  pronunciationDictionary: z.record(
+    z.string().trim().min(1).max(200),
+    z.string().trim().min(1).max(300)
+  ).refine(value => Object.keys(value).length <= 500, 'Pronunciation dictionary is limited to 500 entries.').optional(),
   llmProvider: z.enum(['mock', 'openai_compatible']).optional(),
   llmBaseUrl: z.string().url().max(2_000).optional(),
   llmModel: z.string().trim().min(1).max(200).optional(),
@@ -182,7 +188,24 @@ export const OpenPathSchema = FilePathSchema;
 
 export const RenderRequestSchema = z.object({
   projectId: IdSchema,
-  kind: z.enum(['draft', 'final']).default('draft')
+  kind: z.enum(['range', 'draft', 'final']).default('draft'),
+  startSceneOrdinal: z.number().int().min(1).optional(),
+  endSceneOrdinal: z.number().int().min(1).optional()
+}).strict().superRefine((request, context) => {
+  const hasRange = request.startSceneOrdinal !== undefined || request.endSceneOrdinal !== undefined;
+  if (request.kind === 'range' && !hasRange) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Range renders require at least one scene ordinal.' });
+  }
+  if (request.kind !== 'range' && hasRange) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Scene ordinals are accepted only for range renders.' });
+  }
+  if (
+    request.startSceneOrdinal !== undefined
+    && request.endSceneOrdinal !== undefined
+    && request.startSceneOrdinal > request.endSceneOrdinal
+  ) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Range start cannot exceed range end.' });
+  }
 });
 
 export const ApprovePublicationSchema = z.object({
@@ -242,8 +265,21 @@ export const StructuredScriptSchema = z.object({
       'TEXT_OR_ARCHIVAL'
     ]),
     claimIds: z.array(z.string().trim().min(1).max(200)).max(20).default([])
-  })).min(3)
+})).min(3)
 });
+
+export const FinalScriptRewriteSchema = z.object({
+  scenes: z.array(z.object({
+    sceneId: IdSchema,
+    narration: z.string().trim().min(1).max(1_200),
+    pronunciation: z.record(
+      z.string().trim().min(1).max(200),
+      z.string().trim().min(1).max(300)
+    ).refine(value => Object.keys(value).length <= 50, 'A scene may contain at most 50 pronunciation overrides.')
+  }).strict()).min(1).max(500)
+}).strict();
+
+export type FinalScriptRewrite = z.infer<typeof FinalScriptRewriteSchema>;
 
 export interface StructuredScriptScene {
   chapter: string | null;

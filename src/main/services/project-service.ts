@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AppDatabase } from '../database/database';
-import type { AppSettings, CreateAutopilotProjectRequest, PackagingCandidate, ProjectDetail, ProjectScene, ProjectSummary, QcResult, RenderRecord } from '@shared/types';
+import type { AppSettings, CreateAutopilotProjectRequest, NarrationSection, PackagingCandidate, ProjectDetail, ProjectScene, ProjectSummary, QcResult, RenderRecord } from '@shared/types';
 import { slugify } from '@shared/normalization';
 import type { CatalogService } from './catalog-service';
 import type { AiService } from './ai-service';
@@ -22,6 +22,19 @@ function jsonArray(value: unknown): string[] {
     return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
+  }
+}
+
+function jsonObject(value: unknown): Record<string, string> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).map(([key, item]) => [key, String(item)])
+    );
+  } catch {
+    return {};
   }
 }
 
@@ -71,6 +84,7 @@ function sceneFromRow(row: Record<string, unknown>): ProjectScene {
     score: row.score === null || row.score === undefined ? null : Number(row.score),
     scoreExplanation: jsonArray(row.score_explanation_json),
     verificationState: row.verification_state as ProjectScene['verificationState'],
+    pronunciation: jsonObject(row.pronunciation_json),
     startMs: row.start_ms === null || row.start_ms === undefined ? null : Number(row.start_ms),
     endMs: row.end_ms === null || row.end_ms === undefined ? null : Number(row.end_ms)
   };
@@ -168,7 +182,11 @@ export class ProjectService {
       error: row.error ? String(row.error) : null,
       createdAt: String(row.created_at),
       completedAt: row.completed_at ? String(row.completed_at) : null,
-      artifactVersion: Number(row.artifact_version ?? 1)
+      artifactVersion: Number(row.artifact_version ?? 1),
+      scope: row.scope_json && String(row.scope_json) !== '{}'
+        ? JSON.parse(String(row.scope_json)) as RenderRecord['scope']
+        : null,
+      baseRenderId: row.base_render_id ? String(row.base_render_id) : null
     }));
 
     const packaging = (this.db.raw.prepare(`
@@ -208,6 +226,30 @@ export class ProjectService {
       createdAt: String(row.created_at)
     }));
 
+    const narrationSections = (this.db.raw.prepare(`
+      SELECT n.*, v.audio_path, v.timing_path, v.timing_method
+      FROM narration_sections n
+      JOIN voice_assets v ON v.id = n.voice_asset_id
+      JOIN projects p ON p.id = n.project_id
+      WHERE n.project_id = ? AND n.script_version_id = p.script_version_id
+        AND n.status = 'ready' AND v.status = 'ready'
+      ORDER BY n.ordinal
+    `).all(projectId) as Array<Record<string, unknown>>).map(row => ({
+      id: String(row.id),
+      projectId: String(row.project_id),
+      scriptVersionId: String(row.script_version_id),
+      ordinal: Number(row.ordinal),
+      chapter: row.chapter ? String(row.chapter) : null,
+      sceneIds: jsonArray(row.scene_ids_json),
+      text: String(row.text),
+      pronunciation: jsonObject(row.pronunciation_json),
+      audioPath: String(row.audio_path),
+      timingPath: row.timing_path ? String(row.timing_path) : null,
+      durationMs: Number(row.duration_ms),
+      timingMethod: row.timing_method as NarrationSection['timingMethod'],
+      status: row.status as NarrationSection['status']
+    } satisfies NarrationSection));
+
     return {
       ...projectSummary(row),
       description: row.description ? String(row.description) : null,
@@ -219,7 +261,8 @@ export class ProjectService {
       renders,
       packaging,
       qc,
-      repairs: this.repairs.list(projectId)
+      repairs: this.repairs.list(projectId),
+      narrationSections
     };
   }
 
@@ -706,7 +749,10 @@ export class ProjectService {
           `).run(randomUUID(), projectId, assetId, envatoProjectName, now, now);
         }
 
-        this.db.raw.prepare('UPDATE script_versions SET locked = 1 WHERE id = ?').run(scriptId);
+        this.db.raw.prepare(`
+          UPDATE script_versions SET locked = 1, script_type = 'provisional', locked_at = ?
+          WHERE id = ?
+        `).run(now, scriptId);
         this.db.raw.prepare('UPDATE projects SET script_version_id = ?, updated_at = ? WHERE id = ?')
           .run(scriptId, new Date().toISOString(), projectId);
         this.states.transition(projectId, grouped.size ? 'WAITING_FOR_DOWNLOADS' : 'BLOCKED_EXCEPTION', {

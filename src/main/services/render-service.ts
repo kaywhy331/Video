@@ -3,7 +3,6 @@ import {
   createReadStream,
   existsSync,
   mkdirSync,
-  readFileSync,
   openSync,
   readSync,
   closeSync,
@@ -11,16 +10,15 @@ import {
   rmSync,
   unlinkSync
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { AppDatabase } from '../database/database';
-import type { AppSettings, RenderRecord } from '@shared/types';
+import type { AppSettings, NarrationWord, RenderRecord, RenderScope } from '@shared/types';
 import { assertShotDuration, missingSelectedLicenseCount } from '@shared/media-policy';
 import { resolveFfmpeg } from '../tool-paths';
 import { requireSuccess } from './process-utils';
 import { assembleAndNormalizeTimeline, loudnormStats } from './render-pipeline';
-import { fitNarrationShotDuration, splitNarration } from '@shared/narration';
+import { captionCuesFromWords, fitNarrationShotDuration, renderFragmentCacheKey, splitAlignedNarration } from '@shared/narration';
 import { resolveFfprobe } from '../tool-paths';
-import type { TtsService } from './tts-service';
 import type { JobService } from './job-service';
 import type { ProjectService } from './project-service';
 
@@ -32,12 +30,40 @@ interface TimelineScene {
   sourceHash: string;
   sourceStartMs: number;
   sourceEndMs: number;
+  timelineStartMs: number;
+  timelineEndMs: number;
   durationMs: number;
   audioPath: string;
   normalizedPath: string;
   requiredLocation: string | null;
   narrationPart: number;
   narrationParts: number;
+  wordTimings: NarrationWord[];
+  reusedFragment: boolean;
+}
+
+interface SourceSceneRow {
+  scene_id: string;
+  ordinal: number;
+  narration: string;
+  target_duration_ms: number;
+  required_location: string | null;
+  verification_state: string;
+  selected_file_id: string | null;
+  original_path: string | null;
+  sha256: string | null;
+  width: number | null;
+  height: number | null;
+  start_ms: number | null;
+  end_ms: number | null;
+  duration_ms: number | null;
+  eligible_1080p: number | null;
+}
+
+export interface RenderRequest {
+  kind: 'range' | 'draft' | 'final';
+  startSceneOrdinal?: number;
+  endSceneOrdinal?: number;
 }
 
 interface OutputProbe {
@@ -84,6 +110,10 @@ function srtTime(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(millis).padStart(3, '0')}`;
 }
 
+function vttTime(ms: number): string {
+  return srtTime(ms).replace(',', '.');
+}
+
 function renderFromRow(row: Record<string, unknown>): RenderRecord {
   return {
     id: String(row.id),
@@ -100,7 +130,11 @@ function renderFromRow(row: Record<string, unknown>): RenderRecord {
     error: row.error ? String(row.error) : null,
     createdAt: String(row.created_at),
     completedAt: row.completed_at ? String(row.completed_at) : null,
-    artifactVersion: Number(row.artifact_version ?? 1)
+    artifactVersion: Number(row.artifact_version ?? 1),
+    scope: row.scope_json && String(row.scope_json) !== '{}'
+      ? JSON.parse(String(row.scope_json)) as RenderScope
+      : null,
+    baseRenderId: row.base_render_id ? String(row.base_render_id) : null
   };
 }
 
@@ -108,13 +142,36 @@ export class RenderService {
   constructor(
     private readonly db: AppDatabase,
     private readonly settings: () => AppSettings,
-    private readonly tts: TtsService,
     private readonly jobs: JobService,
     private readonly projects: ProjectService,
-    private readonly emitProgress: (jobId: string, projectId: string, progress: number, phase: string, message: string) => void
+    private readonly emitProgress: (jobId: string, projectId: string, progress: number, phase: string, message: string) => void,
+    private readonly prepareRepair: (projectId: string, targetState: import('@shared/types').ProjectState) => Promise<void> = async () => undefined
   ) {}
 
-  async render(projectId: string, kind: 'draft' | 'final'): Promise<RenderRecord> {
+  async render(
+    projectId: string,
+    request: RenderRequest | 'draft' | 'final'
+  ): Promise<RenderRecord> {
+    let options: RenderRequest = typeof request === 'string' ? { kind: request } : request;
+    let kind = options.kind;
+    if (kind === 'final' && options.startSceneOrdinal === undefined) {
+      const pendingRange = this.db.raw.prepare(`
+        SELECT min(range_start_ordinal) AS range_start_ordinal,
+          max(range_end_ordinal) AS range_end_ordinal
+        FROM repair_attempts
+        WHERE project_id = ? AND status = 'routed' AND repair_class = 'regenerate_range'
+          AND range_start_ordinal IS NOT NULL AND range_end_ordinal IS NOT NULL
+          AND json_extract(evidence_json, '$.rangeRenderId') IS NULL
+      `).get(projectId) as { range_start_ordinal: number | null; range_end_ordinal: number | null };
+      if (pendingRange.range_start_ordinal !== null && pendingRange.range_end_ordinal !== null) {
+        options = {
+          kind: 'range',
+          startSceneOrdinal: pendingRange.range_start_ordinal,
+          endSceneOrdinal: pendingRange.range_end_ordinal
+        };
+        kind = 'range';
+      }
+    }
     const repairSequence = kind === 'final'
       ? Number((this.db.raw.prepare(`
           SELECT count(*) AS sequence
@@ -123,46 +180,53 @@ export class RenderService {
         `).get(projectId) as { sequence: number }).sequence ?? 0)
       : 0;
     const renderInput = this.db.raw.prepare(`
-      SELECT s.id, s.narration, s.selected_segment_id, s.verification_state,
-        g.start_ms, g.end_ms, f.sha256
+      SELECT s.id, s.script_version_id, s.narration, s.pronunciation_json,
+        s.selected_segment_id, s.verification_state, g.start_ms, g.end_ms, f.sha256,
+        n.voice_asset_id, v.input_hash AS voice_input_hash, v.timing_method
       FROM project_scenes s
       LEFT JOIN media_segments g ON g.id = s.selected_segment_id
       LEFT JOIN asset_files f ON f.id = s.selected_file_id
+      LEFT JOIN narration_words w ON w.scene_id = s.id
+      LEFT JOIN narration_sections n ON n.id = w.section_id AND n.status = 'ready'
+      LEFT JOIN voice_assets v ON v.id = n.voice_asset_id AND v.status = 'ready'
       WHERE s.project_id = ? ORDER BY s.ordinal
     `).all(projectId);
     const job = this.jobs.create(
       `render_${kind}`,
       projectId,
-      { projectId, kind, renderInput, repairSequence },
+      { projectId, kind, renderInput, repairSequence, startSceneOrdinal: options.startSceneOrdinal, endSceneOrdinal: options.endSceneOrdinal },
       2
     );
     if (job.state === 'SUCCEEDED') {
-      const latest = this.db.raw.prepare(`
-        SELECT * FROM renders WHERE project_id = ? AND kind = ? AND state = 'SUCCEEDED'
-        ORDER BY completed_at DESC LIMIT 1
-      `).get(projectId, kind) as Record<string, unknown> | undefined;
-      if (latest) return renderFromRow(latest);
+      const completedJob = this.db.raw.prepare(`SELECT output_json FROM jobs WHERE id = ?`).get(job.id) as {
+        output_json: string | null;
+      } | undefined;
+      const completedRenderId = completedJob?.output_json
+        ? (JSON.parse(completedJob.output_json) as { id?: string }).id
+        : undefined;
+      const completedRender = completedRenderId
+        ? this.db.raw.prepare(`SELECT * FROM renders WHERE id = ? AND state = 'SUCCEEDED'`).get(completedRenderId) as Record<string, unknown> | undefined
+        : undefined;
+      if (completedRender) return renderFromRow(completedRender);
     }
 
     this.jobs.start(job.id, 'Preparing timeline');
     const renderId = randomUUID();
     const settings = this.settings();
     const project = this.projects.get(projectId);
-    const profile = kind === 'draft' ? 'draft_720p' : 'final_1080p';
+    const profile = kind === 'final' ? 'final_1080p' : 'draft_720p';
     const previousVersion = this.db.raw.prepare(`
       SELECT coalesce(max(artifact_version), 0) AS version
       FROM renders WHERE project_id = ? AND kind = ?
     `).get(projectId, kind) as { version: number };
     const artifactVersion = Number(previousVersion.version ?? 0) + 1;
-    const outputDirectory = join(settings.outputFolder, kind === 'draft' ? 'draft' : 'review');
+    const outputDirectory = join(settings.outputFolder, kind === 'final' ? 'review' : 'draft');
     const projectDirectory = join(settings.projectFolder, project.id);
     const workDirectory = join(projectDirectory, 'render-work', renderId);
-    const voiceDirectory = join(projectDirectory, 'voice');
     const manifestDirectory = join(projectDirectory, 'manifest');
     const captionDirectory = join(projectDirectory, 'captions');
     mkdirSync(outputDirectory, { recursive: true });
     mkdirSync(workDirectory, { recursive: true });
-    mkdirSync(voiceDirectory, { recursive: true });
     mkdirSync(manifestDirectory, { recursive: true });
     mkdirSync(captionDirectory, { recursive: true });
 
@@ -170,17 +234,43 @@ export class RenderService {
     const manifestPath = join(manifestDirectory, `${kind}-${renderId}.json`);
     const srtPath = join(captionDirectory, `${project.slug}-${kind}.srt`);
     const vttPath = join(captionDirectory, `${project.slug}-${kind}.vtt`);
+    const allSceneOrdinals = project.scenes.map(scene => scene.ordinal);
+    const firstOrdinal = Math.max(1, options.startSceneOrdinal ?? Math.min(...allSceneOrdinals));
+    const lastOrdinal = options.endSceneOrdinal ?? options.startSceneOrdinal ?? Math.max(...allSceneOrdinals);
+    const sceneOrdinals = allSceneOrdinals.filter(ordinal => ordinal >= firstOrdinal && ordinal <= lastOrdinal);
+    if (kind === 'range' && !sceneOrdinals.length) throw new Error('Requested render range contains no project scenes.');
+    const scope: RenderScope | null = kind === 'range'
+      ? { startSceneOrdinal: sceneOrdinals[0]!, endSceneOrdinal: sceneOrdinals.at(-1)!, sceneOrdinals }
+      : null;
+    const baseRender = kind === 'range'
+      ? this.db.raw.prepare(`
+          SELECT id FROM renders WHERE project_id = ? AND kind IN ('draft','final') AND state = 'SUCCEEDED'
+          ORDER BY completed_at DESC LIMIT 1
+        `).get(projectId) as { id: string } | undefined
+      : undefined;
+    if (kind === 'range') {
+      const current = this.db.raw.prepare(`SELECT state FROM projects WHERE id = ?`).get(projectId) as {
+        state: import('@shared/types').ProjectState;
+      };
+      if (current.state !== 'BUILDING_TIMELINE') {
+        this.projects.states.transition(projectId, 'BUILDING_TIMELINE', {
+          progress: 0.59,
+          reason: 'A bounded scene range was requested for preview or repair',
+          prerequisites: { scope, previousState: current.state }
+        });
+      }
+    }
     const now = new Date().toISOString();
     this.db.raw.prepare(`
       INSERT INTO renders(
         id, project_id, kind, profile, state, manifest_path, output_path,
-        artifact_version, created_at
-      ) VALUES(?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?)
-    `).run(renderId, projectId, kind, profile, manifestPath, outputPath, artifactVersion, now);
-    this.projects.states.transition(projectId, kind === 'draft' ? 'RENDERING_DRAFT' : 'RENDERING_FINAL', {
-      progress: kind === 'draft' ? 0.63 : 0.78,
-      reason: `${kind === 'draft' ? 'Draft' : 'Final'} render job started`,
-      prerequisites: { renderId, profile }
+        artifact_version, scope_json, base_render_id, created_at
+      ) VALUES(?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?, ?)
+    `).run(renderId, projectId, kind, profile, manifestPath, outputPath, artifactVersion, JSON.stringify(scope ?? {}), baseRender?.id ?? null, now);
+    this.projects.states.transition(projectId, kind === 'final' ? 'RENDERING_FINAL' : 'RENDERING_DRAFT', {
+      progress: kind === 'final' ? 0.78 : 0.63,
+      reason: `${kind === 'final' ? 'Final' : kind === 'range' ? 'Range' : 'Draft'} render job started`,
+      prerequisites: { renderId, profile, scope }
     });
 
     let retryAutomatically = false;
@@ -207,16 +297,18 @@ export class RenderService {
         LEFT JOIN media_segments g ON g.id = s.selected_segment_id
         LEFT JOIN asset_files f ON f.id = s.selected_file_id
         WHERE s.project_id = ?
+          AND (? = 0 OR s.ordinal BETWEEN ? AND ?)
         ORDER BY s.ordinal
-      `).all(projectId) as Array<Record<string, unknown>>;
+      `).all(projectId, Number(kind === 'range'), firstOrdinal, lastOrdinal) as unknown as SourceSceneRow[];
       if (!sourceRows.length) throw new Error('Project has no scenes.');
 
       const invalid = sourceRows.filter(row =>
         row.verification_state !== 'verified'
-        || !row.original_path
-        || !row.start_ms && Number(row.start_ms) !== 0
-        || !row.end_ms
-        || !row.eligible_1080p
+          || !row.original_path
+          || !row.sha256
+          || !row.start_ms && Number(row.start_ms) !== 0
+          || !row.end_ms
+          || !row.eligible_1080p
       );
       if (invalid.length) {
         throw new Error(`${invalid.length} scene(s) are not verified for 1080p rendering.`);
@@ -225,25 +317,65 @@ export class RenderService {
       const ffmpeg = resolveFfmpeg(settings.ffmpegPath);
       if (!ffmpeg) throw new Error('FFmpeg is unavailable.');
       const timeline: TimelineScene[] = [];
-      const srtBlocks: string[] = [];
       let elapsed = 0;
 
       for (let index = 0; index < sourceRows.length; index += 1) {
         const row = sourceRows[index];
         if (!row) continue;
+        const sourceHash = row.sha256;
+        if (!sourceHash) throw new Error(`Scene ${row.ordinal} has no immutable source hash.`);
         const ordinal = Number(row.ordinal);
-        const narrationParts = splitNarration(String(row.narration));
+        const narrationRecord = this.db.raw.prepare(`
+          SELECT n.id AS section_id, v.audio_path, v.input_hash AS voice_input_hash,
+            min(w.start_ms) AS scene_start_ms, max(w.end_ms) AS scene_end_ms
+          FROM narration_words w
+          JOIN narration_sections n ON n.id = w.section_id
+          JOIN voice_assets v ON v.id = n.voice_asset_id
+          WHERE w.scene_id = ? AND n.project_id = ? AND n.script_version_id = ?
+            AND n.status = 'ready' AND v.status = 'ready'
+          GROUP BY n.id, v.audio_path
+        `).get(row.scene_id, projectId, project.scriptVersionId) as {
+          section_id: string;
+          audio_path: string;
+          voice_input_hash: string;
+          scene_start_ms: number;
+          scene_end_ms: number;
+        } | undefined;
+        if (!narrationRecord?.audio_path || !existsSync(narrationRecord.audio_path)) {
+          throw new Error(`Scene ${ordinal} has no immutable section narration asset.`);
+        }
+        const absoluteWords = (this.db.raw.prepare(`
+          SELECT word, start_ms, end_ms, confidence, timing_method
+          FROM narration_words WHERE scene_id = ? AND section_id = ? ORDER BY ordinal
+        `).all(row.scene_id, narrationRecord.section_id) as Array<Record<string, unknown>>).map(word => ({
+          word: String(word.word),
+          startMs: Number(word.start_ms),
+          endMs: Number(word.end_ms),
+          confidence: Number(word.confidence),
+          timingMethod: word.timing_method as NarrationWord['timingMethod']
+        }));
+        const sceneStartMs = Number(narrationRecord.scene_start_ms);
+        const narrationParts = splitAlignedNarration(
+          absoluteWords.map(word => ({ ...word, startMs: word.startMs - sceneStartMs, endMs: word.endMs - sceneStartMs })),
+          settings.hardShotMaxSeconds * 1000
+        );
         if (!narrationParts.length) throw new Error(`Scene ${ordinal} narration is empty.`);
         for (let partIndex = 0; partIndex < narrationParts.length; partIndex += 1) {
-          const narration = narrationParts[partIndex]!;
+          const part = narrationParts[partIndex]!;
+          const narration = part.text;
           const suffix = narrationParts.length > 1 ? `-part-${partIndex + 1}` : '';
-          const audioPath = join(voiceDirectory, `scene-${String(ordinal).padStart(4, '0')}${suffix}.wav`);
+          const sectionAudioPath = narrationRecord.audio_path;
+          const audioPath = join(workDirectory, `scene-${String(ordinal).padStart(4, '0')}${suffix}.wav`);
           const normalizedPath = join(workDirectory, `scene-${String(ordinal).padStart(4, '0')}${suffix}.mp4`);
-          this.jobs.progress(job.id, 0.05 + (index / sourceRows.length) * 0.42, `Generating voice ${ordinal}/${sourceRows.length}`);
-          this.emitProgress(job.id, projectId, 0.05 + (index / sourceRows.length) * 0.42, 'voice', `Generating narration ${ordinal}/${sourceRows.length}`);
-          const audioDurationMs = existsSync(audioPath)
-            ? await this.tts.probeDuration(audioPath)
-            : (await this.tts.synthesize(narration, audioPath)).durationMs;
+          this.jobs.progress(job.id, 0.05 + (index / sourceRows.length) * 0.42, `Building aligned shot ${ordinal}/${sourceRows.length}`);
+          this.emitProgress(job.id, projectId, 0.05 + (index / sourceRows.length) * 0.42, 'timeline', `Building word-aligned shot ${ordinal}/${sourceRows.length}`);
+          const absoluteAudioStartMs = sceneStartMs + part.audioStartMs;
+          const audioDurationMs = part.durationMs;
+          await requireSuccess(ffmpeg, [
+            '-y', '-hide_banner', '-ss', (absoluteAudioStartMs / 1000).toFixed(3),
+            '-t', (audioDurationMs / 1000).toFixed(3), '-i', sectionAudioPath,
+            '-map', '0:a:0', '-c:a', 'pcm_s16le', audioPath
+          ]);
           if (audioDurationMs < 500) throw new Error(`Scene ${ordinal} narration audio is unexpectedly short.`);
           if (audioDurationMs > settings.hardShotMaxSeconds * 1000) {
             throw new Error(`Scene ${ordinal}, part ${partIndex + 1} remains longer than the ${settings.hardShotMaxSeconds}-second visual-shot limit.`);
@@ -264,15 +396,35 @@ export class RenderService {
             settings.hardShotMaxSeconds * 1000
           );
           assertShotDuration(durationMs, settings.hardShotMaxSeconds * 1000);
-          const width = kind === 'draft' ? 1280 : 1920;
-          const height = kind === 'draft' ? 720 : 1080;
-          const videoBitrate = kind === 'draft' ? '5M' : '10M';
-          const preset = kind === 'draft' ? 'veryfast' : 'medium';
+          const width = kind === 'final' ? 1920 : 1280;
+          const height = kind === 'final' ? 1080 : 720;
+          const videoBitrate = kind === 'final' ? '10M' : '5M';
+          const preset = kind === 'final' ? 'medium' : 'veryfast';
           const sourceStartMs = Number(visual.start_ms);
           const startSeconds = sourceStartMs / 1000;
           const durationSeconds = durationMs / 1000;
 
-          await requireSuccess(ffmpeg, [
+          const fragmentInputHash = createHash('sha256').update(renderFragmentCacheKey({
+            sceneId: row.scene_id,
+            sourceHash,
+            sourceStartMs,
+            durationMs,
+            voiceInputHash: narrationRecord.voice_input_hash,
+            audioStartMs: absoluteAudioStartMs,
+            narration,
+            width,
+            height,
+            profile
+          })).digest('hex');
+          const cachedFragment = this.db.raw.prepare(`
+            SELECT output_path FROM render_fragments
+            WHERE project_id = ? AND input_hash = ? AND status = 'ready'
+          `).get(projectId, fragmentInputHash) as { output_path: string } | undefined;
+          const fragmentDirectory = join(projectDirectory, 'render-fragments', profile);
+          mkdirSync(fragmentDirectory, { recursive: true });
+          const fragmentPath = join(fragmentDirectory, `${fragmentInputHash}.mp4`);
+          const reuse = Boolean(cachedFragment?.output_path && existsSync(cachedFragment.output_path));
+          if (!reuse) await requireSuccess(ffmpeg, [
           '-y',
           '-hide_banner',
           '-ss', startSeconds.toFixed(3),
@@ -299,22 +451,47 @@ export class RenderService {
           '-ar', '48000',
           '-ac', '2',
           '-movflags', '+faststart',
-          normalizedPath
+          fragmentPath
           ]);
+          if (!reuse) this.db.raw.prepare(`
+            INSERT INTO render_fragments(
+              id, project_id, scene_id, profile, input_hash, output_path,
+              duration_ms, source_artifact_version, status, created_at, updated_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)
+            ON CONFLICT(input_hash) DO UPDATE SET output_path = excluded.output_path,
+              duration_ms = excluded.duration_ms, status = 'ready', updated_at = excluded.updated_at
+          `).run(
+            randomUUID(), projectId, row.scene_id, profile, fragmentInputHash, fragmentPath,
+            durationMs, artifactVersion, new Date().toISOString(), new Date().toISOString()
+          );
+          const selectedFragmentPath = reuse ? cachedFragment!.output_path : fragmentPath;
           timeline.push({
             sceneId: String(row.scene_id), ordinal, narration, sourcePath: String(row.original_path),
-            sourceHash: String(row.sha256), sourceStartMs, sourceEndMs: sourceStartMs + durationMs,
-            durationMs, audioPath, normalizedPath,
+            sourceHash, sourceStartMs, sourceEndMs: sourceStartMs + durationMs,
+            durationMs, audioPath: sectionAudioPath, normalizedPath: selectedFragmentPath,
+            timelineStartMs: elapsed, timelineEndMs: elapsed + durationMs,
             requiredLocation: row.required_location ? String(row.required_location) : null,
-            narrationPart: partIndex + 1, narrationParts: narrationParts.length
+            narrationPart: partIndex + 1, narrationParts: narrationParts.length,
+            wordTimings: part.words.map(word => ({
+              ...word,
+              startMs: elapsed + (word.startMs - part.audioStartMs),
+              endMs: elapsed + (word.endMs - part.audioStartMs)
+            })),
+            reusedFragment: reuse
           });
-          srtBlocks.push(`${timeline.length}\n${srtTime(elapsed)} --> ${srtTime(elapsed + durationMs)}\n${narration}\n`);
           elapsed += durationMs;
         }
       }
 
+      const captionCues = captionCuesFromWords(timeline.flatMap(scene => scene.wordTimings));
+      const srtBlocks = captionCues.map((cue, index) =>
+        `${index + 1}\n${srtTime(cue.startMs)} --> ${srtTime(cue.endMs)}\n${cue.text}\n`
+      );
       writeFileSync(srtPath, `${srtBlocks.join('\n')}\n`, 'utf8');
-      writeFileSync(vttPath, `WEBVTT\n\n${srtBlocks.join('\n').replace(/,/g, '.')}\n`, 'utf8');
+      const vttBlocks = captionCues.map((cue, index) =>
+        `${index + 1}\n${vttTime(cue.startMs)} --> ${vttTime(cue.endMs)}\n${cue.text}\n`
+      );
+      writeFileSync(vttPath, `WEBVTT\n\n${vttBlocks.join('\n')}\n`, 'utf8');
       const concatPath = join(workDirectory, 'concat.txt');
       writeFileSync(
         concatPath,
@@ -332,7 +509,7 @@ export class RenderService {
         concatPath,
         assembledPath,
         outputPath,
-        audioBitrate: kind === 'draft' ? '192k' : '384k'
+        audioBitrate: kind === 'final' ? '384k' : '192k'
       });
 
       const outputProbe = await this.probeOutput(outputPath);
@@ -356,14 +533,17 @@ export class RenderService {
           container: 'mp4',
           videoCodec: 'h264',
           audioCodec: 'aac',
-          width: kind === 'draft' ? 1280 : 1920,
-          height: kind === 'draft' ? 720 : 1080,
+          width: kind === 'final' ? 1920 : 1280,
+          height: kind === 'final' ? 1080 : 720,
           frameRate: 30,
           pixelFormat: 'yuv420p',
           colorSpace: 'bt709',
           fastStart: true
         },
         captions: { srtPath, vttPath },
+        scope,
+        baseRenderId: baseRender?.id ?? null,
+        reusedFragmentCount: timeline.filter(scene => scene.reusedFragment).length,
         scenes: timeline,
         createdAt: new Date().toISOString()
       };
@@ -395,8 +575,8 @@ export class RenderService {
         manifestId,
         outputHash,
         elapsed,
-        kind === 'draft' ? 1280 : 1920,
-        kind === 'draft' ? 720 : 1080,
+        kind === 'final' ? 1920 : 1280,
+        kind === 'final' ? 1080 : 720,
         completed,
         renderId
       );
@@ -445,6 +625,7 @@ export class RenderService {
                 targetState: route.targetState
               }
             });
+            await this.prepareRepair(projectId, route.targetState);
           } else {
             this.recordQcExceptions(projectId, renderId, blockers);
             this.projects.states.transition(projectId, 'BLOCKED_EXCEPTION', {
@@ -467,12 +648,56 @@ export class RenderService {
             prerequisites: { renderId, packageCount: this.projects.get(projectId).packaging.length }
           });
         }
-      } else {
+      } else if (kind === 'draft') {
         this.projects.states.transition(projectId, 'QC_DRAFT', {
           progress: 0.72,
           reason: 'Draft render completed and automated QC recorded',
           prerequisites: { renderId }
         });
+      } else {
+        const rangeBlockers = this.db.raw.prepare(`
+          SELECT id, code, category, severity, message, evidence_json FROM qc_results
+          WHERE project_id = ? AND render_id = ? AND status = 'fail'
+            AND severity IN ('BLOCKER','HIGH')
+        `).all(projectId, renderId) as Array<{
+          id: string;
+          code: string;
+          category: string;
+          severity: 'BLOCKER' | 'HIGH';
+          message: string;
+          evidence_json: string;
+        }>;
+        if (rangeBlockers.length) {
+          this.recordQcExceptions(projectId, renderId, rangeBlockers);
+          this.projects.states.transition(projectId, 'BLOCKED_EXCEPTION', {
+            progress: 0.72,
+            reason: 'The bounded range render failed automated verification',
+            prerequisites: { renderId, scope, blockerCount: rangeBlockers.length }
+          });
+          retryAutomatically = false;
+        } else {
+        const routedRangeRepairs = Number((this.db.raw.prepare(`
+          SELECT count(*) AS count FROM repair_attempts
+          WHERE project_id = ? AND status = 'routed' AND repair_class = 'regenerate_range'
+            AND range_start_ordinal <= ? AND range_end_ordinal >= ?
+        `).get(projectId, scope!.endSceneOrdinal, scope!.startSceneOrdinal) as { count: number }).count);
+        this.db.raw.prepare(`
+          UPDATE repair_attempts SET evidence_json = json_set(
+            evidence_json, '$.rangeRenderId', ?, '$.rangeScope', json(?), '$.verifiedBy', 'range_render_pass'
+          )
+          WHERE project_id = ? AND status = 'routed' AND repair_class = 'regenerate_range'
+            AND range_start_ordinal <= ? AND range_end_ordinal >= ?
+        `).run(
+          renderId, JSON.stringify(scope), projectId,
+          scope!.endSceneOrdinal, scope!.startSceneOrdinal
+        );
+        this.projects.states.transition(projectId, 'QC_DRAFT', {
+          progress: 0.72,
+          reason: 'Requested scene range rendered and passed automated media checks',
+          prerequisites: { renderId, scope, baseRenderId: baseRender?.id ?? null }
+        });
+        retryAutomatically = routedRangeRepairs > 0;
+        }
       }
 
       const result = renderFromRow(this.db.raw.prepare('SELECT * FROM renders WHERE id = ?').get(renderId) as Record<string, unknown>);
@@ -482,7 +707,7 @@ export class RenderService {
         this.emitProgress(job.id, projectId, 1, 'repair', 'QC repair routed; rebuilding final artifact automatically');
         return this.render(projectId, 'final');
       }
-      this.emitProgress(job.id, projectId, 1, 'complete', `${kind === 'final' ? 'Final' : 'Draft'} render complete`);
+      this.emitProgress(job.id, projectId, 1, 'complete', `${kind === 'final' ? 'Final' : kind === 'range' ? 'Range' : 'Draft'} render complete`);
       return result;
     } catch (error) {
       if (currentAttemptCommitted) throw error;
@@ -530,7 +755,7 @@ export class RenderService {
   private runQc(
     projectId: string,
     renderId: string,
-    kind: 'draft' | 'final',
+    kind: 'range' | 'draft' | 'final',
     timeline: TimelineScene[],
     outputPath: string,
     probe: OutputProbe,
@@ -559,8 +784,8 @@ export class RenderService {
     const audio = probe.streams?.find(stream => stream.codec_type === 'audio');
     const durationMs = Math.round(Number(probe.format?.duration ?? 0) * 1000);
     const expectedDurationMs = timeline.reduce((total, scene) => total + scene.durationMs, 0);
-    const expectedWidth = kind === 'draft' ? 1280 : 1920;
-    const expectedHeight = kind === 'draft' ? 720 : 1080;
+    const expectedWidth = kind === 'final' ? 1920 : 1280;
+    const expectedHeight = kind === 'final' ? 1080 : 720;
     const frameRate = rationalRate(video?.avg_frame_rate);
     const profileValid = Boolean(
       video?.codec_name === 'h264'
@@ -578,6 +803,14 @@ export class RenderService {
       && audio.channels === 2
     );
     const durationValid = Math.abs(durationMs - expectedDurationMs) <= 750;
+    const alignedWords = timeline.flatMap(scene => scene.wordTimings);
+    const expectedWords = timeline.flatMap(scene => scene.narration.match(/\S+/g) ?? []).length;
+    const wordTimingValid = alignedWords.length === expectedWords
+      && alignedWords.every((word, index) =>
+        word.startMs >= 0
+        && word.endMs > word.startMs
+        && (index === 0 || word.startMs >= alignedWords[index - 1]!.endMs)
+      );
     const fastStart = this.hasFastStart(outputPath);
     const measuredLufs = Number(measured.inputI);
     const measuredTruePeak = Number(measured.inputTp);
@@ -601,6 +834,18 @@ export class RenderService {
     add('audio', 'LOUDNESS_MEASURED', 'HIGH', loudnessValid ? 'pass' : 'fail',
       loudnessValid ? 'Final output meets configured EBU R128 loudness and true-peak tolerances.' : 'Final output is outside configured loudness or true-peak tolerances.',
       { measuredOutputLufs: measuredLufs, measuredOutputTruePeakDb: measuredTruePeak, targetLufs: -14, targetTruePeakDb: -1 });
+    add('audio', 'WORD_TIMING', 'BLOCKER', wordTimingValid ? 'pass' : 'fail',
+      wordTimingValid ? 'Every final narration word has monotonic timing.' : 'Narration word timing is missing, overlapping, or does not match the final script.',
+      { expectedWords, alignedWords: alignedWords.length, timingMethods: [...new Set(alignedWords.map(word => word.timingMethod))] });
+    const captionCues = captionCuesFromWords(alignedWords);
+    const captionValid = captionCues.length > 0 && captionCues.every((cue, index) =>
+      cue.endMs > cue.startMs
+      && cue.text.length <= 42
+      && (index === 0 || cue.startMs >= captionCues[index - 1]!.endMs)
+    );
+    add('packaging', 'CAPTION_TIMING', 'BLOCKER', captionValid ? 'pass' : 'fail',
+      captionValid ? 'Captions are word-aligned, bounded, and nonoverlapping.' : 'Captions are missing, overlapping, or exceed the line policy.',
+      { cueCount: captionCues.length, maximumCharacters: 42 });
     add('story', 'LOCATION_GROUNDING', 'BLOCKER', 'pass',
       'All rendered scenes use media that passed the exact-location metadata hard gate.',
       { sceneCount: timeline.length });
