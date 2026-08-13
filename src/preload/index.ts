@@ -18,9 +18,11 @@ import type {
   MetadataRevision,
   ProgressEvent,
   ProjectDetail,
+  ProjectExportReport,
   ProjectSummary,
   RenderRecord,
   RestoreReport,
+  DerivativeRebuildReport,
   SemanticVerificationRetryResult,
   SecretStatus,
   YouTubeConnectionStatus
@@ -83,6 +85,14 @@ const api = {
     createAutopilot: (request: CreateAutopilotProjectRequest): Promise<ProjectDetail> =>
       ipcRenderer.invoke(IPC.projectCreateAutopilot, request),
     advance: (projectId: string) => ipcRenderer.invoke(IPC.projectAdvance, projectId),
+    export: (request: {
+      projectId: string;
+      destinationPath?: string;
+      includeOriginals?: boolean;
+      includeFinalOutput?: boolean;
+    }): Promise<ProjectExportReport | null> => ipcRenderer.invoke(IPC.projectExport, request),
+    rebuildDerivatives: (projectId: string): Promise<DerivativeRebuildReport> =>
+      ipcRenderer.invoke(IPC.projectRebuildDerivatives, { projectId }),
     remove: (projectId: string): Promise<boolean> => ipcRenderer.invoke(IPC.projectDelete, projectId)
   },
   acquisitions: {

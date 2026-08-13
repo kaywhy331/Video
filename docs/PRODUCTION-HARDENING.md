@@ -1,6 +1,6 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-12 after the verified-footage script, narration, and range-repair milestone.
+Updated 2026-08-12 after completing the local P0 editing, QC, packaging, export, and derivative-rebuild milestone.
 
 Alpha.3 closes the highest-risk local durability, security, rendering, backup, and publishing defects found during the production-readiness audit. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
@@ -12,9 +12,6 @@ Alpha.3 closes the highest-risk local durability, security, rendering, backup, a
 - Rehearse live YouTube OAuth, resumable interruption/restart, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish.
 - Rehearse live Tavily Search/Extract plus LLM claim extraction, including real URLs, freshness, disagreement, malformed output, auth failure, and quota exhaustion.
 - Rehearse representative Windows SAPI and configured HTTP TTS runs for place pronunciation, native/provider timing, auth, quota, malformed timing, and changed-section cache reuse.
-- Complete maps, labels, chapter cards, and lower thirds required by the full editing PRD; scene/range render mode and bounded range repair are implemented.
-- Expand QC for duplicate/near-duplicate shots, severe crops, letterboxing, clipping/silence, caption overlap/line length, unsupported package claims, and thumbnail file limits.
-- Add project export and deterministic derivative rebuild after restore.
 - Perform ingest, render, upload, and restore interruption drills on representative data.
 
 ## Release engineering

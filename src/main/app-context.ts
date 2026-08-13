@@ -27,6 +27,7 @@ import { ResearchService } from './services/research-service';
 import { ProviderPolicyService } from './services/provider-policy';
 import { ScriptFinalizationService } from './services/script-finalization-service';
 import { NarrationService } from './services/narration-service';
+import { ProjectArtifactService } from './services/project-artifact-service';
 
 export class AppContext {
   readonly db: AppDatabase;
@@ -53,6 +54,7 @@ export class AppContext {
   readonly exceptions: ExceptionService;
   readonly watcher: DownloadWatcher;
   readonly backups: BackupService;
+  readonly artifacts: ProjectArtifactService;
 
   private settingsValue: AppSettings;
   private powerBlockerChanged?: (active: boolean) => void;
@@ -170,6 +172,7 @@ export class AppContext {
     );
     this.finalReview = new FinalReviewService(this.db, this.projects);
     this.backups = new BackupService(this.db, () => this.settingsValue);
+    this.artifacts = new ProjectArtifactService(this.db, () => this.settingsValue);
     this.watcher = new DownloadWatcher(
       this.db,
       this.media,
@@ -273,6 +276,15 @@ export class AppContext {
   }
 
   async start(): Promise<void> {
+    const completedRestore = BackupService.consumeCompletedRestore(this.settingsValue.databasePath);
+    if (completedRestore) {
+      const reports = await this.artifacts.rebuildAllProjects();
+      this.logger.info('Restore consistency and derivative rebuild completed', {
+        completedRestore,
+        projects: reports.map(report => ({ projectId: report.projectId, status: report.status }))
+      });
+      BackupService.acknowledgeCompletedRestore(this.settingsValue.databasePath);
+    }
     await this.watcher.start();
     await this.media.recoverPendingSemanticAlternates();
     this.started = true;

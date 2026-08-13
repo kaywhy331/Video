@@ -368,4 +368,82 @@ describe('automated repair service', () => {
     });
     db.close();
   });
+
+  it('routes ordinal-bearing footage QC through the bounded scene alternate engine', () => {
+    const { db, repair } = createDatabase();
+    addAsset(db, 'primary');
+    addAsset(db, 'alternate');
+    addScene(db);
+    addCandidate(db, 'primary', 1, 'selected');
+    addCandidate(db, 'alternate', 2);
+    const now = new Date().toISOString();
+    db.raw.prepare(`
+      INSERT INTO renders(id, project_id, kind, profile, state, artifact_version, created_at)
+      VALUES('render-crop', 'project-1', 'final', 'final_1080p', 'SUCCEEDED', 4, ?)
+    `).run(now);
+    db.raw.prepare(`
+      INSERT INTO qc_results(
+        id, project_id, render_id, category, code, severity, status,
+        message, evidence_json, created_at
+      ) VALUES('qc-crop', 'project-1', 'render-crop', 'media', 'SEVERE_CROP',
+        'HIGH', 'fail', 'Scene needs an alternate crop.', '{"ordinals":[1]}', ?)
+    `).run(now);
+
+    expect(repair.routeQcFailures('project-1', 'render-crop', [{
+      id: 'qc-crop', code: 'SEVERE_CROP', category: 'media', severity: 'HIGH',
+      message: 'Scene needs an alternate crop.', evidenceJson: '{"ordinals":[1]}'
+    }])).toMatchObject({
+      retryAutomatically: false,
+      waitingForAcquisition: true,
+      targetState: 'WAITING_FOR_DOWNLOADS',
+      operatorRequired: false,
+      exhausted: false
+    });
+    expect(db.raw.prepare(`
+      SELECT status, replacement_asset_id FROM repair_attempts
+      WHERE scene_id = 'scene-1' AND failure_code = 'SEVERE_CROP'
+    `).get()).toEqual({ status: 'waiting_acquisition', replacement_asset_id: 'alternate' });
+    expect(db.raw.prepare(`
+      SELECT role, state FROM acquisition_items
+      WHERE project_id = 'project-1' AND asset_id = 'alternate'
+    `).get()).toEqual({ role: 'alternate', state: 'READY_TO_OPEN' });
+    db.close();
+  });
+
+  it('reuses one scene alternate route across overlapping footage failures', () => {
+    const { db, repair } = createDatabase();
+    const now = new Date().toISOString();
+    addAsset(db, 'primary', { local: true });
+    addAsset(db, 'alternate');
+    addScene(db);
+    addCandidate(db, 'primary', 1, 'selected');
+    addCandidate(db, 'alternate', 2);
+    db.raw.prepare(`
+      INSERT INTO renders(id, project_id, kind, profile, state, artifact_version, created_at)
+      VALUES('render-overlap', 'project-1', 'final', 'final_1080p', 'SUCCEEDED', 1, ?)
+    `).run(now);
+    for (const [id, code] of [['qc-resolution', 'EFFECTIVE_RESOLUTION'], ['qc-letterbox', 'LETTERBOX']] as const) {
+      db.raw.prepare(`
+        INSERT INTO qc_results(
+          id, project_id, render_id, category, code, severity, status,
+          message, evidence_json, created_at
+        ) VALUES(?, 'project-1', 'render-overlap', 'media', ?, 'HIGH', 'fail',
+          'Scene needs one alternate.', '{"ordinals":[1]}', ?)
+      `).run(id, code, now);
+    }
+
+    expect(repair.routeQcFailures('project-1', 'render-overlap', [
+      { id: 'qc-resolution', code: 'EFFECTIVE_RESOLUTION', category: 'media', severity: 'HIGH', message: 'resolution', evidenceJson: '{"ordinals":[1]}' },
+      { id: 'qc-letterbox', code: 'LETTERBOX', category: 'media', severity: 'HIGH', message: 'letterbox', evidenceJson: '{"ordinals":[1]}' }
+    ])).toMatchObject({ waitingForAcquisition: true, targetState: 'WAITING_FOR_DOWNLOADS' });
+    expect(db.raw.prepare(`
+      SELECT count(*) AS count FROM repair_attempts
+      WHERE project_id = 'project-1' AND scene_id = 'scene-1'
+    `).get()).toEqual({ count: 1 });
+    expect(db.raw.prepare(`
+      SELECT count(*) AS count FROM acquisition_items
+      WHERE project_id = 'project-1' AND asset_id = 'alternate'
+    `).get()).toEqual({ count: 1 });
+    db.close();
+  });
 });

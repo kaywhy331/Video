@@ -50,5 +50,6 @@ describe('project state machine', () => {
   it('allows final QC to route an automatic output repair back to final rendering', () => {
     expect(canTransitionProject('QC_FINAL', 'QC_DRAFT')).toBe(true);
     expect(canTransitionProject('QC_FINAL', 'GENERATING_VOICE')).toBe(true);
+    expect(canTransitionProject('QC_FINAL', 'WAITING_FOR_DOWNLOADS')).toBe(true);
   });
 });

@@ -1,6 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import type { AppDatabase } from '../database/database';
-import type { AppSettings, CreateAutopilotProjectRequest, NarrationSection, PackagingCandidate, ProjectDetail, ProjectScene, ProjectSummary, QcResult, RenderRecord } from '@shared/types';
+import type {
+  AppSettings,
+  CreateAutopilotProjectRequest,
+  DerivativeRebuildReport,
+  NarrationSection,
+  PackagingCandidate,
+  ProjectDetail,
+  ProjectExportReport,
+  ProjectScene,
+  ProjectSummary,
+  QcResult,
+  RenderRecord
+} from '@shared/types';
 import { slugify } from '@shared/normalization';
 import type { CatalogService } from './catalog-service';
 import type { AiService } from './ai-service';
@@ -250,6 +262,44 @@ export class ProjectService {
       status: row.status as NarrationSection['status']
     } satisfies NarrationSection));
 
+    const exports = (this.db.raw.prepare(`
+      SELECT * FROM project_export_runs WHERE project_id = ? ORDER BY created_at DESC LIMIT 20
+    `).all(projectId) as Array<Record<string, unknown>>).map(row => ({
+      id: String(row.id),
+      projectId: String(row.project_id),
+      exportPath: String(row.export_path),
+      manifestPath: row.manifest_path ? String(row.manifest_path) : null,
+      manifestSha256: row.manifest_sha256 ? String(row.manifest_sha256) : null,
+      artifactCount: Number(row.artifact_count),
+      totalBytes: Number(row.total_bytes),
+      missingFiles: jsonArray(row.missing_files_json),
+      status: row.status as ProjectExportReport['status'],
+      error: row.error ? String(row.error) : null,
+      createdAt: String(row.created_at),
+      completedAt: row.completed_at ? String(row.completed_at) : null
+    } satisfies ProjectExportReport));
+
+    const rebuilds = (this.db.raw.prepare(`
+      SELECT * FROM derivative_rebuild_runs WHERE project_id = ? ORDER BY created_at DESC LIMIT 20
+    `).all(projectId) as Array<Record<string, unknown>>).map(row => ({
+      id: String(row.id),
+      projectId: String(row.project_id),
+      checkedOriginals: Number(row.checked_originals),
+      rebuiltProxies: Number(row.rebuilt_proxies),
+      rebuiltContactSheets: Number(row.rebuilt_contact_sheets),
+      rebuiltVoiceTimings: Number(row.rebuilt_voice_timings),
+      rebuiltEditingLayers: Number(row.rebuilt_editing_layers),
+      rebuiltCaptionFiles: Number(row.rebuilt_caption_files),
+      staleRenderFragments: Number(row.stale_render_fragments),
+      missingOriginals: jsonArray(row.missing_originals_json),
+      missingVoice: jsonArray(row.missing_voice_json),
+      failures: jsonArray(row.failures_json),
+      status: row.status as DerivativeRebuildReport['status'],
+      error: row.error ? String(row.error) : null,
+      createdAt: String(row.created_at),
+      completedAt: row.completed_at ? String(row.completed_at) : null
+    } satisfies DerivativeRebuildReport));
+
     return {
       ...projectSummary(row),
       description: row.description ? String(row.description) : null,
@@ -262,7 +312,9 @@ export class ProjectService {
       packaging,
       qc,
       repairs: this.repairs.list(projectId),
-      narrationSections
+      narrationSections,
+      exports,
+      rebuilds
     };
   }
 
@@ -581,14 +633,16 @@ export class ProjectService {
           }) && (ranked[1].asset.canonicalPageUrl || ranked[1].asset.localFileId)
             ? ranked.slice(1, 2)
             : [];
-          const treatment = selected ? scene.visualTreatment : 'MAP_OR_GRAPHIC';
-          if (selected) {
-            useCount.set(selected.asset.id, (useCount.get(selected.asset.id) ?? 0) + 1);
+          const requestedGraphic = scene.visualTreatment === 'MAP_OR_GRAPHIC' || scene.visualTreatment === 'TEXT_OR_ARCHIVAL';
+          const selectedFootage = requestedGraphic ? undefined : selected;
+          const treatment = requestedGraphic ? scene.visualTreatment : selectedFootage ? scene.visualTreatment : 'MAP_OR_GRAPHIC';
+          if (selectedFootage) {
+            useCount.set(selectedFootage.asset.id, (useCount.get(selectedFootage.asset.id) ?? 0) + 1);
             selectedByScene.push({
               sceneOrdinal: ordinal,
-              assetId: selected.asset.id,
-              score: selected.score,
-              reasons: selected.reasons,
+              assetId: selectedFootage.asset.id,
+              score: selectedFootage.score,
+              reasons: selectedFootage.reasons,
               role: 'selected'
             });
           }
@@ -616,17 +670,19 @@ export class ProjectService {
             JSON.stringify(scene.requiredActivities),
             JSON.stringify(scene.preferredShots),
             treatment,
-            selected?.asset.id ?? null,
-            selected?.asset.localFileId ?? null,
-            selected?.score ?? null,
-            JSON.stringify(selected?.reasons ?? ['No eligible exact-location footage; graphic fallback assigned']),
-            selected
-              ? (selected.asset.localFileId ? 'download_required' : 'metadata_only')
+            selectedFootage?.asset.id ?? null,
+            selectedFootage?.asset.localFileId ?? null,
+            selectedFootage?.score ?? null,
+            JSON.stringify(selectedFootage?.reasons ?? [requestedGraphic
+              ? 'Script requires an evidence-bound graphic treatment'
+              : 'No eligible exact-location footage; graphic fallback assigned']),
+            selectedFootage
+              ? (selectedFootage.asset.localFileId ? 'download_required' : 'metadata_only')
               : 'graphic',
             now,
             now
           );
-          ranked.slice(0, 3).forEach((candidate, rankIndex) => {
+          if (!requestedGraphic) ranked.slice(0, 3).forEach((candidate, rankIndex) => {
             this.db.raw.prepare(`
               INSERT INTO shot_candidates(
                 id, project_id, scene_id, asset_id, candidate_rank,
@@ -639,7 +695,7 @@ export class ProjectService {
               rankIndex === 0 ? 'selected' : 'eligible', now, now
             );
           });
-          for (const alternate of alternates) {
+          for (const alternate of requestedGraphic ? [] : alternates) {
             plannedAlternates += 1;
             useCount.set(alternate.asset.id, (useCount.get(alternate.asset.id) ?? 0) + 1);
             selectedByScene.push({
@@ -654,8 +710,8 @@ export class ProjectService {
               WHERE scene_id = ? AND asset_id = ?
             `).run(now, sceneId, alternate.asset.id);
           }
-          if (selected) {
-            const sourceId = catalogSourceIds.get(selected.asset.id);
+          if (selectedFootage) {
+            const sourceId = catalogSourceIds.get(selectedFootage.asset.id);
             if (sourceId) {
               const claimId = randomUUID();
               this.db.raw.prepare(`
@@ -668,7 +724,7 @@ export class ProjectService {
                 projectId,
                 scene.narration,
                 [scene.requiredCountry, scene.requiredCity, scene.requiredLocation].filter(Boolean).join('|') || null,
-                Math.max(0, Math.min(1, selected.asset.locationConfidence)),
+                Math.max(0, Math.min(1, selectedFootage.asset.locationConfidence)),
                 now.slice(0, 10),
                 JSON.stringify([sourceId]),
                 `visual-observation:${sceneId}`,
@@ -836,11 +892,24 @@ export class ProjectService {
     this.db.raw.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
   }
 
-  generatePackaging(projectId: string): PackagingCandidate[] {
+  generatePackaging(
+    projectId: string,
+    renderedTimeline?: Array<{ ordinal: number; chapter: string | null; timelineStartMs: number }>
+  ): PackagingCandidate[] {
     const project = this.get(projectId);
     this.db.raw.prepare('DELETE FROM packaging_candidates WHERE project_id = ?').run(projectId);
     const destination = project.destination ?? project.topic;
-    const chapterLines = this.buildChapters(project.scenes);
+    const chapterLines = this.buildChapters(project.scenes, renderedTimeline);
+    const sourceLinks = (this.db.raw.prepare(`
+      SELECT DISTINCT source.url
+      FROM project_scene_claims scene_claim
+      JOIN project_scenes scene ON scene.id = scene_claim.scene_id
+      JOIN fact_claims claim ON claim.id = scene_claim.claim_id AND claim.status = 'accepted'
+      JOIN fact_claim_sources claim_source ON claim_source.claim_id = claim.id
+      JOIN research_sources source ON source.id = claim_source.source_id
+      WHERE scene.project_id = ? AND source.url IS NOT NULL
+      ORDER BY source.url LIMIT 12
+    `).all(projectId) as Array<{ url: string }>).map(row => row.url);
     const concepts = [
       {
         title: `${destination}: A Visual Guide`,
@@ -848,14 +917,14 @@ export class ProjectService {
         promise: `See the defining views of ${destination} in one concise visual journey.`
       },
       {
-        title: `Inside ${destination}: What the Views Really Look Like`,
+        title: `A Closer Look at ${destination}`,
         angle: 'visual truth',
-        promise: `A grounded look at ${destination} using footage matched to the exact place.`
+        promise: `A grounded look at ${destination} using verified footage and sourced graphics.`
       },
       {
-        title: `The Most Striking Views of ${destination}`,
+        title: `${destination} in Motion`,
         angle: 'curiosity and beauty',
-        promise: `Discover the scenes that make ${destination} visually distinctive.`
+        promise: `Explore the scenes that give ${destination} its visual character.`
       }
     ];
     const now = new Date().toISOString();
@@ -873,8 +942,9 @@ export class ProjectService {
         '',
         'CHAPTERS',
         chapterLines,
+        ...(sourceLinks.length ? ['', 'SOURCES', ...sourceLinks] : []),
         '',
-        `Footage locations are matched to the destination shown.`
+        'Footage and generated graphics are labeled from persisted project evidence.'
       ].join('\n').trim();
       insert.run(
         randomUUID(),
@@ -893,7 +963,24 @@ export class ProjectService {
     return this.get(projectId).packaging;
   }
 
-  private buildChapters(scenes: ProjectScene[]): string {
+  private buildChapters(
+    scenes: ProjectScene[],
+    renderedTimeline?: Array<{ ordinal: number; chapter: string | null; timelineStartMs: number }>
+  ): string {
+    if (renderedTimeline?.length) {
+      const firstByOrdinal = new Map<number, { chapter: string | null; timelineStartMs: number }>();
+      for (const item of [...renderedTimeline].sort((left, right) => left.timelineStartMs - right.timelineStartMs)) {
+        if (!firstByOrdinal.has(item.ordinal)) firstByOrdinal.set(item.ordinal, item);
+      }
+      let previousChapter = '';
+      return [...firstByOrdinal.values()].flatMap(item => {
+        const chapter = item.chapter ?? 'Visual journey';
+        if (chapter === previousChapter) return [];
+        previousChapter = chapter;
+        const seconds = Math.floor(item.timelineStartMs / 1000);
+        return [`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} ${chapter}`];
+      }).join('\n');
+    }
     let elapsed = 0;
     let previousChapter = '';
     const lines: string[] = [];

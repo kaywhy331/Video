@@ -55,6 +55,7 @@ function assertInside(root: string, candidate: string): void {
 export class BackupService {
   static readonly PENDING_SUFFIX = '.restore-pending';
   static readonly MARKER_SUFFIX = '.restore-request.json';
+  static readonly COMPLETED_SUFFIX = '.restore-completed.json';
 
   constructor(
     private readonly db: AppDatabase,
@@ -216,7 +217,23 @@ export class BackupService {
     }
     renameSync(marker.pendingPath, databasePath);
     unlinkSync(markerPath);
+    writeFileSync(`${databasePath}${BackupService.COMPLETED_SUFFIX}`, JSON.stringify({
+      restoredAt: new Date().toISOString(),
+      safetyPath,
+      sourceChecksum: marker.expectedChecksum
+    }, null, 2), 'utf8');
     return true;
+  }
+
+  static consumeCompletedRestore(databasePath: string): { restoredAt: string; safetyPath: string; sourceChecksum: string } | null {
+    const path = `${databasePath}${BackupService.COMPLETED_SUFFIX}`;
+    if (!existsSync(path)) return null;
+    return JSON.parse(readFileSync(path, 'utf8')) as { restoredAt: string; safetyPath: string; sourceChecksum: string };
+  }
+
+  static acknowledgeCompletedRestore(databasePath: string): void {
+    const path = `${databasePath}${BackupService.COMPLETED_SUFFIX}`;
+    if (existsSync(path)) unlinkSync(path);
   }
 
   private copyCadenceSnapshot(source: string, cadence: Exclude<BackupCadence, 'daily'>, now: Date): void {

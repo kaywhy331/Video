@@ -80,6 +80,11 @@ describe('backup and restore', () => {
     const restored = new SqliteConnection(value.databasePath);
     expect(restored.prepare('SELECT value FROM marker').get()?.value).toBe('from-backup');
     restored.close();
+    const marker = BackupService.consumeCompletedRestore(value.databasePath);
+    expect(marker).toMatchObject({ sourceChecksum: report.checksum });
+    expect(BackupService.consumeCompletedRestore(value.databasePath)).toEqual(marker);
+    BackupService.acknowledgeCompletedRestore(value.databasePath);
+    expect(BackupService.consumeCompletedRestore(value.databasePath)).toBeNull();
   });
 
   it('retains only the newest seven daily backups', () => {

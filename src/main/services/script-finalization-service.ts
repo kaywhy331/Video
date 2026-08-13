@@ -22,6 +22,10 @@ interface SceneRow {
   claim_ids_json: string;
 }
 
+function graphicTreatment(value: string): boolean {
+  return value === 'MAP_OR_GRAPHIC' || value === 'TEXT_OR_ARCHIVAL';
+}
+
 function ids(value: string): string[] {
   try {
     const parsed = JSON.parse(value);
@@ -70,6 +74,16 @@ export class ScriptFinalizationService {
       WHERE s.project_id = ? ORDER BY s.ordinal
     `).all(projectId) as unknown as SceneRow[];
     if (!rows.length) throw new Error('Project has no scenes to finalize.');
+    const invalid = rows.filter(row => graphicTreatment(row.visual_treatment)
+      ? row.verification_state !== 'graphic'
+      : row.verification_state !== 'verified'
+        || !row.selected_asset_id
+        || !row.selected_file_id
+        || !row.selected_segment_id
+        || !row.duration_ms);
+    if (invalid.length) {
+      throw new Error(`${invalid.length} scene(s) do not have a verified visual treatment matching the final storyboard.`);
+    }
 
     const claimIds = new Set(rows.flatMap(row => ids(row.claim_ids_json)));
     const acceptedClaims = claimIds.size

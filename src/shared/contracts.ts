@@ -90,6 +90,15 @@ export const CreateAutopilotProjectSchema = z.object({
 
 export const IdSchema = z.string().min(1).max(200);
 
+export const ProjectExportSchema = z.object({
+  projectId: IdSchema,
+  destinationPath: FilePathSchema.optional(),
+  includeOriginals: z.boolean().default(false),
+  includeFinalOutput: z.boolean().default(true)
+}).strict();
+
+export const ProjectRebuildSchema = z.object({ projectId: IdSchema }).strict();
+
 export const ImportRequestSchema = z.object({
   filePath: FilePathSchema,
   sheetName: z.string().max(250).optional(),
