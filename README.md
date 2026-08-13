@@ -6,13 +6,14 @@ VideoFactory Desktop is a single-user Windows application that turns a licensed 
 
 ## Current status
 
-The repository is a production-hardened alpha. The application builds and its local automated suite covers database migration, durable project/job state, IPC and path security, sourced web research and claim policy, provider preflight, canonical geographic evidence, scene-specific semantic footage verification, real FFmpeg analysis/rendering, backup/restore, approval fingerprints, and resumable-upload protocol helpers. It is not yet production-qualified because these external acceptance gates have not been performed:
+The repository is a production-hardened alpha. The application builds and its local automated suite covers database migration, durable project/job state, IPC and path security, sourced web research and claim policy, provider preflight, canonical geographic evidence, scene-specific semantic footage verification, verified-footage final scripts, section narration and word timing, range repair, real FFmpeg analysis/rendering, backup/restore, approval fingerprints, and resumable-upload protocol helpers. It is not yet production-qualified because these external acceptance gates have not been performed:
 
 - clean Windows 10/11 installer and runtime test on a machine without developer tooling;
 - five representative 4–6 minute videos completed with real licensed assets;
 - live Envato license/download/mapping workflow;
 - live Google OAuth, resumable private upload, caption/thumbnail/playlist attachment, processing, scheduling, and publication rehearsal.
 - live Tavily research and configured LLM claim-extraction rehearsal against representative topics.
+- live Windows SAPI and/or configured HTTP TTS pronunciation/timing rehearsal on representative narration.
 
 `production_ready` therefore remains `false`. See [Implementation Coverage](docs/IMPLEMENTATION-COVERAGE.md), [Production Hardening](docs/PRODUCTION-HARDENING.md), and [Validation Report](VALIDATION_REPORT.md).
 
@@ -28,9 +29,10 @@ The repository is a production-hardened alpha. The application builds and its lo
 - manual Envato handoff, project license attestation, watched downloads, quarantine, and content-addressed originals
 - FFprobe inspection, declared/actual conflict evidence, proxies, contact sheets, rotation-aware resolution policy, and FFmpeg black/freeze analysis
 - canonical place hierarchy and evidence precedence, configurable contact-sheet vision verification, persisted scene/file receipts, fail-closed provider handling, and operator retry/recovery
-- narration splitting into visual shots no longer than seven seconds
-- SRT and WebVTT captions
-- synchronized H.264/AAC-LC render pipeline with two-pass EBU R128 normalization, 30 fps progressive BT.709 output checks, duration QC, and fast-start verification
+- final-script rewrite parented to the provisional version after every scene has verified footage, with immutable lock/audit receipts
+- 15–45 second cached narration sections, pronunciation dictionary snapshots, native/provider word timing, and fail-closed timing validation; non-Windows synthetic test audio is explicitly low-confidence
+- word-aligned SRT and WebVTT captions plus narration-bound visual shots no longer than seven seconds
+- synchronized H.264/AAC-LC render pipeline with scene-fragment cache, explicit scene/range renders, bounded range-repair provenance, two-pass EBU R128 normalization, 30 fps progressive BT.709 output checks, duration QC, and fast-start verification
 - approval fingerprints binding final-render and publishing-package inputs
 - private-first YouTube workflow with persisted resumable sessions, offset recovery, duplicate-hash guard, processing polling, timed captions, thumbnails, optional playlist, and configurable synthetic-media disclosure
 - verified automatic SQLite backups, configurable daily/weekly/monthly retention, restart-safe restore, safety copy, and missing-original report
@@ -75,7 +77,7 @@ npm run package:win
 ## First-run walkthrough
 
 1. In Library, import the footage XLSX or CSV and commit the detected mapping.
-2. In Settings, configure storage, backup policy, narrator, optional Tavily research and LLM, semantic vision provider, and YouTube OAuth.
+2. In Settings, configure storage, backup policy, narrator and pronunciation dictionary, optional Tavily research and LLM, semantic vision provider, and YouTube OAuth.
 3. Run diagnostics.
 4. Start an Autopilot project.
 5. In Downloads, use the displayed Envato project name, license/download each requested asset, and record its license.

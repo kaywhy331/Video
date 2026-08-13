@@ -20,7 +20,12 @@ describe('bounded QC repair policy', () => {
     expect(repairPolicyFor('UNSUPPORTED_CLAIM')).toMatchObject({
       repairClass: 'regenerate_range',
       targetState: 'FINALIZING_SCRIPT',
-      maximumAttempts: 0
+      maximumAttempts: 2
+    });
+    expect(repairPolicyFor('WORD_TIMING')).toMatchObject({
+      repairClass: 'regenerate_range',
+      targetState: 'GENERATING_VOICE',
+      maximumAttempts: 2
     });
     expect(repairPolicyFor('LICENSE_STATE', 'rights')).toMatchObject({
       repairClass: 'operator',

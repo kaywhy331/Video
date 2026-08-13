@@ -66,6 +66,48 @@ export function ProjectDrawer({
                 ))}
               </div>
             </section>
+            {project.narrationSections.length ? (
+              <section>
+                <h3>Final narration</h3>
+                <div className="repair-audit">
+                  {project.narrationSections.map(section => (
+                    <div key={section.id} className="repair-audit-row">
+                      <span className="scene-number">{String(section.ordinal).padStart(2, '0')}</span>
+                      <div>
+                        <strong>{section.chapter ?? `Section ${section.ordinal}`}</strong>
+                        <span>
+                          {section.sceneIds.length} scenes · {Math.round(section.durationMs / 1000)} sec · {section.timingMethod.replaceAll('_', ' ')}
+                          {Object.keys(section.pronunciation).length ? ` · ${Object.keys(section.pronunciation).length} pronunciation notes` : ''}
+                        </span>
+                      </div>
+                      <StatusPill value={section.status} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {project.renders.some(render => render.kind === 'range') ? (
+              <section>
+                <h3>Range repairs</h3>
+                <div className="repair-audit">
+                  {project.renders.filter(render => render.kind === 'range').map(render => (
+                    <div key={render.id} className="repair-audit-row">
+                      <RotateCcw size={14} />
+                      <div>
+                        <strong>
+                          Scenes {render.scope?.startSceneOrdinal ?? '—'}–{render.scope?.endSceneOrdinal ?? '—'}
+                        </strong>
+                        <span>
+                          Artifact v{render.artifactVersion}
+                          {render.baseRenderId ? ' · derived from prior full render' : ''}
+                        </span>
+                      </div>
+                      <StatusPill value={render.state} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {project.repairs.length ? (
               <section>
                 <h3>Repair history</h3>

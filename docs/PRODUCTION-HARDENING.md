@@ -1,6 +1,6 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-12 after the sourced-research and provider-preflight milestone.
+Updated 2026-08-12 after the verified-footage script, narration, and range-repair milestone.
 
 Alpha.3 closes the highest-risk local durability, security, rendering, backup, and publishing defects found during the production-readiness audit. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
@@ -11,9 +11,8 @@ Alpha.3 closes the highest-risk local durability, security, rendering, backup, a
 - Rehearse live Envato account handoff, license naming, download watcher mapping, ambiguity handling, and certificate attachment.
 - Rehearse live YouTube OAuth, resumable interruption/restart, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish.
 - Rehearse live Tavily Search/Extract plus LLM claim extraction, including real URLs, freshness, disagreement, malformed output, auth failure, and quota exhaustion.
-- Implement the final post-ingest script rewrite against verified footage, plus pronunciation and word-level/forced alignment.
-- Extend automated repair beyond the implemented bounded alternate/output/semantic loop to post-ingest script rewriting and scene/range-only rendering.
-- Complete maps, labels, chapter cards, lower thirds, and scene/range render modes required by the full editing PRD.
+- Rehearse representative Windows SAPI and configured HTTP TTS runs for place pronunciation, native/provider timing, auth, quota, malformed timing, and changed-section cache reuse.
+- Complete maps, labels, chapter cards, and lower thirds required by the full editing PRD; scene/range render mode and bounded range repair are implemented.
 - Expand QC for duplicate/near-duplicate shots, severe crops, letterboxing, clipping/silence, caption overlap/line length, unsupported package claims, and thumbnail file limits.
 - Add project export and deterministic derivative rebuild after restore.
 - Perform ingest, render, upload, and restore interruption drills on representative data.
@@ -29,7 +28,7 @@ Alpha.3 closes the highest-risk local durability, security, rendering, backup, a
 ## P1
 
 - Qualified 4K final render profile and blocker UI
-- HTTP TTS provider, stable timing, pronunciation dictionary, and section cache
+- Additional vendor-specific TTS adapters beyond the generic HTTP contract
 - Google Ads demand-proxy and YouTube competition adapters
 - scene-level retention analytics and render-manifest mapping
 - title/thumbnail experiment tracking

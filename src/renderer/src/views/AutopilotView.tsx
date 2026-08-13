@@ -41,6 +41,8 @@ export function AutopilotView({
     if (!current) return null;
     if (current.state === 'WAITING_FOR_DOWNLOADS') return { label: 'Open download queue', view: 'downloads' };
     if (current.state === 'WAITING_FINAL_APPROVAL') return { label: 'Review finished video', view: 'final-review' };
+    if (current.state === 'FINALIZING_SCRIPT') return { label: 'Finalize verified script', advance: true };
+    if (current.state === 'GENERATING_VOICE') return { label: 'Generate aligned narration', advance: true };
     if (current.state === 'BUILDING_TIMELINE') return { label: 'Render draft automatically', advance: true };
     if (current.state === 'QC_DRAFT') return { label: 'Render final video', advance: true };
     if (current.state === 'BLOCKED_EXCEPTION') return { label: 'Review exceptions', view: 'exceptions' };

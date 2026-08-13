@@ -104,7 +104,8 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     const providers = [
       ...(patch.researchApiKey !== undefined ? ['tavily'] : []),
       ...(patch.llmApiKey !== undefined ? ['openai_compatible'] : []),
-      ...(patch.visionApiKey !== undefined ? ['openai_compatible_vision'] : [])
+      ...(patch.visionApiKey !== undefined ? ['openai_compatible_vision'] : []),
+      ...(patch.httpTtsApiKey !== undefined ? ['http_tts'] : [])
     ];
     for (const provider of providers) context.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
     return status;
@@ -169,6 +170,17 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   handle(IPC.projectAdvance, async (_event, payload) => {
     const projectId = IdSchema.parse(payload);
     const project = context.projects.get(projectId);
+    if (project.state === 'FINALIZING_SCRIPT' || project.state === 'GENERATING_VOICE') {
+      context.setLongOperationActive(true);
+      try {
+        if (project.state === 'FINALIZING_SCRIPT') await context.scriptFinalization.finalize(projectId);
+        const result = await context.narration.generate(projectId);
+        context.emitState();
+        return result;
+      } finally {
+        context.setLongOperationActive(false);
+      }
+    }
     if (project.state === 'BUILDING_TIMELINE' || project.state === 'QC_DRAFT') {
       context.setLongOperationActive(true);
       try {
@@ -226,7 +238,7 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     const request = RenderRequestSchema.parse(payload);
     context.setLongOperationActive(true);
     try {
-      const result = await context.renders.render(request.projectId, request.kind);
+      const result = await context.renders.render(request.projectId, request);
       context.emitState();
       return result;
     } finally {

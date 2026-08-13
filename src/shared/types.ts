@@ -115,8 +115,11 @@ export interface AppSettings {
   preferredShotMaxSeconds: number;
   hardShotMaxSeconds: number;
   narratorProvider: 'windows_sapi' | 'http_tts';
+  narratorBaseUrl: string;
+  narratorModel: string;
   narratorVoice: string;
   narratorRate: number;
+  pronunciationDictionary: Record<string, string>;
   llmProvider: 'mock' | 'openai_compatible';
   llmBaseUrl: string;
   llmModel: string;
@@ -396,6 +399,7 @@ export interface ProjectDetail extends ProjectSummary {
   packaging: PackagingCandidate[];
   qc: QcResult[];
   repairs: RepairAttempt[];
+  narrationSections: NarrationSection[];
 }
 
 export interface ProjectScene {
@@ -420,8 +424,39 @@ export interface ProjectScene {
   score: number | null;
   scoreExplanation: string[];
   verificationState: 'metadata_only' | 'download_required' | 'verified' | 'rejected' | 'graphic';
+  pronunciation: Record<string, string>;
   startMs: number | null;
   endMs: number | null;
+}
+
+export interface NarrationWord {
+  word: string;
+  startMs: number;
+  endMs: number;
+  confidence: number;
+  timingMethod: 'provider_word' | 'duration_weighted_fallback';
+}
+
+export interface NarrationSection {
+  id: string;
+  projectId: string;
+  scriptVersionId: string;
+  ordinal: number;
+  chapter: string | null;
+  sceneIds: string[];
+  text: string;
+  pronunciation: Record<string, string>;
+  audioPath: string;
+  timingPath: string | null;
+  durationMs: number;
+  timingMethod: NarrationWord['timingMethod'];
+  status: 'ready' | 'stale' | 'failed';
+}
+
+export interface RenderScope {
+  startSceneOrdinal: number;
+  endSceneOrdinal: number;
+  sceneOrdinals: number[];
 }
 
 export interface AcquisitionItem {
@@ -539,6 +574,8 @@ export interface RenderRecord {
   createdAt: string;
   completedAt: string | null;
   artifactVersion: number;
+  scope: RenderScope | null;
+  baseRenderId: string | null;
 }
 
 export interface PackagingCandidate {
@@ -590,6 +627,8 @@ export interface RepairAttempt {
   replacementFileId: string | null;
   replacementSegmentId: string | null;
   sourceArtifactVersion: number | null;
+  rangeStartOrdinal: number | null;
+  rangeEndOrdinal: number | null;
   targetState: ProjectState | null;
   evidence: Record<string, unknown>;
   createdAt: string;

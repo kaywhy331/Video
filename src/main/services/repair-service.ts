@@ -55,6 +55,10 @@ function toRepairAttempt(row: Record<string, unknown>): RepairAttempt {
     replacementSegmentId: row.replacement_segment_id ? String(row.replacement_segment_id) : null,
     sourceArtifactVersion: row.source_artifact_version === null || row.source_artifact_version === undefined
       ? null : Number(row.source_artifact_version),
+    rangeStartOrdinal: row.range_start_ordinal === null || row.range_start_ordinal === undefined
+      ? null : Number(row.range_start_ordinal),
+    rangeEndOrdinal: row.range_end_ordinal === null || row.range_end_ordinal === undefined
+      ? null : Number(row.range_end_ordinal),
     targetState: row.target_state ? row.target_state as ProjectState : null,
     evidence: parseObject(row.evidence_json),
     createdAt: String(row.created_at),
@@ -404,6 +408,12 @@ export class RepairService {
     const render = this.db.raw.prepare(`
       SELECT artifact_version FROM renders WHERE id = ?
     `).get(renderId) as { artifact_version: number } | undefined;
+    const evidence = parseObject(failure.evidenceJson);
+    const ordinals = Array.isArray(evidence.ordinals)
+      ? evidence.ordinals.map(Number).filter(Number.isFinite)
+      : [];
+    const requestedStart = Number(evidence.startSceneOrdinal ?? evidence.sceneOrdinal ?? ordinals[0]);
+    const requestedEnd = Number(evidence.endSceneOrdinal ?? evidence.sceneOrdinal ?? ordinals.at(-1));
     const id = this.insertAttempt({
       projectId,
       renderId,
@@ -413,10 +423,12 @@ export class RepairService {
       status,
       attemptNumber,
       sourceArtifactVersion: Number(render?.artifact_version ?? 1),
+      rangeStartOrdinal: Number.isFinite(requestedStart) ? requestedStart : null,
+      rangeEndOrdinal: Number.isFinite(requestedEnd) ? requestedEnd : null,
       evidence: {
         message: failure.message,
         severity: failure.severity,
-        qcEvidence: parseObject(failure.evidenceJson)
+        qcEvidence: evidence
       }
     });
     this.audit(projectId, `repair.${status}`, 'qc_result', failure.id, {
@@ -444,6 +456,8 @@ export class RepairService {
     replacementFileId?: string | null;
     replacementSegmentId?: string | null;
     sourceArtifactVersion?: number | null;
+    rangeStartOrdinal?: number | null;
+    rangeEndOrdinal?: number | null;
     evidence: Record<string, unknown>;
   }): string {
     const id = randomUUID();
@@ -453,9 +467,9 @@ export class RepairService {
         id, project_id, scene_id, render_id, qc_result_id, failure_code,
         repair_class, action, status, attempt_number, maximum_attempts,
         source_asset_id, replacement_asset_id, replacement_file_id,
-        replacement_segment_id, source_artifact_version, target_state,
-        evidence_json, created_at, completed_at
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        replacement_segment_id, source_artifact_version, range_start_ordinal,
+        range_end_ordinal, target_state, evidence_json, created_at, completed_at
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.projectId,
@@ -473,6 +487,8 @@ export class RepairService {
       input.replacementFileId ?? null,
       input.replacementSegmentId ?? null,
       input.sourceArtifactVersion ?? null,
+      input.rangeStartOrdinal ?? null,
+      input.rangeEndOrdinal ?? null,
       input.policy.targetState,
       JSON.stringify(input.evidence),
       now,

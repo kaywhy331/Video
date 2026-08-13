@@ -336,4 +336,36 @@ describe('automated repair service', () => {
     `).get()).toEqual({ repair_class: 'operator', repair_attempted: 0 });
     db.close();
   });
+
+  it('persists the smallest affected scene range for automatic range regeneration', () => {
+    const { db, repair } = createDatabase();
+    const now = new Date().toISOString();
+    db.raw.prepare(`
+      INSERT INTO renders(id, project_id, kind, profile, state, artifact_version, created_at)
+      VALUES('render-range-source', 'project-1', 'final', 'final_1080p', 'SUCCEEDED', 3, ?)
+    `).run(now);
+    db.raw.prepare(`
+      INSERT INTO qc_results(
+        id, project_id, render_id, category, code, severity, status,
+        message, evidence_json, created_at
+      ) VALUES('qc-range', 'project-1', 'render-range-source', 'media',
+        'SHOT_DURATION', 'BLOCKER', 'fail', 'Scenes exceed the shot limit.',
+        '{"ordinals":[4,5]}', ?)
+    `).run(now);
+
+    expect(repair.routeQcFailures('project-1', 'render-range-source', [{
+      id: 'qc-range', code: 'SHOT_DURATION', category: 'media', severity: 'BLOCKER',
+      message: 'Scenes exceed the shot limit.', evidenceJson: '{"ordinals":[4,5]}'
+    }])).toMatchObject({ retryAutomatically: true, targetState: 'BUILDING_TIMELINE' });
+    expect(db.raw.prepare(`
+      SELECT repair_class, range_start_ordinal, range_end_ordinal, source_artifact_version
+      FROM repair_attempts WHERE qc_result_id = 'qc-range'
+    `).get()).toEqual({
+      repair_class: 'regenerate_range',
+      range_start_ordinal: 4,
+      range_end_ordinal: 5,
+      source_artifact_version: 3
+    });
+    db.close();
+  });
 });

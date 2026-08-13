@@ -23,7 +23,8 @@ describe('application database migrations', () => {
       { version: 2, name: 'production_hardening' },
       { version: 3, name: 'automated_repair' },
       { version: 4, name: 'semantic_footage_verification' },
-      { version: 5, name: 'research_provider_preflight' }
+      { version: 5, name: 'research_provider_preflight' },
+      { version: 6, name: 'verified_script_narration_range' }
     ]);
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('projects') WHERE name = 'resume_state'
@@ -52,6 +53,20 @@ describe('application database migrations', () => {
     expect(database.raw.prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'provider_health'
     `).get()).toEqual({ name: 'provider_health' });
+    for (const table of ['voice_assets', 'narration_sections', 'narration_words', 'render_fragments']) {
+      expect(database.raw.prepare(`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
+      `).get(table)).toEqual({ name: table });
+    }
+    expect(database.raw.prepare(`
+      SELECT name FROM pragma_table_info('script_versions') WHERE name = 'script_type'
+    `).get()).toEqual({ name: 'script_type' });
+    expect(database.raw.prepare(`
+      SELECT name FROM pragma_table_info('renders') WHERE name = 'scope_json'
+    `).get()).toEqual({ name: 'scope_json' });
+    expect(database.raw.prepare(`
+      SELECT name FROM pragma_table_info('repair_attempts') WHERE name = 'range_start_ordinal'
+    `).get()).toEqual({ name: 'range_start_ordinal' });
     const now = new Date().toISOString();
     database.raw.prepare(`INSERT INTO projects(id, sequence, slug, title, topic, state, progress, envato_project_name, target_duration_ms, created_at, updated_at) VALUES('claim-project', 99, 'claim-project', 'Claims', 'Claims', 'CREATED', 0, 'YT-CLAIMS', 1000, ?, ?)`).run(now, now);
     expect(() => database.raw.prepare(`INSERT INTO fact_claims(id, project_id, text, category, confidence, stability, source_ids_json, status, created_at) VALUES('claim-without-source', 'claim-project', 'Unsupported', 'other', 1, 'stable', '[]', 'accepted', ?)`).run(now)).toThrow('staged');
@@ -61,7 +76,7 @@ describe('application database migrations', () => {
 
     const reopened = new AppDatabase(join(root, 'videofactory.sqlite'));
     expect(reopened.raw.prepare('SELECT count(*) AS count FROM schema_migrations').get())
-      .toEqual({ count: 5 });
+      .toEqual({ count: 6 });
     expect(reopened.integrityCheck()).toBe('ok');
     reopened.close();
   });

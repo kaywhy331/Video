@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CatalogUpdateAssetSchema,
   PathChoiceRequestSchema,
+  RenderRequestSchema,
   SemanticVerificationRetrySchema,
   SettingsPatchSchema
 } from '@shared/contracts';
@@ -35,5 +36,12 @@ describe('IPC request contracts', () => {
     expect(SemanticVerificationRetrySchema.safeParse({ exceptionId: 'exception-1' }).success).toBe(true);
     expect(SemanticVerificationRetrySchema.safeParse({ exceptionId: '' }).success).toBe(false);
     expect(SemanticVerificationRetrySchema.safeParse({ exceptionId: 'exception-1', force: true }).success).toBe(false);
+  });
+
+  it('accepts bounded range renders without leaking range fields into full renders', () => {
+    expect(RenderRequestSchema.safeParse({ projectId: 'p1', kind: 'range', startSceneOrdinal: 3, endSceneOrdinal: 5 }).success).toBe(true);
+    expect(RenderRequestSchema.safeParse({ projectId: 'p1', kind: 'range' }).success).toBe(false);
+    expect(RenderRequestSchema.safeParse({ projectId: 'p1', kind: 'range', startSceneOrdinal: 5, endSceneOrdinal: 3 }).success).toBe(false);
+    expect(RenderRequestSchema.safeParse({ projectId: 'p1', kind: 'final', startSceneOrdinal: 1 }).success).toBe(false);
   });
 });

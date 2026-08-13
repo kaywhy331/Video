@@ -1,10 +1,10 @@
 # VideoFactory Desktop alpha.3 — Validation Report
 
-Generated: 2026-08-12 (America/Los_Angeles) after sourced-research exact-head CI validation.
+Generated: 2026-08-12 (America/Los_Angeles) during verified-footage script/narration/range-repair validation.
 
 ## Outcome
 
-The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing, semantic footage verification, sourced web research, freshness/conflict orchestration, and provider preflight implemented. Full local source validation and the research implementation's exact-head GitHub Actions run pass, including real FFmpeg media operations and Windows packaging. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
+The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing, semantic footage verification, sourced web research, provider preflight, verified-footage final scripts, section narration/word timing, and range repair implemented. The prior research exact-head GitHub Actions run passes, including Windows packaging. The current milestone's local validation is recorded below; its exact-head CI receipt remains pending publication. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
 
 ## Local validation
 
@@ -13,10 +13,10 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with a
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
 | Focused research/provider/semantic/contracts suite | Passed; cache, auth/quota, budgets, citations, stale/conflict, invented-ID, and corrective-retry cases included |
-| Full Vitest suite | Passed; 33 files / 103 tests |
+| Full Vitest suite | Passed; 36 files / 116 tests, including a real FFmpeg full-render-to-range fragment-reuse integration fixture |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
-| Application migration wrapper (001 + 002 + 003 + 004 + 005) | Passed in focused validation; versions recorded, accepted-claim trigger enforced, reopen idempotent, integrity `ok` |
+| Application migration wrapper (001–006) | Passed in focused validation; final-script/narration/range schema recorded, accepted-claim trigger enforced, reopen idempotent, integrity `ok` |
 | Source/resource migration parity | Passed |
 | Electron/Vite main, preload, renderer build | Passed |
 | `git diff --check` | Passed |
@@ -55,6 +55,10 @@ This proves the Windows packages can be produced by the hosted runner. It does n
 - strict one-corrective-retry factual extraction that rejects model-invented source or claim IDs, followed by deterministic category freshness, stale omission, and material-conflict exceptions;
 - relational claim citations with a database acceptance trigger, scene claim links, wording-fidelity checks, and per-project provider policy snapshots;
 - centralized cached-call-aware monthly/per-project budget and persisted auth/quota preflight for research, language, and vision calls before new network requests or new projects.
+- final-script versions parented to verified-footage provisional inputs, locked pronunciation metadata, and immutable audit receipts;
+- 15–45 second section synthesis with pronunciation-aware cache identity, persisted word timing, strict HTTP timing/auth failure receipts, and word-derived captions;
+- explicit scene/range render contracts, cached fragment reuse, affected-range repair provenance, and full-final rebuild after a range pass.
+- real `RenderService` full-to-range FFmpeg integration proving scope/base-render provenance and reuse of the unchanged cached scene fragment.
 
 ## Historical alpha.2 validation
 
@@ -71,6 +75,7 @@ Alpha.2 repaired the original incomplete package by restoring dependency declara
 | Live Google OAuth/YouTube private upload and publish rehearsal | Unverified |
 | Live semantic vision provider against representative licensed footage | Unverified; mocked protocol/policy coverage is not provider qualification |
 | Live Tavily plus LLM research against representative sources/conflicts | Unverified; mocked protocol/policy coverage is not provider qualification |
+| Live Windows SAPI/HTTP TTS pronunciation and timing | Unverified; local protocol/cache/policy coverage is not voice-provider qualification |
 | Forced restart during real ingest/render/upload | Unverified |
 | Representative production-data restore drill | Unverified |
 

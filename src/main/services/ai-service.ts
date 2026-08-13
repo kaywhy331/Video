@@ -3,6 +3,7 @@ import type { AppDatabase } from '../database/database';
 import type { SecretStore } from '../secret-store';
 import type { AppSettings, CatalogAsset, CoverageCluster } from '@shared/types';
 import { StructuredScriptSchema, type StructuredScript } from '@shared/contracts';
+import { FinalScriptRewriteSchema, type FinalScriptRewrite } from '@shared/contracts';
 import { ExtractedClaimPackSchema, type ExtractedClaim } from '@shared/research';
 import type { ProviderPolicyService } from './provider-policy';
 
@@ -21,6 +22,32 @@ interface ExtractClaimsInput {
   topicTitle: string;
   destination: string;
   sources: Array<{ id: string; url: string; title: string; publisher: string | null; publishedAt: string | null; excerpt: string; content: string }>;
+}
+
+export interface FinalizeScriptInput {
+  projectId: string;
+  title: string;
+  topic: string;
+  destination: string | null;
+  scenes: Array<{
+    id: string;
+    ordinal: number;
+    chapter: string | null;
+    narration: string;
+    targetDurationMs: number;
+    visualTreatment: string;
+    requiredCountry: string | null;
+    requiredCity: string | null;
+    requiredLocation: string | null;
+    selectedAssetId: string | null;
+    selectedFileId: string | null;
+    selectedSegmentId: string | null;
+    sourceDurationMs: number | null;
+    verificationState: string;
+    claimIds: string[];
+  }>;
+  acceptedClaims: Array<{ id: string; text: string }>;
+  pronunciationDictionary: Record<string, string>;
 }
 
 function stripCodeFence(value: string): string {
@@ -272,6 +299,124 @@ export class AiService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
+  async finalizeScript(input: FinalizeScriptInput): Promise<FinalScriptRewrite> {
+    const settings = this.settings();
+    const verified = input.scenes.filter(scene =>
+      ['verified', 'graphic'].includes(scene.verificationState)
+      && (scene.visualTreatment === 'MAP_OR_GRAPHIC' || scene.visualTreatment === 'TEXT_OR_ARCHIVAL'
+        || Boolean(scene.selectedFileId && scene.selectedSegmentId))
+    );
+    if (verified.length !== input.scenes.length) {
+      throw new Error('Final script cannot be generated until every scene has a verified visual treatment.');
+    }
+    const acceptedClaimIds = new Set(input.acceptedClaims.map(claim => claim.id));
+    const acceptedClaimText = new Map(input.acceptedClaims.map(claim => [claim.id, claim.text]));
+    const validate = (rewrite: FinalScriptRewrite): FinalScriptRewrite => {
+      const expected = input.scenes.map(scene => scene.id);
+      const actual = rewrite.scenes.map(scene => scene.sceneId);
+      if (new Set(actual).size !== actual.length || expected.some(sceneId => !actual.includes(sceneId)) || actual.some(sceneId => !expected.includes(sceneId))) {
+        throw new Error('Final script response must contain every app-issued scene ID exactly once.');
+      }
+      const sourceById = new Map(input.scenes.map(scene => [scene.id, scene]));
+      for (const scene of rewrite.scenes) {
+        const source = sourceById.get(scene.sceneId)!;
+        for (const claimId of source.claimIds) {
+          if (!acceptedClaimIds.has(claimId)) throw new Error(`Scene ${scene.sceneId} references an unaccepted claim.`);
+          const claimText = acceptedClaimText.get(claimId);
+          if (claimText && !scene.narration.toLocaleLowerCase().includes(claimText.toLocaleLowerCase())) {
+            throw new Error(`Final script wording removes or changes accepted material claim ${claimId}.`);
+          }
+        }
+        const allowedPronunciations = new Set(Object.keys(input.pronunciationDictionary).map(term => term.toLocaleLowerCase()));
+        const invented = Object.keys(scene.pronunciation).filter(term => !allowedPronunciations.has(term.toLocaleLowerCase()));
+        if (invented.length) throw new Error(`Final script contains pronunciation entries not issued by the application: ${invented.join(', ')}`);
+      }
+      return rewrite;
+    };
+
+    if (settings.llmProvider !== 'openai_compatible') {
+      return validate({
+        scenes: input.scenes.map(scene => ({
+          sceneId: scene.id,
+          narration: scene.narration.trim(),
+          pronunciation: Object.fromEntries(
+            Object.entries(input.pronunciationDictionary).filter(([term]) =>
+              scene.narration.toLocaleLowerCase().includes(term.toLocaleLowerCase())
+            )
+          )
+        }))
+      });
+    }
+    const secret = this.secretStore.getAll().llmApiKey;
+    if (!secret) throw new Error('The configured language provider API key is missing; final-script fallback was not used.');
+    const system = [
+      'You finalize a sourced exact-location video script after footage verification.',
+      'Return JSON only. Use every supplied scene ID exactly once and never invent a scene, fact, claim, visual, or pronunciation.',
+      'Rewrite only as needed to fit the supplied verified visual and source duration; remove unsupported specificity.',
+      'Preserve every accepted claim verbatim when its app-issued claim ID is attached to the scene.',
+      'Pronunciation values may be selected only from the supplied dictionary.'
+    ].join(' ');
+    const prompt = {
+      task: 'Finalize narration against verified footage.',
+      project: { title: input.title, topic: input.topic, destination: input.destination },
+      scenes: input.scenes,
+      acceptedClaims: input.acceptedClaims,
+      pronunciationDictionary: input.pronunciationDictionary,
+      requiredSchema: { scenes: [{ sceneId: 'supplied scene ID', narration: 'string', pronunciation: { suppliedTerm: 'supplied pronunciation' } }] }
+    };
+    const inputHash = createHash('sha256').update(JSON.stringify({ system, prompt, model: settings.llmModel })).digest('hex');
+    const cached = this.db.raw.prepare(`
+      SELECT response_json FROM provider_calls
+      WHERE provider = 'openai_compatible' AND model = ?
+        AND operation = 'finalize_script' AND input_hash = ? AND error IS NULL
+    `).get(settings.llmModel, inputHash) as { response_json: string } | undefined;
+    if (cached?.response_json) return validate(FinalScriptRewriteSchema.parse(JSON.parse(cached.response_json)));
+
+    this.policy?.assertCanCall({ projectId: input.projectId, provider: 'openai_compatible', configured: true, estimatedCostUsd: 0.1 });
+    const endpoint = `${settings.llmBaseUrl.replace(/\/$/, '')}/chat/completions`;
+    const started = Date.now();
+    let responseText = '';
+    let requestId: string | null = null;
+    let attemptsSent = 0;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        attemptsSent += 1;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+          body: JSON.stringify({
+            model: settings.llmModel,
+            temperature: 0.15,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: JSON.stringify({ ...prompt, correction: attempt ? 'Correct the prior invalid response. Preserve all supplied IDs and accepted claim text exactly.' : undefined }) }
+            ]
+          })
+        });
+        requestId = response.headers.get('x-request-id');
+        if (!response.ok) {
+          const message = `LLM provider returned ${response.status}: ${await response.text()}`;
+          this.policy?.classifyHttpFailure('openai_compatible', response.status, message);
+          throw new Error(message);
+        }
+        const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+        responseText = body.choices?.[0]?.message?.content ?? '';
+        const parsed = validate(FinalScriptRewriteSchema.parse(JSON.parse(stripCodeFence(responseText))));
+        this.policy?.recordHealth('openai_compatible', 'healthy', 200, null);
+        this.recordProviderResult(input.projectId, settings.llmModel, 'finalize_script', inputHash, requestId, Date.now() - started, attempt, parsed, null, 0.05 * attemptsSent);
+        return parsed;
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0 && this.correctableProviderOutput(error)) continue;
+        break;
+      }
+    }
+    this.recordProviderResult(input.projectId, settings.llmModel, 'finalize_script', inputHash, requestId, Date.now() - started, Math.max(0, attemptsSent - 1), responseText ? { raw: responseText } : null, lastError, 0.05 * attemptsSent);
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
   private generateLocalVisualScript(input: GenerateScriptInput): StructuredScript {
     const targetScenes = Math.max(12, Math.min(48, Math.round(input.targetMinutes * 7)));
     const assets = input.assets.slice(0, targetScenes);
@@ -333,6 +478,9 @@ export class AiService {
     return error.name === 'ZodError'
       || error.message.includes('unknown source IDs')
       || error.message.includes('unknown or unaccepted claim IDs')
-      || error.message.includes('wording exceeds or changes accepted claim');
+      || error.message.includes('wording exceeds or changes accepted claim')
+      || error.message.includes('app-issued scene ID')
+      || error.message.includes('pronunciation entries')
+      || error.message.includes('accepted material claim');
   }
 }

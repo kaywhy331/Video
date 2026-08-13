@@ -25,6 +25,8 @@ import { VisionService } from './services/vision-service';
 import { FootageVerificationService } from './services/footage-verification-service';
 import { ResearchService } from './services/research-service';
 import { ProviderPolicyService } from './services/provider-policy';
+import { ScriptFinalizationService } from './services/script-finalization-service';
+import { NarrationService } from './services/narration-service';
 
 export class AppContext {
   readonly db: AppDatabase;
@@ -42,7 +44,9 @@ export class AppContext {
   readonly media: MediaService;
   readonly acquisitions: AcquisitionService;
   readonly jobs: JobService;
+  readonly scriptFinalization: ScriptFinalizationService;
   readonly tts: TtsService;
+  readonly narration: NarrationService;
   readonly renders: RenderService;
   readonly youtube: YouTubeService;
   readonly finalReview: FinalReviewService;
@@ -93,6 +97,24 @@ export class AppContext {
       this.research,
       this.vision
     );
+    this.scriptFinalization = new ScriptFinalizationService(
+      this.db,
+      () => this.settingsValue,
+      this.ai,
+      this.projects
+    );
+    this.tts = new TtsService(
+      this.db,
+      this.secrets,
+      () => this.settingsValue,
+      this.providerPolicy
+    );
+    this.narration = new NarrationService(
+      this.db,
+      () => this.settingsValue,
+      this.tts,
+      this.projects
+    );
     this.media = new MediaService(
       this.db,
       () => this.settingsValue,
@@ -106,18 +128,28 @@ export class AppContext {
           phase,
           message
         });
+      },
+      async projectId => {
+        await this.scriptFinalization.finalize(projectId);
+        await this.narration.generate(projectId);
       }
     );
     this.acquisitions = new AcquisitionService(this.db, this.media);
-    this.tts = new TtsService(() => this.settingsValue);
     this.renders = new RenderService(
       this.db,
       () => this.settingsValue,
-      this.tts,
       this.jobs,
       this.projects,
       (jobId, projectId, progress, phase, message) => {
         this.emitProgress({ jobId, projectId, type: 'render', progress, phase, message });
+      },
+      async (projectId, targetState) => {
+        if (targetState === 'FINALIZING_SCRIPT') {
+          await this.scriptFinalization.finalize(projectId);
+          await this.narration.generate(projectId);
+        } else if (targetState === 'GENERATING_VOICE') {
+          await this.narration.generate(projectId);
+        }
       }
     );
     this.youtube = new YouTubeService(
@@ -168,6 +200,10 @@ export class AppContext {
     if (next.researchProvider !== this.settingsValue.researchProvider || next.researchBaseUrl !== this.settingsValue.researchBaseUrl) healthToReset.add('tavily');
     if (next.llmProvider !== this.settingsValue.llmProvider || next.llmBaseUrl !== this.settingsValue.llmBaseUrl) healthToReset.add('openai_compatible');
     if (next.visionProvider !== this.settingsValue.visionProvider || next.visionBaseUrl !== this.settingsValue.visionBaseUrl) healthToReset.add('openai_compatible_vision');
+    if (next.narratorProvider !== this.settingsValue.narratorProvider || next.narratorBaseUrl !== this.settingsValue.narratorBaseUrl) healthToReset.add('http_tts');
+    if (next.narratorProvider === 'http_tts' && !this.secrets.getAll().httpTtsApiKey) {
+      throw new Error('HTTP TTS cannot be enabled until its encrypted API key is configured.');
+    }
     for (const provider of healthToReset) this.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
     this.settingsValue = next;
     this.db.saveAppSettings(next);
