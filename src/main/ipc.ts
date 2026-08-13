@@ -19,6 +19,8 @@ import {
   OpenPathSchema,
   PackageSelectSchema,
   PathChoiceRequestSchema,
+  ProjectExportSchema,
+  ProjectRebuildSchema,
   RenderRequestSchema,
   SecretPatchSchema,
   SemanticVerificationRetrySchema,
@@ -198,6 +200,44 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     }
     throw new Error(`No automatic advance is defined for project state ${project.state}.`);
   });
+  handle(IPC.projectExport, async (_event, payload) => {
+    const request = ProjectExportSchema.parse(payload ?? {});
+    let destinationPath = request.destinationPath;
+    if (destinationPath && !pathIsInside(destinationPath, [context.settings().backupFolder])) {
+      throw new Error('Programmatic project exports must target the configured backup directory.');
+    }
+    if (!destinationPath) {
+      const result = await openDialog(window(), {
+        title: 'Choose a folder for the project export',
+        properties: ['openDirectory', 'createDirectory'],
+        defaultPath: context.settings().backupFolder
+      });
+      destinationPath = result.filePaths[0];
+    }
+    if (!destinationPath) return null;
+    context.setLongOperationActive(true);
+    try {
+      const report = await context.artifacts.exportProject(request.projectId, destinationPath, {
+        includeOriginals: request.includeOriginals,
+        includeFinalOutput: request.includeFinalOutput
+      });
+      context.emitState();
+      return report;
+    } finally {
+      context.setLongOperationActive(false);
+    }
+  });
+  handle(IPC.projectRebuildDerivatives, async (_event, payload) => {
+    const request = ProjectRebuildSchema.parse(payload ?? {});
+    context.setLongOperationActive(true);
+    try {
+      const report = await context.artifacts.rebuildProject(request.projectId);
+      context.emitState();
+      return report;
+    } finally {
+      context.setLongOperationActive(false);
+    }
+  });
   handle(IPC.projectDelete, (_event, payload) => {
     context.projects.delete(IdSchema.parse(payload));
     context.emitState();
@@ -309,7 +349,10 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     const path = OpenPathSchema.parse(payload);
     if (!path || !existsSync(path)) throw new Error('Path does not exist.');
     const settings = context.settings();
-    if (!pathIsInside(path, [settings.mediaLibraryFolder, settings.projectFolder, settings.outputFolder, settings.backupFolder])) {
+    const exportRoots = (context.db.raw.prepare(`
+      SELECT export_path FROM project_export_runs WHERE status IN ('complete','partial')
+    `).all() as Array<{ export_path: string }>).map(row => row.export_path);
+    if (!pathIsInside(path, [settings.mediaLibraryFolder, settings.projectFolder, settings.outputFolder, settings.backupFolder, ...exportRoots])) {
       throw new Error('Path is outside VideoFactory-managed storage.');
     }
     shell.showItemInFolder(path);

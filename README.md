@@ -6,7 +6,7 @@ VideoFactory Desktop is a single-user Windows application that turns a licensed 
 
 ## Current status
 
-The repository is a production-hardened alpha. The application builds and its local automated suite covers database migration, durable project/job state, IPC and path security, sourced web research and claim policy, provider preflight, canonical geographic evidence, scene-specific semantic footage verification, verified-footage final scripts, section narration and word timing, range repair, real FFmpeg analysis/rendering, backup/restore, approval fingerprints, and resumable-upload protocol helpers. It is not yet production-qualified because these external acceptance gates have not been performed:
+The repository is a production-hardened alpha with the local P0 buildout implemented and tested. The automated suite covers database migration, durable project/job state, IPC and path security, sourced web research and claim policy, provider preflight, canonical geographic evidence, scene-specific semantic footage verification, verified-footage final scripts, section narration and word timing, deterministic graphics/editing layers, full render/package QC, range and alternate repair, checksummed project export, restore-time derivative rebuild, approval fingerprints, and resumable-upload protocol helpers. It is not yet production-qualified because these external acceptance gates have not been performed:
 
 - clean Windows 10/11 installer and runtime test on a machine without developer tooling;
 - five representative 4–6 minute videos completed with real licensed assets;
@@ -32,10 +32,13 @@ The repository is a production-hardened alpha. The application builds and its lo
 - final-script rewrite parented to the provisional version after every scene has verified footage, with immutable lock/audit receipts
 - 15–45 second cached narration sections, pronunciation dictionary snapshots, native/provider word timing, and fail-closed timing validation; non-Windows synthetic test audio is explicitly low-confidence
 - word-aligned SRT and WebVTT captions plus narration-bound visual shots no longer than seven seconds
-- synchronized H.264/AAC-LC render pipeline with scene-fragment cache, explicit scene/range renders, bounded range-repair provenance, two-pass EBU R128 normalization, 30 fps progressive BT.709 output checks, duration QC, and fast-start verification
+- evidence-bound generated map/text cards and deterministic ASS layers for location labels, chapter cards, lower thirds, channel logo, and sourced data callouts; coordinate plots require persisted coordinates and otherwise identify themselves as schematic
+- synchronized H.264/AAC-LC render pipeline with scene-fragment cache, explicit scene/range renders, bounded range/alternate repair provenance, output black/freeze/crop/reuse/audio/caption/location checks, two-pass EBU R128 normalization, 30 fps progressive BT.709 output checks, duration QC, and fast-start verification
+- final-timeline chapter generation, three evidence-bounded packages, and 1280×720 JPEG thumbnails verified under the 2 MB upload limit before final approval
 - approval fingerprints binding final-render and publishing-package inputs
 - private-first YouTube workflow with persisted resumable sessions, offset recovery, duplicate-hash guard, processing polling, timed captions, thumbnails, optional playlist, and configurable synthetic-media disclosure
-- verified automatic SQLite backups, configurable daily/weekly/monthly retention, restart-safe restore, safety copy, and missing-original report
+- verified automatic SQLite backups, configurable daily/weekly/monthly retention, restart-safe restore, safety copy, missing-original report, and restore-time proxy/contact-sheet/editing/caption derivative regeneration
+- checksummed project export with scripts, sources, claims, scene contracts, rights/file references, voice/timing, captions, render/QC/package/publication records, optional originals, and optional final output
 - allowlisted IPC, top-frame validation, managed-path containment, external URL allowlist, and secret redaction
 - power-save blocking during render and upload
 

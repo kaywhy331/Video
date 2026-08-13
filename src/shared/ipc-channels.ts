@@ -21,6 +21,8 @@ export const IPC = {
   projectGet: 'project:get',
   projectCreateAutopilot: 'project:create-autopilot',
   projectAdvance: 'project:advance',
+  projectExport: 'project:export',
+  projectRebuildDerivatives: 'project:rebuild-derivatives',
   projectDelete: 'project:delete',
   acquisitionList: 'acquisition:list',
   acquisitionActivate: 'acquisition:activate',

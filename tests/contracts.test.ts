@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CatalogUpdateAssetSchema,
   PathChoiceRequestSchema,
+  ProjectExportSchema,
+  ProjectRebuildSchema,
   RenderRequestSchema,
   SemanticVerificationRetrySchema,
   SettingsPatchSchema
@@ -43,5 +45,12 @@ describe('IPC request contracts', () => {
     expect(RenderRequestSchema.safeParse({ projectId: 'p1', kind: 'range' }).success).toBe(false);
     expect(RenderRequestSchema.safeParse({ projectId: 'p1', kind: 'range', startSceneOrdinal: 5, endSceneOrdinal: 3 }).success).toBe(false);
     expect(RenderRequestSchema.safeParse({ projectId: 'p1', kind: 'final', startSceneOrdinal: 1 }).success).toBe(false);
+  });
+
+  it('bounds project portability actions', () => {
+    expect(ProjectExportSchema.safeParse({ projectId: 'p1', includeOriginals: true, includeFinalOutput: false }).success).toBe(true);
+    expect(ProjectExportSchema.safeParse({ projectId: 'p1', arbitraryPath: '/tmp' }).success).toBe(false);
+    expect(ProjectRebuildSchema.safeParse({ projectId: 'p1' }).success).toBe(true);
+    expect(ProjectRebuildSchema.safeParse({ projectId: '' }).success).toBe(false);
   });
 });

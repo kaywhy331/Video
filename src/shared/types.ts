@@ -203,6 +203,45 @@ export interface RestoreReport {
   missingOriginals: string[];
 }
 
+export interface ProjectExportOptions {
+  includeOriginals: boolean;
+  includeFinalOutput: boolean;
+}
+
+export interface ProjectExportReport {
+  id: string;
+  projectId: string;
+  exportPath: string;
+  manifestPath: string | null;
+  manifestSha256: string | null;
+  artifactCount: number;
+  totalBytes: number;
+  missingFiles: string[];
+  status: 'running' | 'complete' | 'partial' | 'failed';
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface DerivativeRebuildReport {
+  id: string;
+  projectId: string;
+  checkedOriginals: number;
+  rebuiltProxies: number;
+  rebuiltContactSheets: number;
+  rebuiltVoiceTimings: number;
+  rebuiltEditingLayers: number;
+  rebuiltCaptionFiles: number;
+  staleRenderFragments: number;
+  missingOriginals: string[];
+  missingVoice: string[];
+  failures: string[];
+  status: 'running' | 'complete' | 'partial' | 'failed';
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export interface QueueSummary {
   activeProjects: number;
   waitingDownloads: number;
@@ -400,6 +439,8 @@ export interface ProjectDetail extends ProjectSummary {
   qc: QcResult[];
   repairs: RepairAttempt[];
   narrationSections: NarrationSection[];
+  exports: ProjectExportReport[];
+  rebuilds: DerivativeRebuildReport[];
 }
 
 export interface ProjectScene {

@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react';
-import { ExternalLink, MapPin, RotateCcw, X } from 'lucide-react';
+import { Archive, ExternalLink, MapPin, RotateCcw, Wrench, X } from 'lucide-react';
 import type { ProjectDetail } from '@shared/types';
 import { Button, ProgressBar, StatusPill } from './ui';
 
@@ -13,6 +13,34 @@ export function ProjectDrawer({
   setError: (message: string | null) => void;
 }): JSX.Element | null {
   const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [busy, setBusy] = useState<'export' | 'rebuild' | null>(null);
+
+  const refresh = async (): Promise<void> => {
+    if (projectId) setProject(await window.videoFactory.projects.get(projectId));
+  };
+
+  const run = async (kind: 'export' | 'rebuild'): Promise<void> => {
+    if (!projectId) return;
+    setBusy(kind);
+    setError(null);
+    try {
+      if (kind === 'export') {
+        const report = await window.videoFactory.projects.export({
+          projectId,
+          includeOriginals: false,
+          includeFinalOutput: true
+        });
+        if (report?.exportPath) await window.videoFactory.system.openPath(report.exportPath);
+      } else {
+        await window.videoFactory.projects.rebuildDerivatives(projectId);
+      }
+      await refresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   useEffect(() => {
     if (!projectId) {
@@ -48,6 +76,44 @@ export function ProjectDrawer({
               <div><span>Assets</span><strong>{project.acquiredCount}/{project.acquisitionCount}</strong></div>
               <div><span>Exceptions</span><strong>{project.openExceptions}</strong></div>
             </div>
+            <section>
+              <h3>Portability & recovery</h3>
+              <div className="drawer-actions">
+                <Button variant="secondary" busy={busy === 'export'} onClick={() => void run('export')}>
+                  <Archive size={15} /> Export project
+                </Button>
+                <Button variant="secondary" busy={busy === 'rebuild'} onClick={() => void run('rebuild')}>
+                  <Wrench size={15} /> Rebuild derivatives
+                </Button>
+              </div>
+              <p className="drawer-help">
+                Export includes checksummed metadata, rights, narration, captions, manifests, QC, packages, publication receipts, and the final output when available. Originals stay in the shared media library unless explicitly requested through the API.
+              </p>
+              {project.exports[0] || project.rebuilds[0] ? (
+                <div className="repair-audit portability-receipts">
+                  {project.exports[0] ? (
+                    <div className="repair-audit-row">
+                      <Archive size={14} />
+                      <div>
+                        <strong>latest project export</strong>
+                        <span>{project.exports[0].artifactCount} files · {Math.round(project.exports[0].totalBytes / 1024 / 1024)} MB</span>
+                      </div>
+                      <StatusPill value={project.exports[0].status} />
+                    </div>
+                  ) : null}
+                  {project.rebuilds[0] ? (
+                    <div className="repair-audit-row">
+                      <Wrench size={14} />
+                      <div>
+                        <strong>latest derivative rebuild</strong>
+                        <span>{project.rebuilds[0].rebuiltProxies + project.rebuilds[0].rebuiltContactSheets + project.rebuilds[0].rebuiltEditingLayers + project.rebuilds[0].rebuiltCaptionFiles} rebuilt · {project.rebuilds[0].missingOriginals.length} missing originals</span>
+                      </div>
+                      <StatusPill value={project.rebuilds[0].status} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
             <section>
               <h3>Storyboard</h3>
               <div className="scene-audit">

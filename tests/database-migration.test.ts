@@ -24,7 +24,8 @@ describe('application database migrations', () => {
       { version: 3, name: 'automated_repair' },
       { version: 4, name: 'semantic_footage_verification' },
       { version: 5, name: 'research_provider_preflight' },
-      { version: 6, name: 'verified_script_narration_range' }
+      { version: 6, name: 'verified_script_narration_range' },
+      { version: 7, name: 'project_artifact_portability' }
     ]);
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('projects') WHERE name = 'resume_state'
@@ -58,6 +59,11 @@ describe('application database migrations', () => {
         SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
       `).get(table)).toEqual({ name: table });
     }
+    for (const table of ['project_export_runs', 'derivative_rebuild_runs']) {
+      expect(database.raw.prepare(`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
+      `).get(table)).toEqual({ name: table });
+    }
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('script_versions') WHERE name = 'script_type'
     `).get()).toEqual({ name: 'script_type' });
@@ -76,7 +82,7 @@ describe('application database migrations', () => {
 
     const reopened = new AppDatabase(join(root, 'videofactory.sqlite'));
     expect(reopened.raw.prepare('SELECT count(*) AS count FROM schema_migrations').get())
-      .toEqual({ count: 6 });
+      .toEqual({ count: 7 });
     expect(reopened.integrityCheck()).toBe('ok');
     reopened.close();
   });

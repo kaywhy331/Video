@@ -77,6 +77,7 @@ interface QcFailure {
 
 export interface QcRepairRoute {
   retryAutomatically: boolean;
+  waitingForAcquisition: boolean;
   targetState: ProjectState | null;
   retrySequence: number;
   operatorRequired: boolean;
@@ -114,39 +115,99 @@ export class RepairService {
   routeQcFailures(projectId: string, renderId: string, failures: QcFailure[]): QcRepairRoute {
     const targets: Array<ProjectState | null> = [];
     let retrySequence = 0;
-    const decisions = failures.map(failure => ({
-      failure,
-      policy: repairPolicyFor(failure.code, failure.category),
-      attempts: this.attemptCount(projectId, null, failure.code)
-    }));
-    const supportsAutomaticQcRoute = (policy: RepairPolicy): boolean =>
+    let waitingForAcquisition = false;
+    const sceneRoutesByOrdinal = new Map<number, SceneRepairRoute>();
+    const decisions = failures.map(failure => {
+      const evidence = parseObject(failure.evidenceJson);
+      const ordinals = Array.isArray(evidence.ordinals)
+        ? [...new Set(evidence.ordinals.map(Number).filter(Number.isFinite))]
+        : [];
+      return {
+        failure,
+        evidence,
+        ordinals,
+        policy: repairPolicyFor(failure.code, failure.category),
+        attempts: this.attemptCount(projectId, null, failure.code)
+      };
+    });
+    const supportsAutomaticQcRoute = (decision: typeof decisions[number]): boolean =>
+      decision.policy.repairClass === 'alternate'
+        ? decision.ordinals.length > 0
+        : decision.policy.repairClass === 'automatic'
+      || (decision.policy.repairClass === 'regenerate_range' && decision.policy.maximumAttempts > 0);
+    const operatorRequiredBeforeRouting = decisions.some(decision =>
+      !decision.policy.maximumAttempts || !decision.policy.targetState || !supportsAutomaticQcRoute(decision)
+    );
+    const exhaustedBeforeRouting = decisions.some(({ policy, attempts }) =>
+      policy.repairClass !== 'alternate'
+      && Boolean(policy.maximumAttempts && policy.targetState && attempts >= policy.maximumAttempts)
+    );
+    let operatorRequired = operatorRequiredBeforeRouting;
+    let exhausted = exhaustedBeforeRouting;
+    const supportsNonSceneAutomaticRoute = (policy: RepairPolicy): boolean =>
       policy.repairClass === 'automatic'
       || (policy.repairClass === 'regenerate_range' && policy.maximumAttempts > 0);
-    const operatorRequired = decisions.some(({ policy }) =>
-      !policy.maximumAttempts || !policy.targetState || !supportsAutomaticQcRoute(policy)
-    );
-    const exhausted = decisions.some(({ policy, attempts }) =>
-      Boolean(policy.maximumAttempts && policy.targetState && attempts >= policy.maximumAttempts)
-    );
 
     this.completeClearedRenderRepairs(projectId, renderId, new Set(failures.map(failure => failure.code)));
 
-    for (const { failure, policy, attempts } of decisions) {
+    for (const { failure, policy, attempts, evidence, ordinals } of decisions) {
       this.db.raw.prepare(`
         UPDATE qc_results SET repair_class = ?, repair_action = ? WHERE id = ?
       `).run(policy.repairClass, policy.action, failure.id);
 
-      if (!policy.maximumAttempts || !policy.targetState || !supportsAutomaticQcRoute(policy)) {
+      if (!policy.maximumAttempts || !policy.targetState || !supportsAutomaticQcRoute({ failure, policy, attempts, evidence, ordinals })) {
         this.recordQcAttempt(projectId, renderId, failure, policy, 'operator_required', 0);
         continue;
       }
 
-      if (attempts >= policy.maximumAttempts) {
+      if (policy.repairClass !== 'alternate' && attempts >= policy.maximumAttempts) {
         this.recordQcAttempt(projectId, renderId, failure, policy, 'exhausted', attempts);
         continue;
       }
 
-      if (operatorRequired || exhausted) continue;
+      if (operatorRequiredBeforeRouting || exhaustedBeforeRouting) continue;
+
+      if (policy.repairClass === 'alternate') {
+        const scenes = this.db.raw.prepare(`
+          SELECT id, ordinal FROM project_scenes
+          WHERE project_id = ? AND ordinal IN (${ordinals.map(() => '?').join(',')})
+          ORDER BY ordinal
+        `).all(projectId, ...ordinals) as Array<{ id: string; ordinal: number }>;
+        if (scenes.length !== ordinals.length) {
+          operatorRequired = true;
+          this.recordQcAttempt(projectId, renderId, failure, policy, 'operator_required', 0);
+          continue;
+        }
+        const sceneRoutes = scenes.map(scene => {
+          const priorRoute = sceneRoutesByOrdinal.get(scene.ordinal);
+          if (priorRoute) return priorRoute;
+          const route = this.routeFootageFailure(
+            projectId,
+            scene.id,
+            failure.code,
+            { ...evidence, renderId, qcResultId: failure.id, sceneOrdinal: scene.ordinal }
+          );
+          sceneRoutesByOrdinal.set(scene.ordinal, route);
+          return route;
+        });
+        if (sceneRoutes.some(route => route.status === 'operator_required')) operatorRequired = true;
+        if (sceneRoutes.some(route => route.status === 'exhausted')) exhausted = true;
+        waitingForAcquisition ||= sceneRoutes.some(route => route.status === 'waiting_acquisition');
+        const targetState: ProjectState = waitingForAcquisition ? 'WAITING_FOR_DOWNLOADS' : 'FINALIZING_SCRIPT';
+        const aggregatePolicy = { ...policy, targetState };
+        const aggregateStatus: RepairAttemptStatus = operatorRequired
+          ? 'operator_required'
+          : exhausted ? 'exhausted' : 'routed';
+        this.recordQcAttempt(projectId, renderId, failure, aggregatePolicy, aggregateStatus, attempts + 1);
+        if (!operatorRequired && !exhausted) {
+          targets.push(targetState);
+          retrySequence = Math.max(retrySequence, attempts + 1);
+          this.db.raw.prepare('UPDATE qc_results SET repair_attempted = 1 WHERE id = ?').run(failure.id);
+        }
+        continue;
+      }
+
+      if (!supportsNonSceneAutomaticRoute(policy)) continue;
 
       const attemptNumber = attempts + 1;
       retrySequence = Math.max(retrySequence, attemptNumber);
@@ -159,7 +220,8 @@ export class RepairService {
 
     const targetState = earliestSafeRepairState(targets);
     return {
-      retryAutomatically: Boolean(targetState) && !operatorRequired && !exhausted,
+      retryAutomatically: Boolean(targetState) && !operatorRequired && !exhausted && !waitingForAcquisition,
+      waitingForAcquisition: Boolean(targetState) && !operatorRequired && !exhausted && waitingForAcquisition,
       targetState,
       retrySequence,
       operatorRequired,

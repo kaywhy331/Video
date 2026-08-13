@@ -36,6 +36,25 @@ export function parseFreezeIntervals(output: string, mediaDurationMs?: number): 
   return intervals;
 }
 
+export function parseSilenceIntervals(output: string, mediaDurationMs?: number): TimeInterval[] {
+  const events = [...output.matchAll(/silence_(start|end):\s*([0-9.]+)/g)]
+    .map(match => ({ kind: match[1], atMs: seconds(match[2] ?? '0'), index: match.index ?? 0 }))
+    .sort((left, right) => left.index - right.index);
+  const intervals: TimeInterval[] = [];
+  let startMs: number | null = null;
+  for (const event of events) {
+    if (event.kind === 'start') startMs = event.atMs;
+    if (event.kind === 'end' && startMs !== null && event.atMs > startMs) {
+      intervals.push({ startMs, endMs: event.atMs });
+      startMs = null;
+    }
+  }
+  if (startMs !== null && mediaDurationMs && mediaDurationMs > startMs) {
+    intervals.push({ startMs, endMs: mediaDurationMs });
+  }
+  return intervals;
+}
+
 export function intervalCoverage(startMs: number, endMs: number, intervals: TimeInterval[]): number {
   const duration = endMs - startMs;
   if (duration <= 0) return 0;

@@ -8,6 +8,7 @@ import ffprobeStatic from 'ffprobe-static';
 import { AppDatabase } from '@main/database/database';
 import { JobService } from '@main/services/job-service';
 import { ProjectStateService } from '@main/services/project-state-service';
+import { ProjectService } from '@main/services/project-service';
 import { RenderService } from '@main/services/render-service';
 import { requireSuccess } from '@main/services/process-utils';
 import type { AppSettings, ProjectDetail } from '@shared/types';
@@ -129,24 +130,18 @@ describe('real range render fragment reuse', () => {
       ffprobePath: ffprobeStatic.path,
       hardShotMaxSeconds: 7
     } as unknown as AppSettings;
-    const states = new ProjectStateService(db);
-    const project = {
-      id: 'project-1',
-      slug: 'range-fixture',
-      title: 'Range Fixture',
-      scriptVersionId: 'script-1',
-      scenes: [{ id: 'scene-1', ordinal: 1 }],
-      packaging: []
-    } as unknown as ProjectDetail;
-    const projects = {
-      states,
-      get: () => project
-    };
+    const projects = new ProjectService(
+      db,
+      {} as never,
+      {} as never,
+      () => settings,
+      {} as never
+    );
     service = new RenderService(
       db,
       () => settings,
       new JobService(db),
-      projects as never,
+      projects,
       () => undefined
     );
   }, 60_000);
@@ -179,7 +174,132 @@ describe('real range render fragment reuse', () => {
     };
     expect(manifest.reusedFragmentCount).toBe(1);
     expect(manifest.scenes).toEqual([expect.objectContaining({ reusedFragment: true })]);
+    expect(db.raw.prepare(`
+      SELECT code, evidence_json FROM qc_results
+      WHERE render_id = ? AND status = 'fail' AND severity IN ('BLOCKER','HIGH')
+      ORDER BY code
+    `).all(range.id)).toEqual([]);
     expect(db.raw.prepare(`SELECT state FROM projects WHERE id = 'project-1'`).get())
       .toEqual({ state: 'QC_DRAFT' });
+  }, 60_000);
+
+  it('generates and validates the final package before entering approval', async () => {
+    const final = await service.render('project-1', 'final');
+    expect(final.state).toBe('SUCCEEDED');
+    expect(final.profile).toBe('final_1080p');
+    expect(existsSync(final.outputPath!)).toBe(true);
+    expect(db.raw.prepare(`SELECT state FROM projects WHERE id = 'project-1'`).get())
+      .toEqual({ state: 'WAITING_FINAL_APPROVAL' });
+    expect(db.raw.prepare(`
+      SELECT ordinal, risk_status, thumbnail_path FROM packaging_candidates
+      WHERE project_id = 'project-1' ORDER BY ordinal
+    `).all()).toEqual([
+      expect.objectContaining({ ordinal: 1, risk_status: 'pass', thumbnail_path: expect.stringMatching(/concept-1\.jpg$/) }),
+      expect.objectContaining({ ordinal: 2, risk_status: 'pass', thumbnail_path: expect.stringMatching(/concept-2\.jpg$/) }),
+      expect.objectContaining({ ordinal: 3, risk_status: 'pass', thumbnail_path: expect.stringMatching(/concept-3\.jpg$/) })
+    ]);
+    expect(db.raw.prepare(`
+      SELECT code FROM qc_results WHERE render_id = ? AND status = 'fail'
+        AND severity IN ('BLOCKER','HIGH') ORDER BY code
+    `).all(final.id)).toEqual([]);
+    expect(db.raw.prepare(`
+      SELECT code FROM qc_results WHERE render_id = ? AND code IN (
+        'PACKAGE_COUNT','PACKAGE_PROMISE_UNSUPPORTED','CHAPTER_TIMESTAMPS','THUMBNAIL_FILE_LIMIT'
+      ) ORDER BY code
+    `).all(final.id)).toEqual([
+      { code: 'CHAPTER_TIMESTAMPS' },
+      { code: 'PACKAGE_COUNT' },
+      { code: 'PACKAGE_PROMISE_UNSUPPORTED' },
+      { code: 'THUMBNAIL_FILE_LIMIT' }
+    ]);
+  }, 60_000);
+
+  it('renders a coordinate-backed generated graphic without stock media', async () => {
+    const now = new Date().toISOString();
+    db.raw.prepare(`
+      INSERT INTO projects(
+        id, sequence, slug, title, topic, destination, state, progress,
+        envato_project_name, target_duration_ms, script_version_id, created_at, updated_at
+      ) VALUES('project-graphic', 2, 'graphic-fixture', 'Graphic Fixture', 'Oaxaca', 'Oaxaca',
+        'BUILDING_TIMELINE', 0.6, 'YT-GRAPHIC-0001', 1800, 'script-graphic', ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO script_versions(
+        id, project_id, version_number, title, topic, script_json, generation_reason,
+        provider, model, input_hash, locked, script_type, locked_at, created_at
+      ) VALUES('script-graphic', 'project-graphic', 1, 'Graphic Fixture', 'Oaxaca', '{}',
+        'integration test', 'mock', 'mock', 'graphic-input', 1, 'final', ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO places(
+        id, stable_key, name, normalized_name, place_type, country_code,
+        latitude, longitude, created_at, updated_at
+      ) VALUES('place-graphic', 'landmark|oaxaca', 'Zocalo', 'zocalo', 'landmark',
+        'MX', 17.0609, -96.7253, ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO project_scenes(
+        id, project_id, script_version_id, ordinal, chapter, narration,
+        target_duration_ms, required_country, required_city, required_location,
+        required_place_id, required_granularity, required_objects_json,
+        required_activities_json, preferred_shots_json, visual_treatment,
+        score_explanation_json, verification_state, created_at, updated_at
+      ) VALUES('scene-graphic', 'project-graphic', 'script-graphic', 1, 'Orientation',
+        'Oaxaca.', 1800, 'Mexico', 'Oaxaca', 'Zocalo', 'place-graphic', 'landmark',
+        '[]', '[]', '[]', 'MAP_OR_GRAPHIC', '[]', 'graphic', ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO voice_assets(
+        id, project_id, provider, model, voice_id, settings_json, pronunciation_hash,
+        input_hash, text, audio_path, duration_ms, timing_method, status, created_at, updated_at
+      ) VALUES('voice-graphic', 'project-graphic', 'test', 'test', 'test', '{}',
+        'pronunciation', 'voice-graphic-input', 'Oaxaca.', ?, 1200, 'provider_word', 'ready', ?, ?)
+    `).run(narrationPath, now, now);
+    db.raw.prepare(`
+      INSERT INTO narration_sections(
+        id, project_id, script_version_id, voice_asset_id, ordinal, chapter,
+        scene_ids_json, text, pronunciation_json, duration_ms, status, created_at, updated_at
+      ) VALUES('section-graphic', 'project-graphic', 'script-graphic', 'voice-graphic', 1,
+        'Orientation', '["scene-graphic"]', 'Oaxaca.', '{}', 1200, 'ready', ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO narration_words(
+        id, section_id, scene_id, ordinal, word, start_ms, end_ms, confidence, timing_method
+      ) VALUES('word-graphic', 'section-graphic', 'scene-graphic', 1, 'Oaxaca.', 100, 900, 0.99, 'provider_word')
+    `).run();
+    const graphicProject = {
+      id: 'project-graphic', slug: 'graphic-fixture', title: 'Graphic Fixture',
+      topic: 'Oaxaca', destination: 'Oaxaca', description: null,
+      scriptVersionId: 'script-graphic',
+      scenes: [{ id: 'scene-graphic', ordinal: 1, chapter: 'Orientation', targetDurationMs: 1800 }],
+      packaging: []
+    } as unknown as ProjectDetail;
+    const states = new ProjectStateService(db);
+    const graphicService = new RenderService(
+      db,
+      () => ({
+        outputFolder: join(root, 'output'), projectFolder: join(root, 'projects'),
+        ffmpegPath, ffprobePath: ffprobeStatic.path, hardShotMaxSeconds: 7,
+        channelName: 'Fixture Channel', channelShort: 'FC'
+      } as unknown as AppSettings),
+      new JobService(db),
+      { states, get: () => graphicProject } as never,
+      () => undefined
+    );
+    const draft = await graphicService.render('project-graphic', 'draft');
+    expect(draft.state).toBe('SUCCEEDED');
+    expect(existsSync(draft.outputPath!)).toBe(true);
+    const manifest = JSON.parse(readFileSync(draft.manifestPath!, 'utf8')) as {
+      scenes: Array<{ visualTreatment: string; editingPlan: { sourceKind: string; mapMode: string } }>;
+    };
+    expect(manifest.scenes).toEqual([
+      expect.objectContaining({
+        visualTreatment: 'MAP_OR_GRAPHIC',
+        editingPlan: expect.objectContaining({ sourceKind: 'generated_graphic', mapMode: 'coordinate_plot' })
+      })
+    ]);
+    expect(db.raw.prepare(`
+      SELECT code FROM qc_results WHERE render_id = ? AND status = 'fail' AND severity IN ('BLOCKER','HIGH')
+    `).all(draft.id)).toEqual([]);
   }, 60_000);
 });

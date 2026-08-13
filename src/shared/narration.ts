@@ -50,6 +50,7 @@ export interface RenderFragmentInput {
   width: number;
   height: number;
   profile: string;
+  editingInputHash?: string;
 }
 
 export function narrationTokens(text: string): string[] {
@@ -223,7 +224,8 @@ export function renderFragmentCacheKey(input: RenderFragmentInput): string {
     narration: input.narration,
     width: input.width,
     height: input.height,
-    profile: input.profile
+    profile: input.profile,
+    editingInputHash: input.editingInputHash ?? null
   });
   let hash = 2166136261;
   for (let index = 0; index < stable.length; index += 1) {

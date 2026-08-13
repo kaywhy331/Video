@@ -1,10 +1,10 @@
 # VideoFactory Desktop alpha.3 — Validation Report
 
-Generated: 2026-08-12 (America/Los_Angeles) during verified-footage script/narration/range-repair validation.
+Generated: 2026-08-12 (America/Los_Angeles) during local P0 editing/QC/export validation.
 
 ## Outcome
 
-The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with automated repair routing, semantic footage verification, sourced web research, provider preflight, verified-footage final scripts, section narration/word timing, and range repair implemented. The prior research exact-head GitHub Actions run passes, including Windows packaging. The current milestone's local validation is recorded below; its exact-head CI receipt remains pending publication. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, and five-video pilot gates are external and unrun.
+The local P0 buildout is implemented through deterministic editing/graphics, expanded render and package QC, ordinal-bearing repair, checksummed project export, and restore-time derivative rebuild. The previous narration milestone's exact-head GitHub Actions run passes, including Windows packaging. This milestone's exact-head CI receipt remains pending publication. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, interruption-drill, and five-video pilot gates are external and unrun.
 
 ## Local validation
 
@@ -13,17 +13,17 @@ The imported alpha.2 vertical slice has been hardened into 0.1.0-alpha.3, with a
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
 | Focused research/provider/semantic/contracts suite | Passed; cache, auth/quota, budgets, citations, stale/conflict, invented-ID, and corrective-retry cases included |
-| Full Vitest suite | Passed; 36 files / 116 tests, including a real FFmpeg full-render-to-range fragment-reuse integration fixture |
+| Full Vitest suite | Passed; 39 files / 128 tests, including real FFmpeg footage/range, generated-graphic, final-package, export, derivative-rebuild, and overlapping-failure deduplication fixtures |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
-| Application migration wrapper (001–006) | Passed in focused validation; final-script/narration/range schema recorded, accepted-claim trigger enforced, reopen idempotent, integrity `ok` |
+| Application migration wrapper (001–007) | Passed in focused validation; portability receipts recorded, accepted-claim trigger enforced, reopen idempotent, integrity `ok` |
 | Source/resource migration parity | Passed |
 | Electron/Vite main, preload, renderer build | Passed |
 | `git diff --check` | Passed |
 
 ## GitHub Actions validation
 
-PR run [31647433764](https://github.com/kaywhy331/Video/actions/runs/31647433764) passed for research/provider exact-head commit `45387c2`:
+The previous narration milestone passed both exact-head PR run [31654009236](https://github.com/kaywhy331/Video/actions/runs/31654009236) for commit `8e7dd2c` and post-merge `main` run [31654320673](https://github.com/kaywhy331/Video/actions/runs/31654320673) for merge commit `bf65f6c`:
 
 | Job | Result |
 |---|---|
@@ -32,6 +32,8 @@ PR run [31647433764](https://github.com/kaywhy331/Video/actions/runs/31647433764
 | Unsigned NSIS/ZIP workflow artifact | Uploaded; 512,295,865 bytes; retained through 2026-08-26 |
 
 This proves the Windows packages can be produced by the hosted runner. It does not replace a clean-machine installation and runtime test.
+
+The editing/QC/export milestone's exact-head PR and post-merge CI receipts will be added after publication. They are not pre-claimed here.
 
 ## Validated changes
 
@@ -59,6 +61,12 @@ This proves the Windows packages can be produced by the hosted runner. It does n
 - 15–45 second section synthesis with pronunciation-aware cache identity, persisted word timing, strict HTTP timing/auth failure receipts, and word-derived captions;
 - explicit scene/range render contracts, cached fragment reuse, affected-range repair provenance, and full-final rebuild after a range pass.
 - real `RenderService` full-to-range FFmpeg integration proving scope/base-render provenance and reuse of the unchanged cached scene fragment.
+- deterministic ASS editing plans/layers for evidence-bound maps or explicit schematic hierarchies, text/archival cards, labels, chapter cards, lower thirds, channel logo, and sourced callouts;
+- real generated-graphic FFmpeg rendering without fabricated stock media plus footage-overlay and final 1080p package integrations;
+- final-output black/freeze, duplicate-range, crop/effective-resolution/letterbox, clipping/silence, caption, required-label, geographic-evidence, rights, promise, chapter, description, and thumbnail checks before final approval;
+- ordinal-bearing crop/duplicate/resolution failures routed through bounded scene alternate selection or acquisition instead of premature full rerender;
+- migration 007 export/rebuild receipts, restore-marker retry safety, original-hash verification, and deterministic proxy/contact-sheet/voice-timing/editing/caption regeneration;
+- byte-verified project artifact index covering metadata, scripts/sources/claims, scene contracts, rights/files, voice/captions, renders/QC/packages, publication/audit records, optional originals, and optional final output, with resumable-session secrets removed.
 
 ## Historical alpha.2 validation
 

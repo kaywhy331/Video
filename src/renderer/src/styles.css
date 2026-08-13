@@ -692,6 +692,9 @@ details pre { overflow: auto; max-height: 240px; padding: 12px; border-radius: 8
 .drawer-metrics span { display: block; color: var(--subtle); font-size: 8px; }
 .drawer-metrics strong { display: block; margin-top: 4px; font-size: 15px; }
 .drawer-content section h3 { margin: 0 0 9px; font-size: 11px; }
+.drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.drawer-help { margin: 9px 0 0; color: var(--subtle); font-size: 8.5px; line-height: 1.5; }
+.portability-receipts { margin-top: 9px; }
 .scene-audit { display: flex; flex-direction: column; gap: 4px; max-height: 460px; overflow: auto; }
 .scene-audit-row { display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 9px; padding: 8px; border-radius: 8px; background: rgba(255,255,255,.018); }
 .scene-number { color: #647184; font-size: 8px; font-weight: 800; }
