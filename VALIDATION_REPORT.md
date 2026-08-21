@@ -13,7 +13,7 @@ The local buildout now includes migrations 001–018, checkpoint-safe deferred p
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
 | Focused real-FFmpeg 4K generated-graphic test | Passed; final 3840×2160 encode and blocker-free QC verified |
-| Full Vitest suite | Current inventory is 79 files / 284 tests. Exact pass/fail counts are written from the JSON reporter into `VALIDATION_STATUS.json`; coverage includes the real media fixtures, perceptual matching, corrupt-ingest isolation, secret storage, workflow/render/catalog/security behavior, acceptance traceability, migration preflight, and release provenance. |
+| Full Vitest suite | Current inventory is 79 files / 286 tests. Exact pass/fail counts are written from the JSON reporter into `VALIDATION_STATUS.json`; coverage includes the real media fixtures, perceptual matching, corrupt-ingest isolation, secret storage, workflow/render/catalog/security behavior, acceptance traceability, migration preflight, and release provenance. |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
 | Application migration wrapper (001–018) | Passed; every forward migration recorded, source/resource parity enforced, reopen idempotent, integrity `ok` |
@@ -22,7 +22,7 @@ The local buildout now includes migrations 001–018, checkpoint-safe deferred p
 | Built Electron Playwright/Axe | Four serial journeys cover all seven primary views, all nine project tabs, deferred pause, audited exception actions, Node isolation/CSP, and the exact Studio/media-protocol fallback. Exact results come from the Playwright JSON report. |
 | PRD acceptance traceability | All 151 IDs are mapped exactly once with app `0.1.0-alpha.4`, schema 18, fixture version, result, artifacts, and exact assertion bindings; 136 local / 15 external pending. Recording fails unless every bound assertion and canonical validation stage passed in fresh, input-hash-matched reports. |
 | Locked dependency audit and SBOM | Passed; `npm audit --audit-level=low` reports 0 vulnerabilities and CycloneDX 1.5 contains 474 components |
-| Release artifact provenance | Focused tests pass exact manifest/checksum verification, extra/tampered artifact rejection, matching validation evidence, exact tag/version enforcement, and truthful branch-ref recording; hosted Windows evidence remains pending CI publication |
+| Release artifact provenance | Focused tests pass canonical upload-safe Windows naming, exact manifest/checksum verification, unsafe/extra/tampered artifact rejection, matching validation evidence, exact tag/version enforcement, and truthful branch-ref recording; hosted Windows evidence remains pending CI publication |
 | `git diff --check` | Passed |
 | Production H.264 encoder boundary | Verified in source and render fixtures: production renders use `libx264`; NVENC/QSV/AMF probes are diagnostics-only and do not select the production encoder |
 | Repeatable 26K production-service catalog benchmark | Passed measured scope: 26,000 rows committed, integrity `ok`, overall warm-search p95 156.034 ms against 300 ms, and a bounded 50-row renderer page; see `VALIDATION_CATALOG_PERFORMANCE.json` |

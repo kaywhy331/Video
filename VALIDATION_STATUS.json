@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-21T16:26:34.653Z",
+  "generatedAt": "2026-08-21T20:01:04.249Z",
   "release": "0.1.0-alpha.4",
   "databaseSchemaVersion": 18,
   "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
-  "validationInputSha256": "3227c17a7e1078a7b544711d3525b74c60488cd36f5c45e91cc979f20c57f3a3",
+  "validationInputSha256": "31f02b8af1280c96081738ac0c96d2cfc1cea8e02c0ca2d4b998a9217495ede7",
   "source": {
-    "commit": "b1bb0017d30eaf6905b45acaf02631db47716b8a",
-    "ref": "agent/p0-prd-completion",
+    "commit": "d6f7a4510428990f07caa78bbe22c9a54f7e5711",
+    "ref": "fix/upload-safe-windows-artifacts",
     "repository": null,
     "runId": null,
     "runAttempt": null,
@@ -22,12 +22,12 @@
   "evidence": {
     "pipeline": {
       "path": "validation/results/pipeline.json",
-      "sha256": "84f57d9cacd1ec8d3194931339122bf432b3eeaa82a904dfadb460dbd03c41fe",
-      "sizeBytes": 1937
+      "sha256": "5282b0ad1b1c6657cb121ed3291d9389ed65a57255bd3a927586ef62417af2cd",
+      "sizeBytes": 1947
     },
     "sbom": {
       "path": "release/videofactory-sbom.cdx.json",
-      "sha256": "79f86ef9b35818662f3ccb3d6bb4b2545afbc2109aabc0802da335d709557a53",
+      "sha256": "ebf3dc74bd6a0c50c57189bc7763be928a122b42b20ebd55f39c910605fedbe5",
       "sizeBytes": 718062
     }
   },
@@ -39,55 +39,55 @@
         "name": "typecheck",
         "status": "passed",
         "exitCode": 0,
-        "completedAt": "2026-08-21T16:23:46.613Z"
+        "completedAt": "2026-08-21T19:59:02.839Z"
       },
       {
         "name": "vitest",
         "status": "passed",
         "exitCode": 0,
-        "completedAt": "2026-08-21T16:25:17.233Z"
+        "completedAt": "2026-08-21T20:00:40.943Z"
       },
       {
         "name": "build",
         "status": "passed",
         "exitCode": 0,
-        "completedAt": "2026-08-21T16:25:30.560Z"
+        "completedAt": "2026-08-21T20:00:47.516Z"
       },
       {
         "name": "electron_e2e",
         "status": "passed",
         "exitCode": 0,
-        "completedAt": "2026-08-21T16:26:28.136Z"
+        "completedAt": "2026-08-21T20:01:01.015Z"
       },
       {
         "name": "security_audit",
         "status": "passed",
         "exitCode": 0,
-        "completedAt": "2026-08-21T16:26:30.858Z"
+        "completedAt": "2026-08-21T20:01:02.139Z"
       },
       {
         "name": "sbom",
         "status": "passed",
         "exitCode": 0,
-        "completedAt": "2026-08-21T16:26:34.263Z"
+        "completedAt": "2026-08-21T20:01:04.056Z"
       }
     ]
   },
   "tests": {
     "vitest": {
       "path": "validation/results/vitest.json",
-      "sha256": "5112873cba6a8741561a17701d7fda9970ae0ef9a199f0b916212cb65178fedf",
-      "sizeBytes": 107341,
+      "sha256": "154b08b2d56b96ab237fe88aa9690f59787430ed5f16a80c00e07f2a4f7cc9b0",
+      "sizeBytes": 107890,
       "files": 79,
-      "total": 284,
-      "passed": 284,
+      "total": 286,
+      "passed": 286,
       "failed": 0,
       "pending": 0
     },
     "playwright": {
       "path": "validation/results/playwright.json",
-      "sha256": "5cd55b68025e52a0192708f0b570ea2f85d979e2e5db959700df153b3360dcb1",
-      "sizeBytes": 7081,
+      "sha256": "e5d1e96032ddb39820b84d88da56ab73d183e7d6d20ceef186d555e1b49d3b89",
+      "sizeBytes": 7087,
       "total": 4,
       "passed": 4,
       "failed": 0

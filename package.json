@@ -89,7 +89,7 @@
         "nsis",
         "zip"
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "VideoFactory-Desktop-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
