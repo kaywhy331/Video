@@ -7,11 +7,11 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import { AppDatabase } from '@main/database/database';
 import { JobService } from '@main/services/job-service';
-import { ProjectStateService } from '@main/services/project-state-service';
 import { ProjectService } from '@main/services/project-service';
 import { RenderService } from '@main/services/render-service';
+import { MediaService } from '@main/services/media-service';
 import { requireSuccess } from '@main/services/process-utils';
-import type { AppSettings, ProjectDetail } from '@shared/types';
+import type { AppSettings } from '@shared/types';
 
 const root = mkdtempSync(join(tmpdir(), 'videofactory-range-render-'));
 const sourcePath = join(root, 'source.mp4');
@@ -33,6 +33,9 @@ describe('real range render fragment reuse', () => {
       '-y', '-hide_banner',
       '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=1.2',
       '-c:a', 'pcm_s16le', narrationPath
+    ]);
+    const sourceProbe = await requireSuccess(ffprobeStatic.path, [
+      '-v', 'error', '-show_format', '-show_streams', '-of', 'json', sourcePath
     ]);
 
     db = new AppDatabase(join(root, 'videofactory.sqlite'));
@@ -68,16 +71,16 @@ describe('real range render fragment reuse', () => {
         duration_ms, width, height, frame_rate, codec, audio_present,
         raw_ffprobe_json, pipeline_version, created_at
       ) VALUES('file-1', 'asset-1', ?, ?, 'source.mp4', 1, 2400, 1920, 1080,
-        30, 'h264', 0, '{}', 'integration', ?)
-    `).run(sourceHash, sourcePath, now);
+        30, 'h264', 0, ?, ?, ?)
+    `).run(sourceHash, sourcePath, sourceProbe.stdout, MediaService.PIPELINE_VERSION, now);
     db.raw.prepare(`
       INSERT INTO media_segments(
         id, asset_file_id, start_ms, end_ms, duration_ms, quality_score,
         black_frame_risk, freeze_risk, effective_width, effective_height,
         eligible_1080p, eligible_4k, pipeline_version, created_at
       ) VALUES('segment-1', 'file-1', 0, 2200, 2200, 1, 0, 0,
-        1920, 1080, 1, 0, 'integration', ?)
-    `).run(now);
+        1920, 1080, 1, 0, ?, ?)
+    `).run(MediaService.PIPELINE_VERSION, now);
     db.raw.prepare(`
       INSERT INTO project_scenes(
         id, project_id, script_version_id, ordinal, chapter, narration,
@@ -128,7 +131,8 @@ describe('real range render fragment reuse', () => {
       projectFolder: join(root, 'projects'),
       ffmpegPath,
       ffprobePath: ffprobeStatic.path,
-      hardShotMaxSeconds: 7
+      hardShotMaxSeconds: 7,
+      defaultOutput: 'qualified_4k'
     } as unknown as AppSettings;
     const projects = new ProjectService(
       db,
@@ -183,13 +187,39 @@ describe('real range render fragment reuse', () => {
       .toEqual({ state: 'QC_DRAFT' });
   }, 60_000);
 
-  it('generates and validates the final package before entering approval', async () => {
+  it('generates and validates the final package before the automatic private-upload handoff', async () => {
+    const supersededRender = db.raw.prepare(`
+      SELECT id FROM renders WHERE project_id = 'project-1' AND kind = 'draft' AND state = 'SUCCEEDED'
+      ORDER BY completed_at DESC LIMIT 1
+    `).get() as { id: string };
+    const now = new Date().toISOString();
+    for (const [id, stage, code] of [
+      ['stale-render-exception', 'render', 'RENDER_FAILED'],
+      ['stale-qc-exception', 'render_qc', 'QC_STALE_TEST']
+    ] as const) {
+      db.raw.prepare(`
+        INSERT INTO exceptions(
+          id, project_id, severity, stage, code, title, message,
+          evidence_json, recommended_action, status, created_at
+        ) VALUES(?, 'project-1', 'BLOCKER', ?, ?, 'Prior render failed',
+          'Prior artifact requires replacement', ?, 'Render and verify a replacement.', 'OPEN', ?)
+      `).run(id, stage, code, JSON.stringify({ renderId: supersededRender.id }), now);
+    }
+    db.raw.prepare(`
+      INSERT INTO exceptions(
+        id, project_id, severity, stage, code, title, message,
+        evidence_json, recommended_action, status, created_at
+      ) VALUES('unrelated-media-exception', 'project-1', 'HIGH', 'media',
+        'MEDIA_TEST', 'Media exception', 'Still requires operator work', '{}',
+        'Resolve media evidence.', 'OPEN', ?)
+    `).run(now);
+
     const final = await service.render('project-1', 'final');
     expect(final.state).toBe('SUCCEEDED');
     expect(final.profile).toBe('final_1080p');
     expect(existsSync(final.outputPath!)).toBe(true);
     expect(db.raw.prepare(`SELECT state FROM projects WHERE id = 'project-1'`).get())
-      .toEqual({ state: 'WAITING_FINAL_APPROVAL' });
+      .toEqual({ state: 'QC_FINAL' });
     expect(db.raw.prepare(`
       SELECT ordinal, risk_status, thumbnail_path FROM packaging_candidates
       WHERE project_id = 'project-1' ORDER BY ordinal
@@ -212,7 +242,37 @@ describe('real range render fragment reuse', () => {
       { code: 'PACKAGE_PROMISE_UNSUPPORTED' },
       { code: 'THUMBNAIL_FILE_LIMIT' }
     ]);
+    expect(db.raw.prepare(`
+      SELECT id, status FROM exceptions
+      WHERE id IN ('stale-render-exception','stale-qc-exception','unrelated-media-exception')
+      ORDER BY id
+    `).all()).toEqual([
+      { id: 'stale-qc-exception', status: 'RESOLVED' },
+      { id: 'stale-render-exception', status: 'RESOLVED' },
+      { id: 'unrelated-media-exception', status: 'OPEN' }
+    ]);
+    expect(db.raw.prepare(`
+      SELECT count(*) AS count FROM audit_log
+      WHERE project_id = 'project-1' AND action = 'exception.auto_resolved'
+    `).get()).toEqual({ count: 2 });
   }, 60_000);
+
+  it('reports exact 4K blockers and falls back truthfully to the 1080p final profile', async () => {
+    const blockers = service.fourKBlockers('project-1');
+    expect(blockers).toEqual([
+      expect.objectContaining({
+        sceneOrdinal: 1,
+        effectiveWidth: 1920,
+        effectiveHeight: 1080,
+        reason: expect.stringContaining('below 3840×2160')
+      })
+    ]);
+    expect(db.raw.prepare(`
+      SELECT profile, width, height FROM renders
+      WHERE project_id = 'project-1' AND kind = 'final' AND state = 'SUCCEEDED'
+      ORDER BY completed_at DESC LIMIT 1
+    `).get()).toEqual({ profile: 'final_1080p', width: 1920, height: 1080 });
+  });
 
   it('renders a coordinate-backed generated graphic without stock media', async () => {
     const now = new Date().toISOString();
@@ -267,23 +327,27 @@ describe('real range render fragment reuse', () => {
         id, section_id, scene_id, ordinal, word, start_ms, end_ms, confidence, timing_method
       ) VALUES('word-graphic', 'section-graphic', 'scene-graphic', 1, 'Oaxaca.', 100, 900, 0.99, 'provider_word')
     `).run();
-    const graphicProject = {
-      id: 'project-graphic', slug: 'graphic-fixture', title: 'Graphic Fixture',
-      topic: 'Oaxaca', destination: 'Oaxaca', description: null,
-      scriptVersionId: 'script-graphic',
-      scenes: [{ id: 'scene-graphic', ordinal: 1, chapter: 'Orientation', targetDurationMs: 1800 }],
-      packaging: []
-    } as unknown as ProjectDetail;
-    const states = new ProjectStateService(db);
+    const graphicProjects = new ProjectService(
+      db,
+      {} as never,
+      {} as never,
+      () => ({
+        outputFolder: join(root, 'output'), projectFolder: join(root, 'projects'),
+        ffmpegPath, ffprobePath: ffprobeStatic.path, hardShotMaxSeconds: 7,
+        defaultOutput: 'qualified_4k', channelName: 'Fixture Channel', channelShort: 'FC'
+      } as unknown as AppSettings),
+      {} as never
+    );
     const graphicService = new RenderService(
       db,
       () => ({
         outputFolder: join(root, 'output'), projectFolder: join(root, 'projects'),
         ffmpegPath, ffprobePath: ffprobeStatic.path, hardShotMaxSeconds: 7,
+        defaultOutput: 'qualified_4k',
         channelName: 'Fixture Channel', channelShort: 'FC'
       } as unknown as AppSettings),
       new JobService(db),
-      { states, get: () => graphicProject } as never,
+      graphicProjects,
       () => undefined
     );
     const draft = await graphicService.render('project-graphic', 'draft');
@@ -301,5 +365,10 @@ describe('real range render fragment reuse', () => {
     expect(db.raw.prepare(`
       SELECT code FROM qc_results WHERE render_id = ? AND status = 'fail' AND severity IN ('BLOCKER','HIGH')
     `).all(draft.id)).toEqual([]);
-  }, 60_000);
+    const final = await graphicService.render('project-graphic', 'final');
+    expect(final).toMatchObject({ profile: 'final_4k', width: 3840, height: 2160, state: 'SUCCEEDED' });
+    expect(db.raw.prepare(`
+      SELECT code FROM qc_results WHERE render_id = ? AND status = 'fail' AND severity IN ('BLOCKER','HIGH')
+    `).all(final.id)).toEqual([]);
+  }, 480_000);
 });

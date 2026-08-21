@@ -5,11 +5,18 @@ import {
   Folder,
   HardDrive,
   KeyRound,
+  Music2,
   RefreshCw,
   Save,
   ShieldCheck,
   DatabaseBackup,
-  Youtube
+  Download,
+  Upload,
+  Youtube,
+  Languages,
+  Network,
+  Sheet,
+  X
 } from 'lucide-react';
 import type { AppBootstrap, AppSettings, DiagnosticsReport, YouTubeConnectionStatus } from '@shared/types';
 import { Button, MetricCard, Panel, StatusPill } from '../components/ui';
@@ -24,7 +31,7 @@ export function SettingsView({
   setError: (message: string | null) => void;
 }) {
   const [form, setForm] = useState<AppSettings>(bootstrap.settings);
-  const [diagnostics, setDiagnostics] = useState<DiagnosticsReport>(bootstrap.diagnostics);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(bootstrap.diagnostics);
   const [youtube, setYoutube] = useState<YouTubeConnectionStatus | null>(null);
   type SecretDraft = {
     llmApiKey: string;
@@ -45,6 +52,25 @@ export function SettingsView({
     youtubeApiKey: ''
   });
   const [busy, setBusy] = useState('');
+  const [musicDraft, setMusicDraft] = useState({
+    title: '',
+    provider: '',
+    licenseType: '',
+    licenseReference: '',
+    licenseDocumentPath: '',
+    moods: '',
+    tempoBpm: '',
+    loopable: true,
+    licenseAttested: false
+  });
+  const [channelDraft, setChannelDraft] = useState({ name: '', shortCode: '', defaultLanguageCode: 'en' });
+  const [languageDraft, setLanguageDraft] = useState({ languageCode: '', languageName: '', voiceProvider: 'windows_sapi', voiceId: '', displayName: '' });
+  const [sheetDraft, setSheetDraft] = useState({ spreadsheetId: '', sheetRange: 'Catalog!A:ZZ' });
+  const [sheetOperationId, setSheetOperationId] = useState<string | null>(null);
+  const [sheetCancellationRequested, setSheetCancellationRequested] = useState(false);
+
+  useEffect(() => setForm(bootstrap.settings), [bootstrap.settings]);
+  useEffect(() => setDiagnostics(bootstrap.diagnostics), [bootstrap.diagnostics]);
 
   useEffect(() => {
     void window.videoFactory.youtube.status().then(setYoutube).catch(() => undefined);
@@ -52,7 +78,7 @@ export function SettingsView({
 
   async function choose(field: keyof AppSettings): Promise<void> {
     const path = await window.videoFactory.settings.choosePath({
-      kind: field.toLowerCase().includes('path') && (field === 'ffmpegPath' || field === 'ffprobePath') ? 'file' : 'directory',
+      kind: ['ffmpegPath', 'ffprobePath', 'catalogImportFile'].includes(field) ? 'file' : 'directory',
       title: `Choose ${field}`
     });
     if (path) setForm(current => ({ ...current, [field]: path }));
@@ -82,7 +108,6 @@ export function SettingsView({
       }
       const next = await window.videoFactory.settings.update(form);
       setForm(next);
-      setDiagnostics(await window.videoFactory.diagnostics.run());
       await onRefresh();
     });
   }
@@ -107,7 +132,133 @@ export function SettingsView({
     });
   }
 
-  const freePath = diagnostics.paths.find(path => path.key === 'Media library');
+  async function exportProfile(): Promise<void> {
+    await run('profile-export', async () => {
+      const report = await window.videoFactory.settings.exportProfile();
+      if (report) window.alert(`Secret-free settings profile exported:\n${report.path}`);
+    });
+  }
+
+  async function importProfile(): Promise<void> {
+    await run('profile-import', async () => {
+      const report = await window.videoFactory.settings.importProfile();
+      if (!report) return;
+      setForm(report.settings);
+      await onRefresh();
+      window.alert(`Applied ${report.appliedKeys.length} settings. Credentials were not imported.`);
+    });
+  }
+
+  async function checkUpdate(): Promise<void> {
+    await run('update', async () => {
+      const result = await window.videoFactory.updates.check();
+      await onRefresh();
+      window.alert(result.available
+        ? `VideoFactory ${result.latestVersion} is available. Open the release link from this panel.`
+        : result.status === 'error' ? `Update check failed: ${result.error}` : 'This installation is current for the selected channel.');
+    });
+  }
+
+  async function refreshCatalog(): Promise<void> {
+    await run('catalog-refresh', async () => {
+      const result = await window.videoFactory.catalog.refresh();
+      await onRefresh();
+      window.alert(result.status === 'staged'
+        ? 'A catalog diff is staged in Library for operator review; no rows were committed.'
+        : `Catalog refresh status: ${result.status}. ${result.validation.issues.join(' ')}`);
+    });
+  }
+
+  async function cleanupStorage(): Promise<void> {
+    await run('storage-cleanup', async () => {
+      const report = await window.videoFactory.storage.cleanup({ trigger: 'manual' });
+      await onRefresh();
+      window.alert(`Derivative cleanup ${report.status}: removed ${report.removedCount} file(s), ${(report.removedBytes / 1024 ** 2).toFixed(1)} MB. Originals and licensed music were never candidates.`);
+    });
+  }
+
+  async function chooseMusicLicense(): Promise<void> {
+    const path = await window.videoFactory.settings.choosePath({
+      kind: 'file',
+      title: 'Choose music license document'
+    });
+    if (path) setMusicDraft(current => ({ ...current, licenseDocumentPath: path }));
+  }
+
+  async function importMusic(): Promise<void> {
+    await run('music-import', async () => {
+      const track = await window.videoFactory.music.import({
+        title: musicDraft.title,
+        provider: musicDraft.provider,
+        licenseType: musicDraft.licenseType,
+        licenseReference: musicDraft.licenseReference,
+        licenseDocumentPath: musicDraft.licenseDocumentPath || undefined,
+        moods: musicDraft.moods.split(',').map(value => value.trim()).filter(Boolean),
+        tempoBpm: musicDraft.tempoBpm ? Number(musicDraft.tempoBpm) : null,
+        loopable: musicDraft.loopable,
+        licenseAttested: true
+      });
+      if (!track) return;
+      setMusicDraft({
+        title: '', provider: '', licenseType: '', licenseReference: '',
+        licenseDocumentPath: '', moods: '', tempoBpm: '', loopable: true,
+        licenseAttested: false
+      });
+      await onRefresh();
+      window.alert(`Licensed track imported and checksum-preserved:\n${track.title}`);
+    });
+  }
+
+  async function addChannel(): Promise<void> {
+    await run('channel-add', async () => {
+      await window.videoFactory.expansion.saveChannel({ ...channelDraft, active: true, isDefault: false });
+      setChannelDraft({ name: '', shortCode: '', defaultLanguageCode: 'en' });
+      await onRefresh();
+    });
+  }
+
+  async function addLanguage(): Promise<void> {
+    await run('language-add', async () => {
+      await window.videoFactory.expansion.saveLanguage({ ...languageDraft, active: true, isDefault: false });
+      setLanguageDraft({ languageCode: '', languageName: '', voiceProvider: 'windows_sapi', voiceId: '', displayName: '' });
+      await onRefresh();
+    });
+  }
+
+  async function stageGoogleSheet(): Promise<void> {
+    const operationId = crypto.randomUUID();
+    setBusy('sheets-sync');
+    setSheetOperationId(operationId);
+    setSheetCancellationRequested(false);
+    setError(null);
+    try {
+      const receipt = await window.videoFactory.expansion.stageGoogleSheet({
+        spreadsheetId: sheetDraft.spreadsheetId,
+        sheetRange: sheetDraft.sheetRange,
+        validationTemplateId: form.catalogValidationTemplateId,
+        operationId
+      });
+      await onRefresh();
+      window.alert(receipt.status === 'staged'
+        ? `Read-only Sheets sync staged ${receipt.rowCount} rows. Open Library to review the exact diff; nothing was committed.`
+        : `Read-only Sheets sync ${receipt.status}: ${receipt.error ?? 'no catalog changes'}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.toLowerCase().includes('cancel')) setError(message);
+    } finally {
+      setBusy('');
+      setSheetOperationId(null);
+      setSheetCancellationRequested(false);
+    }
+  }
+
+  async function cancelGoogleSheet(): Promise<void> {
+    if (!sheetOperationId) return;
+    setSheetCancellationRequested(true);
+    await window.videoFactory.catalog.cancelOperation(sheetOperationId);
+  }
+
+  const freePath = diagnostics?.paths.find(path => path.key === 'Media library');
   const freeGb = freePath?.freeBytes ? Math.round(freePath.freeBytes / 1024 ** 3) : null;
 
   return (
@@ -122,8 +273,8 @@ export function SettingsView({
       </div>
 
       <div className="metric-grid">
-        <MetricCard label="FFmpeg" value={diagnostics.ffmpeg.found ? 'Ready' : 'Missing'} detail={diagnostics.ffmpeg.version ?? diagnostics.ffmpeg.error} icon={<Cpu size={18} />} />
-        <MetricCard label="Database" value={diagnostics.database.integrity === 'ok' ? 'Healthy' : diagnostics.database.integrity} detail={diagnostics.database.walMode ? 'WAL enabled' : 'WAL disabled'} icon={<HardDrive size={18} />} />
+        <MetricCard label="FFmpeg" value={diagnostics ? (diagnostics.ffmpeg.found ? 'Ready' : 'Missing') : 'Checking'} detail={diagnostics?.ffmpeg.version ?? diagnostics?.ffmpeg.error ?? 'Diagnostics are running in the background.'} icon={<Cpu size={18} />} />
+        <MetricCard label="Database" value={diagnostics ? (diagnostics.database.integrity === 'ok' ? 'Healthy' : diagnostics.database.integrity) : 'Checking'} detail={diagnostics ? (diagnostics.database.walMode ? 'WAL enabled' : 'WAL disabled') : 'Waiting for the first diagnostic report.'} icon={<HardDrive size={18} />} />
         <MetricCard label="Free media storage" value={freeGb === null ? 'Unknown' : `${freeGb} GB`} detail={`Minimum ${form.minFreeDiskGb} GB`} icon={<HardDrive size={18} />} />
         <MetricCard label="YouTube" value={youtube?.authorized ? 'Connected' : 'Not connected'} detail={youtube?.channelTitle ?? 'Private-first upload'} icon={<Youtube size={18} />} />
       </div>
@@ -151,6 +302,17 @@ export function SettingsView({
             <NumberField label="Waiting downloads" value={form.maxWaitingDownloads} min={1} max={10} set={value => setForm({ ...form, maxWaitingDownloads: value })} />
             <NumberField label="Minimum free disk (GB)" value={form.minFreeDiskGb} min={5} max={1000} set={value => setForm({ ...form, minFreeDiskGb: value })} />
             <NumberField label="Shot hard maximum (sec)" value={form.hardShotMaxSeconds} min={2} max={7} step={0.5} set={value => setForm({ ...form, hardShotMaxSeconds: value })} />
+            <NumberField label="Maximum uses per source" value={form.matchingMaxSourceUses} min={1} max={10} set={value => setForm({ ...form, matchingMaxSourceUses: value })} />
+            <NumberField label="Maximum repeated shot/motion" value={form.matchingMaxConsecutiveShotMotion} min={1} max={5} set={value => setForm({ ...form, matchingMaxConsecutiveShotMotion: value })} />
+            <NumberField label="Perceptual duplicate distance" value={form.matchingPerceptualDistance} min={0} max={16} set={value => setForm({ ...form, matchingPerceptualDistance: value })} />
+            <label>
+              <span>Hero reservation</span>
+              <select value={form.matchingHeroStrategy} onChange={event => setForm({ ...form, matchingHeroStrategy: event.target.value as AppSettings['matchingHeroStrategy'] })}>
+                <option value="opening">Opening hook</option>
+                <option value="first_major_transition">First major chapter transition</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
             <label>
               <span>Default output</span>
               <select value={form.defaultOutput} onChange={event => setForm({ ...form, defaultOutput: event.target.value as AppSettings['defaultOutput'] })}>
@@ -162,6 +324,12 @@ export function SettingsView({
               <input type="checkbox" checked={form.autoUploadPrivate} onChange={event => setForm({ ...form, autoUploadPrivate: event.target.checked })} />
               <span>Automatically upload final QC-passed videos as private</span>
             </label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={form.autopilotSchedulerEnabled} onChange={event => setForm({ ...form, autopilotSchedulerEnabled: event.target.checked })} />
+              <span>Create a new coverage-qualified project on cadence when every gate passes</span>
+            </label>
+            <NumberField label="Cadence (days)" value={form.autopilotCadenceDays} min={1} max={90} set={value => setForm({ ...form, autopilotCadenceDays: value })} />
+            <NumberField label="Publication hour (UTC)" value={form.autopilotPublicationHourUtc} min={0} max={23} set={value => setForm({ ...form, autopilotPublicationHourUtc: value })} />
           </div>
         </Panel>
 
@@ -171,6 +339,146 @@ export function SettingsView({
             <NumberField label="Daily copies" value={form.backupDailyRetention} min={1} max={365} set={value => setForm({ ...form, backupDailyRetention: value })} />
             <NumberField label="Weekly copies" value={form.backupWeeklyRetention} min={1} max={260} set={value => setForm({ ...form, backupWeeklyRetention: value })} />
             <NumberField label="Monthly copies" value={form.backupMonthlyRetention} min={1} max={120} set={value => setForm({ ...form, backupMonthlyRetention: value })} />
+          </div>
+        </Panel>
+
+        <Panel title="Audio and derivative storage" subtitle="Licensed music stays immutable; only regenerable derivatives are pressure-cleaned">
+          <div className="settings-form two-column">
+            <label className="checkbox-field">
+              <input type="checkbox" checked={form.musicEnabled} onChange={event => setForm({ ...form, musicEnabled: event.target.checked })} />
+              <span>Mix license-verified project music with narration ducking</span>
+            </label>
+            <NumberField label="Music gain (dB)" value={form.musicTargetGainDb} min={-40} max={-12} step={1} set={value => setForm({ ...form, musicTargetGainDb: value })} />
+            <NumberField label="Narration ducking (dB)" value={form.musicDuckingDb} min={-30} max={-6} step={1} set={value => setForm({ ...form, musicDuckingDb: value })} />
+            <label className="checkbox-field">
+              <input type="checkbox" checked={form.automaticDerivativeCleanup} onChange={event => setForm({ ...form, automaticDerivativeCleanup: event.target.checked })} />
+              <span>Clean regenerable derivatives under disk pressure</span>
+            </label>
+            <NumberField label="Cleanup reserve (GB)" value={form.derivativeCleanupTargetGb} min={1} max={1000} set={value => setForm({ ...form, derivativeCleanupTargetGb: value })} />
+            <Button variant="secondary" busy={busy === 'storage-cleanup'} onClick={() => void cleanupStorage()}>Clean derivatives now</Button>
+            <small>{bootstrap.musicTracks.length} licensed music track(s) · {bootstrap.latestStorageCleanup ? `last cleanup ${bootstrap.latestStorageCleanup.status}` : 'no cleanup receipt yet'}</small>
+            <div className="music-import-block">
+              <div className="section-label"><Music2 size={14} /> Import licensed music</div>
+              <label><span>Track title</span><input value={musicDraft.title} onChange={event => setMusicDraft({ ...musicDraft, title: event.target.value })} /></label>
+              <label><span>Provider / library</span><input value={musicDraft.provider} onChange={event => setMusicDraft({ ...musicDraft, provider: event.target.value })} /></label>
+              <label><span>License type</span><input value={musicDraft.licenseType} onChange={event => setMusicDraft({ ...musicDraft, licenseType: event.target.value })} /></label>
+              <label><span>License receipt or reference</span><input value={musicDraft.licenseReference} onChange={event => setMusicDraft({ ...musicDraft, licenseReference: event.target.value })} /></label>
+              <label className="full"><span>License document (optional)</span><div className="path-field"><input readOnly value={musicDraft.licenseDocumentPath} placeholder="No document selected" /><button onClick={() => void chooseMusicLicense()}><Folder size={15} /></button></div></label>
+              <label><span>Moods (comma-separated)</span><input value={musicDraft.moods} onChange={event => setMusicDraft({ ...musicDraft, moods: event.target.value })} /></label>
+              <label><span>Tempo BPM (optional)</span><input type="number" min="20" max="300" value={musicDraft.tempoBpm} onChange={event => setMusicDraft({ ...musicDraft, tempoBpm: event.target.value })} /></label>
+              <label className="checkbox-field"><input type="checkbox" checked={musicDraft.loopable} onChange={event => setMusicDraft({ ...musicDraft, loopable: event.target.checked })} /><span>Track may be looped to fit the final timeline</span></label>
+              <label className="checkbox-field license-attestation"><input type="checkbox" checked={musicDraft.licenseAttested} onChange={event => setMusicDraft({ ...musicDraft, licenseAttested: event.target.checked })} /><span>I attest that this track is licensed for the intended project use.</span></label>
+              <Button
+                variant="secondary"
+                busy={busy === 'music-import'}
+                disabled={!musicDraft.title.trim() || !musicDraft.provider.trim() || !musicDraft.licenseType.trim() || !musicDraft.licenseReference.trim() || !musicDraft.licenseAttested}
+                onClick={() => void importMusic()}
+              ><Music2 size={15} /> Choose audio and import</Button>
+              {bootstrap.musicTracks.length ? <div className="music-track-list">{bootstrap.musicTracks.map(track => <div key={track.id}><Music2 size={13} /><div><strong>{track.title}</strong><span>{track.provider} · {track.licenseType} · {(track.durationMs / 1000).toFixed(1)} sec</span></div><StatusPill value={track.licenseVerifiedAt ? 'license verified' : 'blocked'} /></div>)}</div> : null}
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="Catalog refresh" subtitle="Scheduled refreshes stage a validated diff and never commit silently">
+          <div className="settings-form">
+            <label>
+              <span>Catalog XLSX/CSV source</span>
+              <div className="path-field">
+                <input value={form.catalogImportFile} readOnly />
+                <button onClick={() => void choose('catalogImportFile')}><Folder size={15} /></button>
+              </div>
+            </label>
+            <NumberField label="Refresh interval (hours)" value={form.catalogRefreshIntervalHours} min={1} max={720} set={value => setForm({ ...form, catalogRefreshIntervalHours: value })} />
+            <label>
+              <span>Validation template</span>
+              <select value={form.catalogValidationTemplateId} onChange={event => setForm({ ...form, catalogValidationTemplateId: event.target.value })}>
+                <option value="envato-default">Envato catalog</option>
+                <option value="strict-grounding">Strict geographic grounding</option>
+                <option value="technical-library">Technical media library</option>
+              </select>
+            </label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={form.catalogRefreshEnabled} onChange={event => setForm({ ...form, catalogRefreshEnabled: event.target.checked })} />
+              <span>Stage catalog refreshes on schedule</span>
+            </label>
+            <Button variant="secondary" busy={busy === 'catalog-refresh'} onClick={() => void refreshCatalog()}><RefreshCw size={15} /> Stage refresh now</Button>
+            {bootstrap.latestCatalogRefresh ? <small>Last refresh: {bootstrap.latestCatalogRefresh.status} · {new Date(bootstrap.latestCatalogRefresh.createdAt).toLocaleString()}</small> : null}
+          </div>
+        </Panel>
+
+        <Panel title="Channels, languages, and outputs" subtitle="Profiles are snapshotted into new projects; live multi-channel publishing and additional voices remain unverified">
+          <div className="settings-form expansion-registry">
+            <div className="section-label"><Network size={14} /> Channel registry</div>
+            <div className="registry-list">
+              {bootstrap.expansion.channels.map(channel => <div key={channel.id}><div><strong>{channel.name}</strong><span>{channel.shortCode} · {channel.defaultLanguageCode}</span></div><StatusPill value={channel.isDefault ? 'default' : channel.externalQualification} /></div>)}
+            </div>
+            <div className="registry-draft">
+              <label><span>Name</span><input value={channelDraft.name} onChange={event => setChannelDraft({ ...channelDraft, name: event.target.value })} /></label>
+              <label><span>Short code</span><input maxLength={12} value={channelDraft.shortCode} onChange={event => setChannelDraft({ ...channelDraft, shortCode: event.target.value.toUpperCase() })} /></label>
+              <label><span>Default language</span><input value={channelDraft.defaultLanguageCode} onChange={event => setChannelDraft({ ...channelDraft, defaultLanguageCode: event.target.value })} /></label>
+              <Button variant="secondary" busy={busy === 'channel-add'} disabled={!channelDraft.name || !channelDraft.shortCode} onClick={() => void addChannel()}>Add channel profile</Button>
+            </div>
+            <div className="section-label"><Languages size={14} /> Language and voice registry</div>
+            <div className="registry-list">
+              {bootstrap.expansion.languages.map(language => <div key={language.id}><div><strong>{language.displayName}</strong><span>{language.languageCode} · {language.voiceProvider} · {language.voiceId}</span></div><StatusPill value={language.isDefault ? 'default' : language.externalQualification} /></div>)}
+            </div>
+            <div className="registry-draft">
+              <label><span>Language code</span><input value={languageDraft.languageCode} onChange={event => setLanguageDraft({ ...languageDraft, languageCode: event.target.value })} /></label>
+              <label><span>Language name</span><input value={languageDraft.languageName} onChange={event => setLanguageDraft({ ...languageDraft, languageName: event.target.value })} /></label>
+              <label><span>Voice provider</span><input value={languageDraft.voiceProvider} onChange={event => setLanguageDraft({ ...languageDraft, voiceProvider: event.target.value })} /></label>
+              <label><span>Voice ID</span><input value={languageDraft.voiceId} onChange={event => setLanguageDraft({ ...languageDraft, voiceId: event.target.value })} /></label>
+              <label><span>Display name</span><input value={languageDraft.displayName} onChange={event => setLanguageDraft({ ...languageDraft, displayName: event.target.value })} /></label>
+              <Button variant="secondary" busy={busy === 'language-add'} disabled={!languageDraft.languageCode || !languageDraft.languageName || !languageDraft.voiceId || !languageDraft.displayName} onClick={() => void addLanguage()}>Add voice profile</Button>
+            </div>
+            <div className="section-label">Output profiles</div>
+            <div className="registry-list">
+              {bootstrap.expansion.outputProfiles.map(profile => <div key={profile.id}><div><strong>{profile.displayName}</strong><span>{profile.width}×{profile.height} · {profile.orientation} · {profile.frameRate} fps</span></div><StatusPill value={profile.isDefault ? 'default' : 'available'} /></div>)}
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="Read-only Google Sheets sync" subtitle="Uses OAuth read scope, materializes a bounded workbook, and only stages the existing catalog diff">
+          <div className="settings-form">
+            <label><span>Spreadsheet ID</span><input value={sheetDraft.spreadsheetId} onChange={event => setSheetDraft({ ...sheetDraft, spreadsheetId: event.target.value })} /></label>
+            <label><span>Sheet range</span><input value={sheetDraft.sheetRange} onChange={event => setSheetDraft({ ...sheetDraft, sheetRange: event.target.value })} /></label>
+            <div className="button-row">
+              <Button variant="secondary" busy={busy === 'sheets-sync'} disabled={!sheetDraft.spreadsheetId || !sheetDraft.sheetRange || !bootstrap.secrets.youtubeAuthorized} onClick={() => void stageGoogleSheet()}><Sheet size={15} /> Fetch and stage diff</Button>
+              {sheetOperationId ? <Button variant="danger" busy={sheetCancellationRequested} onClick={() => void cancelGoogleSheet()}><X size={15} /> {sheetCancellationRequested ? 'Cancelling safely' : 'Cancel staging'}</Button> : null}
+            </div>
+            <small>{bootstrap.secrets.youtubeAuthorized ? 'Google OAuth is configured. Live Sheets access remains unqualified until a real rehearsal succeeds.' : 'Connect Google OAuth first. The app requests read-only Sheets access and never writes to the spreadsheet.'}</small>
+          </div>
+        </Panel>
+
+        <Panel title="Provider capability registry" subtitle="Configured and available are runtime facts; external qualification remains a separate evidence gate">
+          <div className="provider-registry">
+            {bootstrap.expansion.providers.map(provider => (
+              <div key={provider.id}>
+                <div><strong>{provider.displayName}</strong><span>{provider.capability.replaceAll('_', ' ')} · {provider.implementation}</span><small>{provider.statusMessage ?? 'No runtime receipt.'}</small></div>
+                <div><StatusPill value={provider.configured ? 'configured' : 'not configured'} /><StatusPill value={provider.available ? 'available' : 'unavailable'} /><StatusPill value={provider.externalQualification} /></div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="Settings profile and updates" subtitle="Profiles are portable and secret-free; update checks never install code">
+          <div className="settings-form">
+            <label>
+              <span>Update channel</span>
+              <select value={form.updateChannel} onChange={event => setForm({ ...form, updateChannel: event.target.value as AppSettings['updateChannel'] })}>
+                <option value="stable">Stable releases</option>
+                <option value="prerelease">Prereleases</option>
+              </select>
+            </label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={form.updateCheckEnabled} onChange={event => setForm({ ...form, updateCheckEnabled: event.target.checked })} />
+              <span>Check GitHub daily for new releases</span>
+            </label>
+            <div className="button-row">
+              <Button variant="secondary" busy={busy === 'profile-export'} onClick={() => void exportProfile()}><Download size={15} /> Export profile</Button>
+              <Button variant="ghost" busy={busy === 'profile-import'} onClick={() => void importProfile()}><Upload size={15} /> Import profile</Button>
+              <Button variant="ghost" busy={busy === 'update'} onClick={() => void checkUpdate()}><RefreshCw size={15} /> Check updates</Button>
+            </div>
+            {bootstrap.latestUpdateCheck ? <div className="diagnostic-list"><div><RefreshCw size={14} /><div><strong>{bootstrap.latestUpdateCheck.available ? `${bootstrap.latestUpdateCheck.latestVersion} available` : bootstrap.latestUpdateCheck.status}</strong><span>{bootstrap.latestUpdateCheck.error ?? `Checked ${new Date(bootstrap.latestUpdateCheck.checkedAt).toLocaleString()}`}</span></div>{bootstrap.latestUpdateCheck.releaseUrl ? <button className="text-link" onClick={() => void window.videoFactory.system.openExternal(bootstrap.latestUpdateCheck!.releaseUrl!)}>Open release</button> : null}</div></div> : null}
           </div>
         </Panel>
 
@@ -279,7 +587,7 @@ export function SettingsView({
 
         <Panel title="System diagnostics" subtitle="Executable, storage, database, and encoder health">
           <div className="diagnostic-list">
-            {diagnostics.paths.map(path => (
+            {(diagnostics?.paths ?? []).map(path => (
               <div key={path.key}>
                 <Check size={14} className={path.exists && path.writable ? 'good-icon' : 'bad-icon'} />
                 <div><strong>{path.key}</strong><span>{path.path}</span></div>
@@ -288,7 +596,7 @@ export function SettingsView({
             ))}
             <div>
               <Cpu size={14} />
-              <div><strong>H.264 encoders</strong><span>{diagnostics.ffmpeg.encoders.join(', ') || 'No encoder detected'}</span></div>
+              <div><strong>H.264 encoders</strong><span>{diagnostics ? (diagnostics.ffmpeg.encoders.join(', ') || 'No encoder detected') : 'Checking encoder availability…'}</span></div>
             </div>
           </div>
           <Button

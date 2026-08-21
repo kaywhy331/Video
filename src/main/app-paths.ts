@@ -27,6 +27,7 @@ export function buildDefaultSettings(dataRoot = defaultDataRoot()): AppSettings 
   ensure(join(media, 'keyframes'));
   ensure(join(media, 'segments'));
   ensure(join(media, 'quarantine'));
+  ensure(join(media, 'music'));
   ensure(join(output, 'draft'));
   ensure(join(output, 'review'));
   ensure(join(output, 'published'));
@@ -43,6 +44,18 @@ export function buildDefaultSettings(dataRoot = defaultDataRoot()): AppSettings 
     backupDailyRetention: 7,
     backupWeeklyRetention: 4,
     backupMonthlyRetention: 6,
+    catalogImportFile: '',
+    catalogRefreshEnabled: false,
+    catalogRefreshIntervalHours: 24,
+    catalogValidationTemplateId: 'envato-default',
+    autopilotSchedulerEnabled: false,
+    autopilotCadenceDays: 7,
+    autopilotPublicationHourUtc: 17,
+    musicEnabled: false,
+    musicTargetGainDb: -24,
+    musicDuckingDb: -12,
+    automaticDerivativeCleanup: true,
+    derivativeCleanupTargetGb: 5,
     ffmpegPath: '',
     ffprobePath: '',
     monthlyBudgetUsd: 100,
@@ -53,9 +66,15 @@ export function buildDefaultSettings(dataRoot = defaultDataRoot()): AppSettings 
     maxPrivateApproval: 1,
     targetVideoMinutes: 5,
     defaultOutput: '1080p',
+    updateChannel: 'prerelease',
+    updateCheckEnabled: true,
     preferredShotMinSeconds: 3,
     preferredShotMaxSeconds: 5.5,
     hardShotMaxSeconds: 7,
+    matchingMaxSourceUses: 2,
+    matchingMaxConsecutiveShotMotion: 2,
+    matchingPerceptualDistance: 6,
+    matchingHeroStrategy: 'opening',
     narratorProvider: 'windows_sapi',
     narratorBaseUrl: 'https://api.example.com/v1/tts',
     narratorModel: 'default',
@@ -100,6 +119,7 @@ export function ensureSettingsPaths(settings: AppSettings): void {
     join(settings.mediaLibraryFolder, 'keyframes'),
     join(settings.mediaLibraryFolder, 'segments'),
     join(settings.mediaLibraryFolder, 'quarantine'),
+    join(settings.mediaLibraryFolder, 'music'),
     join(settings.outputFolder, 'draft'),
     join(settings.outputFolder, 'review'),
     join(settings.outputFolder, 'published')

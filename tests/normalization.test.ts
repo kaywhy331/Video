@@ -33,4 +33,20 @@ describe('catalog normalization', () => {
     expect(left).toBe(right);
     expect(left).toHaveLength(64);
   });
+
+  it('uses provider identity ahead of mutable source-row metadata', () => {
+    const left = stableAssetKey({
+      provider: 'envato',
+      canonicalPageUrl: 'https://elements.envato.com/a-ABC123',
+      sourceRowId: '1',
+      title: 'Original title'
+    });
+    const right = stableAssetKey({
+      provider: 'envato',
+      canonicalPageUrl: 'https://elements.envato.com/a-ABC123',
+      sourceRowId: '27',
+      title: 'Corrected title'
+    });
+    expect(left).toBe(right);
+  });
 });

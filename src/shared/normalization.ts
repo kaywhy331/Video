@@ -151,14 +151,19 @@ export function stableAssetKey(input: {
   title?: string | null;
   authorName?: string | null;
 }): string {
-  const payload = [
-    input.provider ?? 'envato',
-    input.providerAssetId ?? '',
-    input.canonicalPageUrl ?? '',
-    input.sourceRowId ?? '',
-    input.title ?? '',
-    input.authorName ?? ''
-  ].join('|').toLowerCase();
+  const provider = normalizeNullable(input.provider)?.toLowerCase() ?? 'envato';
+  const providerAssetId = normalizeNullable(input.providerAssetId)?.toLowerCase();
+  const canonicalPageUrl = normalizeNullable(input.canonicalPageUrl)?.toLowerCase();
+  const sourceRowId = normalizeNullable(input.sourceRowId)?.toLowerCase();
+  const title = normalizeNullable(input.title)?.toLowerCase() ?? '';
+  const authorName = normalizeNullable(input.authorName)?.toLowerCase() ?? '';
+  const payload = providerAssetId
+    ? `${provider}|provider-asset-id|${providerAssetId}`
+    : canonicalPageUrl
+      ? `${provider}|canonical-page-url|${canonicalPageUrl}`
+      : sourceRowId
+        ? `${provider}|source-row-id|${sourceRowId}`
+        : `${provider}|descriptive-fallback|${title}|${authorName}`;
   return createHash('sha256').update(payload).digest('hex');
 }
 

@@ -42,6 +42,7 @@ if (!existsSync(packagePath)) {
     'zod'
   ];
   const requiredDev = [
+    '@playwright/test',
     '@types/node',
     '@types/react',
     '@types/react-dom',
@@ -49,6 +50,7 @@ if (!existsSync(packagePath)) {
     'electron',
     'electron-builder',
     'electron-vite',
+    'axe-core',
     'typescript',
     'vite',
     'vitest'
@@ -72,6 +74,12 @@ if (!existsSync(packagePath)) {
   }
   if (!existsSync(resolve(root, 'resources', '001_initial.sql'))) {
     fail('The packaged SQLite migration is missing.');
+  }
+  if (!existsSync(resolve(root, 'resources', '017_deferred_lifecycle.sql'))) {
+    fail('The latest packaged SQLite migration is missing.');
+  }
+  if (!existsSync(resolve(root, 'validation', 'acceptance-map.json'))) {
+    fail('The acceptance traceability map is missing.');
   }
 
   checkBundledSqlite();

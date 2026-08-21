@@ -15,7 +15,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -32,9 +32,29 @@ jobs:
       - name: Validate application
         run: npm run validate
 
+      - name: Audit locked dependencies
+        run: npm run security:audit
+
+      - name: Generate CycloneDX SBOM
+        run: npm run security:sbom
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: VideoFactory-Desktop-${{ github.sha }}-validation-evidence
+          path: |
+            VALIDATION_ACCEPTANCE_RECEIPT.json
+            VALIDATION_STATUS.json
+            validation/results/vitest.json
+            validation/results/playwright.json
+            validation/results/pipeline.json
+            release/videofactory-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+
   package-windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v5

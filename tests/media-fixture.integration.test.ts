@@ -6,9 +6,12 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import { requireSuccess } from '@main/services/process-utils';
 import { parseBlackIntervals, parseFreezeIntervals } from '@shared/media-analysis';
+import { assertSupportedSourceColor } from '@shared/color-policy';
 
 const root = mkdtempSync(join(tmpdir(), 'videofactory-media-fixture-'));
 const output = join(root, 'fixture.mp4');
+const hdrInput = join(root, 'hdr-input.mp4');
+const toneMappedOutput = join(root, 'hdr-tonemapped.mp4');
 
 describe('real FFmpeg production fixture', () => {
   beforeAll(async () => {
@@ -66,4 +69,36 @@ describe('real FFmpeg production fixture', () => {
     expect(parseBlackIntervals(result.stderr)).toEqual([]);
     expect(parseFreezeIntervals(result.stderr, 2_000)).toEqual([]);
   });
+
+  it('tone-maps a tagged BT.2020 PQ source into a tagged BT.709 SDR output', async () => {
+    if (!ffmpegPath) throw new Error('ffmpeg-static binary is unavailable.');
+    await requireSuccess(ffmpegPath, [
+      '-y', '-hide_banner',
+      '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=1',
+      '-vf', 'format=yuv420p10le',
+      '-c:v', 'libx264', '-preset', 'ultrafast',
+      '-color_range', 'tv', '-colorspace', 'bt2020nc',
+      '-color_primaries', 'bt2020', '-color_trc', 'smpte2084',
+      '-an', hdrInput
+    ]);
+    const treatment = assertSupportedSourceColor({
+      colorSpace: 'bt2020nc', colorTransfer: 'smpte2084', colorPrimaries: 'bt2020'
+    });
+    await requireSuccess(ffmpegPath, [
+      '-y', '-hide_banner', '-i', hdrInput,
+      '-vf', treatment.videoFilter!,
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+      '-color_range', 'tv', '-colorspace', 'bt709',
+      '-color_primaries', 'bt709', '-color_trc', 'bt709',
+      '-an', toneMappedOutput
+    ]);
+    const result = await requireSuccess(ffprobeStatic.path, [
+      '-v', 'error', '-show_streams', '-of', 'json', toneMappedOutput
+    ]);
+    const probe = JSON.parse(result.stdout) as { streams: Array<Record<string, unknown>> };
+    expect(probe.streams.find(stream => stream.codec_type === 'video')).toMatchObject({
+      codec_name: 'h264', pix_fmt: 'yuv420p', color_space: 'bt709',
+      color_transfer: 'bt709', color_primaries: 'bt709'
+    });
+  }, 30_000);
 }, 30_000);

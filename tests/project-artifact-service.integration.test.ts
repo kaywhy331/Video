@@ -70,6 +70,16 @@ describe('project artifact export and deterministic rebuild', () => {
         'QC_DRAFT', 0.72, 'YT-PORTABLE-0001', 1800, 'script-1', ?, ?)
     `).run(now, now);
     database.raw.prepare(`
+      INSERT INTO project_guidance(
+        project_id, mode, starting_script, starting_script_sha256,
+        requested_destination_key, requested_target_duration_ms,
+        resolved_destination_key, resolved_destination, resolved_topic_title,
+        resolved_target_duration_ms, constraints_json, created_at
+      ) VALUES('project-1', 'guided', 'Open with the Zocalo.', 'fixture-seed-hash',
+        'mexico|oaxaca|', 60000, 'mexico|oaxaca|', 'Oaxaca', 'Portable Fixture',
+        60000, '{"role":"editorial_guidance_only","evidenceEligible":false}', ?)
+    `).run(now);
+    database.raw.prepare(`
       INSERT INTO script_versions(
         id, project_id, version_number, title, topic, script_json, generation_reason,
         provider, model, input_hash, locked, script_type, locked_at, created_at
@@ -245,5 +255,12 @@ describe('project artifact export and deterministic rebuild', () => {
     expect(publicationAudit.publicationRecords).toEqual([
       expect.objectContaining({ upload_session_uri: null, upload_session_present: true })
     ]);
+    const projectMetadata = JSON.parse(readFileSync(join(report.exportPath, 'metadata', 'project.json'), 'utf8'));
+    expect(projectMetadata.projectGuidance).toMatchObject({
+      project_id: 'project-1',
+      mode: 'guided',
+      starting_script: 'Open with the Zocalo.',
+      starting_script_sha256: 'fixture-seed-hash'
+    });
   }, 60_000);
 });

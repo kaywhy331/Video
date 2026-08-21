@@ -1,4 +1,5 @@
 import { shell } from 'electron';
+import { existsSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { AppDatabase } from '../database/database';
 import type { AcquisitionItem } from '@shared/types';
@@ -39,7 +40,9 @@ function mapRow(row: Record<string, unknown>): AcquisitionItem {
 
 export function validateEnvatoUrl(value: string): URL {
   const url = new URL(value);
-  if (url.protocol !== 'https:') throw new Error('Only HTTPS links may be opened.');
+  if (url.protocol !== 'https:' || url.username || url.password) {
+    throw new Error('Only credential-free HTTPS links may be opened.');
+  }
   const host = url.hostname.toLowerCase();
   const allowed = host === 'elements.envato.com'
     || host.endsWith('.elements.envato.com')
@@ -121,53 +124,107 @@ export class AcquisitionService {
   }
 
   async attest(acquisitionId: string, certificatePath?: string): Promise<AcquisitionItem> {
-    const item = this.db.raw.prepare(`
-      SELECT a.*, x.local_file_id
-      FROM acquisition_items a
-      JOIN assets x ON x.id = a.asset_id
-      WHERE a.id = ?
-    `).get(acquisitionId) as Record<string, unknown> | undefined;
+    const item = this.db.raw.prepare('SELECT project_id FROM acquisition_items WHERE id = ?')
+      .get(acquisitionId) as { project_id: string } | undefined;
     if (!item) throw new Error('Acquisition item not found.');
-    const now = new Date().toISOString();
-    const licenseState = certificatePath ? 'CERTIFICATE_ATTACHED' : 'OPERATOR_ATTESTED';
-    const isLicenseOnly = item.state === 'LICENSE_ONLY_PENDING';
-    const transaction = this.db.raw.transaction(() => {
-      this.db.raw.prepare(`
-        UPDATE acquisition_items
-        SET license_state = ?, state = CASE WHEN ? THEN 'COMPLETE' ELSE state END,
-            updated_at = ?
-        WHERE id = ?
-      `).run(licenseState, Number(isLicenseOnly), now, acquisitionId);
-      this.db.raw.prepare(`
-        UPDATE project_licenses
-        SET license_state = ?, certificate_path = coalesce(?, certificate_path),
-            operator_attested_at = ?, updated_at = ?
-        WHERE project_id = ? AND asset_id = ?
-      `).run(
-        licenseState,
-        certificatePath ?? null,
-        now,
-        now,
-        item.project_id,
-        item.asset_id
-      );
-    });
-    transaction();
-
-    if (isLicenseOnly && item.local_file_id) {
-      await this.media.verifyLocalAsset(
-        String(item.project_id),
-        String(item.asset_id),
-        String(item.local_file_id)
-      );
-    }
-
+    await this.attestItems(String(item.project_id), [acquisitionId], certificatePath);
     const row = this.db.raw.prepare(`
       SELECT a.*, x.title AS asset_title, x.thumbnail_url
       FROM acquisition_items a JOIN assets x ON x.id = a.asset_id
       WHERE a.id = ?
     `).get(acquisitionId) as Record<string, unknown>;
     return mapRow(row);
+  }
+
+  async attestProject(projectId: string, certificatePath?: string): Promise<AcquisitionItem[]> {
+    const states = certificatePath
+      ? ['PENDING', 'OPERATOR_ATTESTED']
+      : ['PENDING'];
+    const targets = (this.db.raw.prepare(`
+      SELECT id FROM acquisition_items
+      WHERE project_id = ? AND state <> 'SKIPPED'
+        AND license_state IN (${states.map(() => '?').join(',')})
+      ORDER BY ordinal, id
+    `).all(projectId, ...states) as Array<{ id: string }>).map(row => row.id);
+    if (targets.length) await this.attestItems(projectId, targets, certificatePath);
+    return this.list(projectId);
+  }
+
+  private async attestItems(projectId: string, acquisitionIds: string[], certificatePath?: string): Promise<void> {
+    if (certificatePath && (!existsSync(certificatePath) || !statSync(certificatePath).isFile())) {
+      throw new Error('The selected license certificate does not exist or is not a file.');
+    }
+    const uniqueIds = [...new Set(acquisitionIds)];
+    if (!uniqueIds.length) return;
+    const placeholders = uniqueIds.map(() => '?').join(',');
+    const items = this.db.raw.prepare(`
+      SELECT a.*, x.local_file_id
+      FROM acquisition_items a
+      JOIN assets x ON x.id = a.asset_id
+      WHERE a.project_id = ? AND a.id IN (${placeholders}) AND a.state <> 'SKIPPED'
+      ORDER BY a.ordinal, a.id
+    `).all(projectId, ...uniqueIds) as Array<Record<string, unknown>>;
+    if (items.length !== uniqueIds.length) {
+      throw new Error('Every license attestation target must belong to the selected project and remain active.');
+    }
+    const allowedStates = certificatePath
+      ? new Set(['PENDING', 'OPERATOR_ATTESTED'])
+      : new Set(['PENDING']);
+    if (items.some(item => !allowedStates.has(String(item.license_state)))) {
+      throw new Error(certificatePath
+        ? 'A certificate can only be attached to pending or operator-attested licenses.'
+        : 'Only pending licenses can be operator-attested.');
+    }
+    const now = new Date().toISOString();
+    const licenseState = certificatePath ? 'CERTIFICATE_ATTACHED' : 'OPERATOR_ATTESTED';
+    const transaction = this.db.raw.transaction(() => {
+      for (const item of items) {
+        const acquisition = this.db.raw.prepare(`
+          UPDATE acquisition_items
+          SET license_state = ?, updated_at = ?
+          WHERE id = ? AND license_state IN (${[...allowedStates].map(() => '?').join(',')})
+        `).run(licenseState, now, item.id, ...allowedStates);
+        if (Number(acquisition.changes) !== 1) {
+          throw new Error('An acquisition license changed before attestation could finish.');
+        }
+        const license = this.db.raw.prepare(`
+          UPDATE project_licenses
+          SET license_state = ?, certificate_path = coalesce(?, certificate_path),
+              operator_attested_at = coalesce(operator_attested_at, ?), updated_at = ?
+          WHERE project_id = ? AND asset_id = ?
+            AND license_state IN (${[...allowedStates].map(() => '?').join(',')})
+        `).run(licenseState, certificatePath ?? null, now, now, projectId, item.asset_id, ...allowedStates);
+        if (Number(license.changes) !== 1) {
+          throw new Error('The matching project license is missing or no longer eligible for attestation.');
+        }
+      }
+      this.db.raw.prepare(`
+        INSERT INTO audit_log(
+          project_id, action, actor, entity_type, entity_id,
+          before_json, after_json, metadata_json, created_at
+        ) VALUES(?, 'license.batch_attested', 'operator', 'project', ?, ?, ?, ?, ?)
+      `).run(
+        projectId,
+        projectId,
+        JSON.stringify({ acquisitionIds: uniqueIds, states: items.map(item => item.license_state) }),
+        JSON.stringify({ acquisitionIds: uniqueIds, licenseState }),
+        JSON.stringify({ count: items.length, certificateAttached: Boolean(certificatePath), certificateName: certificatePath ? basename(certificatePath) : null }),
+        now
+      );
+    });
+    transaction();
+
+    for (const item of items) {
+      if (item.state === 'LICENSE_ONLY_PENDING' && item.local_file_id) {
+        await this.media.verifyLocalAsset(projectId, String(item.asset_id), String(item.local_file_id));
+        this.db.raw.prepare(`
+          UPDATE acquisition_items
+          SET state = 'COMPLETE', updated_at = ?
+          WHERE id = ? AND state = 'LICENSE_ONLY_PENDING'
+        `).run(new Date().toISOString(), item.id);
+      }
+    }
+    await this.media.reconcileAcquisition(projectId);
   }
 
   async mapFile(acquisitionId: string, filePath: string): Promise<void> {

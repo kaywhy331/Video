@@ -1,11 +1,14 @@
 import { app, BrowserWindow, Notification } from 'electron';
+import { randomUUID } from 'node:crypto';
+import { statfsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AppSettings, AppBootstrap, QueueSummary, ProgressEvent } from '@shared/types';
+import type { AppSettings, AppBootstrap, AppStateSnapshot, OperationsHealth, QueueSummary, ProgressEvent } from '@shared/types';
 import { buildDefaultSettings, ensureSettingsPaths } from './app-paths';
 import { AppDatabase } from './database/database';
 import { Logger } from './logger';
 import { SecretStore } from './secret-store';
 import { CatalogService } from './services/catalog-service';
+import { CatalogImportWorkerService } from './services/catalog-import-worker-service';
 import { DiagnosticsService } from './services/diagnostics-service';
 import { AiService } from './services/ai-service';
 import { ProjectService } from './services/project-service';
@@ -18,6 +21,7 @@ import { RenderService } from './services/render-service';
 import { YouTubeService } from './services/youtube-service';
 import { FinalReviewService } from './services/final-review-service';
 import { ExceptionService } from './services/exception-service';
+import { AmbiguousMappingService } from './services/ambiguous-mapping-service';
 import { BackupService } from './services/backup-service';
 import { IPC } from '@shared/ipc-channels';
 import { PlaceService } from './services/place-service';
@@ -28,6 +32,17 @@ import { ProviderPolicyService } from './services/provider-policy';
 import { ScriptFinalizationService } from './services/script-finalization-service';
 import { NarrationService } from './services/narration-service';
 import { ProjectArtifactService } from './services/project-artifact-service';
+import { SettingsProfileService, UpdateService } from './services/operations-service';
+import { SchedulerService } from './services/scheduler-service';
+import { AnalyticsService } from './services/analytics-service';
+import { MusicService } from './services/music-service';
+import { StorageService } from './services/storage-service';
+import { ExpansionService } from './services/expansion-service';
+import { GoogleProviderService } from './services/google-provider-service';
+import { WorkflowService } from './services/workflow-service';
+import { StoryboardService } from './services/storyboard-service';
+import { OperationGate, type ActiveOperation } from './services/operation-gate';
+import { classifyOperationsHealth } from '@shared/operations-health';
 
 export class AppContext {
   readonly db: AppDatabase;
@@ -39,6 +54,7 @@ export class AppContext {
   readonly providerPolicy: ProviderPolicyService;
   readonly research: ResearchService;
   readonly catalog: CatalogService;
+  readonly catalogImports: CatalogImportWorkerService;
   readonly diagnostics: DiagnosticsService;
   readonly ai: AiService;
   readonly projects: ProjectService;
@@ -52,15 +68,34 @@ export class AppContext {
   readonly youtube: YouTubeService;
   readonly finalReview: FinalReviewService;
   readonly exceptions: ExceptionService;
+  readonly ambiguousMappings: AmbiguousMappingService;
   readonly watcher: DownloadWatcher;
   readonly backups: BackupService;
   readonly artifacts: ProjectArtifactService;
+  readonly settingsProfiles: SettingsProfileService;
+  readonly updates: UpdateService;
+  readonly scheduler: SchedulerService;
+  readonly analytics: AnalyticsService;
+  readonly music: MusicService;
+  readonly storage: StorageService;
+  readonly expansion: ExpansionService;
+  readonly google: GoogleProviderService;
+  readonly workflow: WorkflowService;
+  readonly storyboard: StoryboardService;
 
   private settingsValue: AppSettings;
   private powerBlockerChanged?: (active: boolean) => void;
   private backupTimer?: NodeJS.Timeout;
   private backupStartupTimer?: NodeJS.Timeout;
+  private catalogRefreshTimer?: NodeJS.Timeout;
+  private updateCheckTimer?: NodeJS.Timeout;
+  private schedulerTimer?: NodeJS.Timeout;
+  private analyticsTimer?: NodeJS.Timeout;
+  private storageTimer?: NodeJS.Timeout;
+  private diagnosticsRefresh?: Promise<void>;
   private started = false;
+  private readonly operationGate = new OperationGate();
+  private stopPromise?: Promise<void>;
 
   constructor(private readonly mainWindow: () => BrowserWindow | null) {
     const defaults = buildDefaultSettings();
@@ -76,6 +111,10 @@ export class AppContext {
     this.places = new PlaceService(this.db);
     this.places.syncAssetsMissingAssertions();
     this.catalog = new CatalogService(this.db, this.places);
+    this.catalogImports = new CatalogImportWorkerService(
+      this.db.path,
+      event => this.emitProgress(event)
+    );
     this.jobs = new JobService(this.db);
     this.jobs.recoverInterrupted();
     this.exceptions = new ExceptionService(this.db);
@@ -98,6 +137,20 @@ export class AppContext {
       this.places,
       this.research,
       this.vision
+    );
+    this.jobs.setCheckpointHandler(projectId => {
+      try {
+        if (this.projects.applyPendingLifecycle(projectId)) this.emitState();
+      } catch (error) {
+        this.logger.error('Deferred project lifecycle request failed at job checkpoint', error);
+      }
+    });
+    this.storyboard = new StoryboardService(
+      this.db,
+      this.projects,
+      this.projects.repairs,
+      this.places,
+      this.footageVerification
     );
     this.scriptFinalization = new ScriptFinalizationService(
       this.db,
@@ -132,11 +185,11 @@ export class AppContext {
         });
       },
       async projectId => {
-        await this.scriptFinalization.finalize(projectId);
-        await this.narration.generate(projectId);
+        this.queueWorkflow(projectId);
       }
     );
     this.acquisitions = new AcquisitionService(this.db, this.media);
+    this.ambiguousMappings = new AmbiguousMappingService(this.db, this.acquisitions);
     this.renders = new RenderService(
       this.db,
       () => this.settingsValue,
@@ -146,14 +199,10 @@ export class AppContext {
         this.emitProgress({ jobId, projectId, type: 'render', progress, phase, message });
       },
       async (projectId, targetState) => {
-        if (targetState === 'FINALIZING_SCRIPT') {
-          await this.scriptFinalization.finalize(projectId);
-          await this.narration.generate(projectId);
-        } else if (targetState === 'GENERATING_VOICE') {
-          await this.narration.generate(projectId);
-        }
+        await this.workflow.prepareRepairWithinRenderJob(projectId, targetState);
       }
     );
+    this.renders.recoverInterrupted();
     this.youtube = new YouTubeService(
       this.db,
       () => this.settingsValue,
@@ -170,7 +219,19 @@ export class AppContext {
         });
       }
     );
-    this.finalReview = new FinalReviewService(this.db, this.projects);
+    this.finalReview = new FinalReviewService(this.db, this.projects, () => this.settingsValue.projectFolder);
+    this.workflow = new WorkflowService(
+      this.db,
+      this.jobs,
+      this.projects,
+      this.scriptFinalization,
+      this.narration,
+      this.renders,
+      this.finalReview,
+      this.youtube,
+      () => this.emitState(),
+      active => this.setLongOperationActive(active)
+    );
     this.backups = new BackupService(this.db, () => this.settingsValue);
     this.artifacts = new ProjectArtifactService(this.db, () => this.settingsValue);
     this.watcher = new DownloadWatcher(
@@ -178,6 +239,37 @@ export class AppContext {
       this.media,
       () => this.settingsValue,
       message => this.notify(message)
+    );
+    this.settingsProfiles = new SettingsProfileService(
+      this.db,
+      () => this.settingsValue,
+      patch => this.updateSettings(patch),
+      app.getVersion()
+    );
+    this.updates = new UpdateService(this.db, () => this.settingsValue, app.getVersion());
+    this.scheduler = new SchedulerService(
+      this.db,
+      () => this.settingsValue,
+      () => this.projects.createAutopilot({}),
+      () => this.workflow.resumeOldest()
+    );
+    this.google = new GoogleProviderService(this.secrets);
+    this.analytics = new AnalyticsService(
+      this.db,
+      () => this.settingsValue,
+      patch => this.updateSettings(patch),
+      this.google,
+      this.jobs
+    );
+    this.music = new MusicService(this.db, () => this.settingsValue);
+    this.storage = new StorageService(this.db, () => this.settingsValue);
+    this.expansion = new ExpansionService(
+      this.db,
+      this.catalog,
+      () => this.settingsValue,
+      () => this.secrets.status(),
+      this.catalogImports,
+      this.google
     );
   }
 
@@ -187,6 +279,18 @@ export class AppContext {
 
   setLongOperationActive(active: boolean): void {
     this.powerBlockerChanged?.(active);
+  }
+
+  runOperation<T>(label: string, work: () => T | Promise<T>): Promise<T> {
+    return this.operationGate.run(label, work);
+  }
+
+  pendingOperations(): ActiveOperation[] {
+    return this.operationGate.snapshot();
+  }
+
+  acceptsOperations(): boolean {
+    return this.operationGate.isAccepting;
   }
 
   settings(): AppSettings {
@@ -210,8 +314,10 @@ export class AppContext {
     for (const provider of healthToReset) this.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
     this.settingsValue = next;
     this.db.saveAppSettings(next);
-    await this.watcher.start();
+    if (this.operationGate.isAccepting) await this.watcher.start();
     if (this.started) this.startBackupScheduler();
+    if (this.started) this.startOperationsSchedulers();
+    this.refreshDiagnosticsInBackground();
     this.emitState();
     return this.settings();
   }
@@ -243,15 +349,73 @@ export class AppContext {
     };
   }
 
+  operationsHealth(): OperationsHealth {
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const spend = this.db.raw.prepare(`
+      SELECT coalesce(sum(estimated_cost_usd), 0) AS total
+      FROM provider_calls WHERE created_at >= ?
+    `).get(monthStart.toISOString()) as { total: number };
+    const spentUsd = Number(spend.total);
+    const limitUsd = this.settingsValue.monthlyBudgetUsd;
+    let freeBytes: number | null = null;
+    try {
+      const stats = statfsSync(this.settingsValue.mediaLibraryFolder);
+      freeBytes = stats.bavail * stats.bsize;
+    } catch {
+      freeBytes = null;
+    }
+    const minimumBytes = this.settingsValue.minFreeDiskGb * 1024 ** 3;
+    const runningTypes = (this.db.raw.prepare(`SELECT type FROM jobs WHERE state = 'RUNNING' ORDER BY type`).all() as Array<{ type: string }>)
+      .map(row => row.type);
+    const activeStates = (this.db.raw.prepare(`
+      SELECT state FROM projects
+      WHERE state IN ('INGESTING_MEDIA','VERIFYING_FOOTAGE','RENDERING_DRAFT','RENDERING_FINAL','UPLOADING_PRIVATE','WAITING_YOUTUBE_PROCESSING')
+    `).all() as Array<{ state: string }>).map(row => row.state);
+    return classifyOperationsHealth({
+      spentUsd,
+      limitUsd,
+      freeBytes,
+      minimumBytes,
+      providers: (this.db.raw.prepare(`
+        SELECT provider, status, message, checked_at FROM provider_health ORDER BY provider
+      `).all() as Array<{ provider: string; status: OperationsHealth['providers'][number]['status']; message: string | null; checked_at: string }>).map(row => ({
+        provider: row.provider,
+        status: row.status,
+        message: row.message,
+        checkedAt: row.checked_at
+      })),
+      runningTypes,
+      activeProjectStates: activeStates
+    });
+  }
+
   async bootstrap(): Promise<AppBootstrap> {
+    const snapshot = this.stateSnapshot();
+    if (!snapshot.diagnostics) this.refreshDiagnosticsInBackground();
     return {
       settings: this.settings(),
       secrets: this.secrets.status(),
-      diagnostics: await this.diagnostics.run(),
+      ...snapshot
+    };
+  }
+
+  stateSnapshot(): AppStateSnapshot {
+    return {
+      diagnostics: this.diagnostics.latest(),
       queue: this.queueSummary(),
       catalog: this.catalog.stats(),
       projects: this.projects.list(),
-      exceptions: this.exceptions.list(undefined, true).slice(0, 20)
+      exceptions: this.exceptions.list(undefined, true).slice(0, 20),
+      latestCatalogRefresh: this.catalog.latestRefresh(),
+      latestUpdateCheck: this.updates.latest(),
+      scheduler: this.scheduler.status(),
+      operationsHealth: this.operationsHealth(),
+      learningRecommendations: this.analytics.recommendations(),
+      musicTracks: this.music.list(),
+      latestStorageCleanup: this.storage.latest(),
+      expansion: this.expansion.registry()
     };
   }
 
@@ -260,12 +424,7 @@ export class AppContext {
   }
 
   emitState(): void {
-    this.mainWindow()?.webContents.send(IPC.stateEvent, {
-      queue: this.queueSummary(),
-      catalog: this.catalog.stats(),
-      projects: this.projects.list(),
-      exceptions: this.exceptions.list(undefined, true).slice(0, 20)
-    });
+    this.mainWindow()?.webContents.send(IPC.stateEvent, this.stateSnapshot());
   }
 
   notify(message: string): void {
@@ -286,16 +445,67 @@ export class AppContext {
       BackupService.acknowledgeCompletedRestore(this.settingsValue.databasePath);
     }
     await this.watcher.start();
-    await this.media.recoverPendingSemanticAlternates();
+    const staleDerivativeCount = this.media.staleDerivativeCount();
+    if (!staleDerivativeCount) await this.media.recoverPendingSemanticAlternates();
     this.started = true;
+    this.refreshDiagnosticsInBackground();
+    if (staleDerivativeCount) {
+      this.runBackground(
+        'media:refresh-stale-derivatives',
+        async () => {
+          const refreshed = await this.media.refreshStaleDerivatives();
+          await this.media.recoverPendingSemanticAlternates();
+          this.logger.info('Stale media derivatives regenerated', {
+            refreshed,
+            pipelineVersion: MediaService.PIPELINE_VERSION
+          });
+          await this.workflow.resumeOldest();
+          this.emitState();
+        },
+        error => {
+          this.logger.error('Stale media derivative regeneration failed closed', error);
+          this.notify(`Media derivative regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      );
+    } else {
+      this.queueOldestWorkflow();
+    }
     this.startBackupScheduler();
+    this.startOperationsSchedulers();
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
     this.started = false;
+    this.operationGate.close();
+    this.stopPromise = this.stopOnce();
+    return this.stopPromise;
+  }
+
+  private async stopOnce(): Promise<void> {
     if (this.backupStartupTimer) clearTimeout(this.backupStartupTimer);
     if (this.backupTimer) clearInterval(this.backupTimer);
-    await this.watcher.stop();
+    if (this.catalogRefreshTimer) clearInterval(this.catalogRefreshTimer);
+    if (this.updateCheckTimer) clearInterval(this.updateCheckTimer);
+    if (this.schedulerTimer) clearInterval(this.schedulerTimer);
+    if (this.analyticsTimer) clearInterval(this.analyticsTimer);
+    if (this.storageTimer) clearInterval(this.storageTimer);
+    const serviceStops = await Promise.allSettled([
+      this.watcher.stop(),
+      this.catalogImports.shutdown()
+    ]);
+    await this.operationGate.waitForIdle();
+    const stopFailures = serviceStops.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+    if (stopFailures.length) {
+      throw new AggregateError(stopFailures, 'One or more application services could not stop safely.');
+    }
+    this.db.raw.prepare(`
+      UPDATE catalog_imports
+      SET status = 'cancelled', error = coalesce(error, 'Application closed during catalog import'),
+          completed_at = coalesce(completed_at, ?)
+      WHERE status = 'running'
+    `).run(new Date().toISOString());
+    this.db.checkpoint();
     this.db.close();
   }
 
@@ -315,5 +525,130 @@ export class AppContext {
     this.backupStartupTimer.unref();
     this.backupTimer = setInterval(sweep, 60 * 60 * 1_000);
     this.backupTimer.unref();
+  }
+
+  private refreshDiagnosticsInBackground(): void {
+    if (!this.started || !this.operationGate.isAccepting || this.diagnostics.latest() || this.diagnosticsRefresh) return;
+    const refresh = this.operationGate.run('background diagnostics', async () => {
+      await this.diagnostics.run();
+      this.emitState();
+    })
+      .catch(error => this.logger.error('Background system diagnostics failed', error))
+      .finally(() => {
+        if (this.diagnosticsRefresh === refresh) this.diagnosticsRefresh = undefined;
+      });
+    this.diagnosticsRefresh = refresh;
+  }
+
+  queueWorkflow(projectId: string): void {
+    this.runBackground(
+      `workflow:${projectId}`,
+      () => this.workflow.advance(projectId),
+      error => {
+        this.logger.error('Automatic project continuation failed', { projectId, error });
+        this.emitState();
+      }
+    );
+  }
+
+  private queueOldestWorkflow(): void {
+    this.runBackground(
+      'workflow:resume-oldest',
+      () => this.workflow.resumeOldest(),
+      error => {
+        this.logger.error('Automatic startup continuation failed', error);
+        this.emitState();
+      }
+    );
+  }
+
+  private runBackground<T>(label: string, work: () => Promise<T>, onError: (error: unknown) => void): void {
+    if (!this.started || !this.operationGate.isAccepting) return;
+    void this.operationGate.run(label, work).catch(onError);
+  }
+
+  private startOperationsSchedulers(): void {
+    if (this.catalogRefreshTimer) clearInterval(this.catalogRefreshTimer);
+    if (this.updateCheckTimer) clearInterval(this.updateCheckTimer);
+    if (this.schedulerTimer) clearInterval(this.schedulerTimer);
+    if (this.analyticsTimer) clearInterval(this.analyticsTimer);
+    if (this.storageTimer) clearInterval(this.storageTimer);
+    const refreshCatalog = (): void => {
+      const settings = this.settingsValue;
+      if (!settings.catalogRefreshEnabled || !settings.catalogImportFile) return;
+      const latest = this.catalog.latestRefresh();
+      const intervalMs = settings.catalogRefreshIntervalHours * 60 * 60 * 1_000;
+      if (latest && Date.now() - Date.parse(latest.createdAt) < intervalMs) return;
+      this.runBackground('catalog:scheduled-refresh', async () => {
+        this.setLongOperationActive(true);
+        try {
+          const run = await this.catalogImports.refresh(randomUUID(), {
+            filePath: settings.catalogImportFile,
+            templateId: settings.catalogValidationTemplateId
+          });
+          if (run.status === 'staged') this.notify('A scheduled catalog refresh diff is staged for review.');
+          if (run.status === 'blocked' || run.status === 'failed') {
+            this.notify(`Scheduled catalog refresh ${run.status}: ${run.validation.issues[0] ?? run.error ?? 'Review required.'}`);
+          }
+        } finally {
+          if (!this.catalogImports.status()) this.setLongOperationActive(false);
+        }
+      }, error => this.logger.error('Scheduled catalog refresh failed', error));
+    };
+    const checkUpdates = (): void => {
+      if (!this.settingsValue.updateCheckEnabled) return;
+      const latest = this.updates.latest();
+      if (latest && Date.now() - Date.parse(latest.checkedAt) < 24 * 60 * 60 * 1_000) return;
+      this.runBackground('updates:scheduled-check', async () => {
+        const result = await this.updates.check();
+        if (result.available) this.notify(`VideoFactory ${result.latestVersion} is available.`);
+      }, error => this.logger.error('Application update check failed', error));
+    };
+    const runScheduler = (): void => {
+      this.runBackground('scheduler:evaluate', async () => {
+        const status = await this.scheduler.evaluate('timer');
+        if (status.state === 'blocked') this.logger.info('Autopilot scheduler paused by a recoverable gate', status);
+        this.emitState();
+      }, error => this.logger.error('Autopilot scheduler evaluation failed', error));
+    };
+    const cleanupStorage = (): void => {
+      if (!this.settingsValue.automaticDerivativeCleanup) return;
+      try {
+        const report = this.storage.cleanup({ trigger: 'disk_pressure' });
+        if (report.removedCount) this.logger.info('Regenerable derivative cleanup completed', report);
+      } catch (error) {
+        this.logger.error('Regenerable derivative cleanup failed', error);
+      }
+    };
+    const runAnalytics = (): void => {
+      this.runBackground('analytics:scheduled-checkpoints', async () => {
+        const result = await this.analytics.processDue();
+        if (result.dueJobs || result.succeeded || result.deferred || result.failed) {
+          this.logger.info('Analytics checkpoint sweep completed', result);
+          this.emitState();
+        }
+      }, error => this.logger.error('Analytics checkpoint sweep failed', error));
+    };
+    refreshCatalog();
+    checkUpdates();
+    runAnalytics();
+    this.runBackground(
+      'scheduler:startup',
+      async () => {
+        await this.scheduler.evaluate('startup');
+        this.emitState();
+      },
+      error => this.logger.error('Autopilot scheduler startup evaluation failed', error)
+    );
+    this.catalogRefreshTimer = setInterval(refreshCatalog, 60 * 60 * 1_000);
+    this.catalogRefreshTimer.unref();
+    this.updateCheckTimer = setInterval(checkUpdates, 6 * 60 * 60 * 1_000);
+    this.updateCheckTimer.unref();
+    this.schedulerTimer = setInterval(runScheduler, 15 * 60 * 1_000);
+    this.schedulerTimer.unref();
+    this.analyticsTimer = setInterval(runAnalytics, 60 * 60 * 1_000);
+    this.analyticsTimer.unref();
+    this.storageTimer = setInterval(cleanupStorage, 6 * 60 * 60 * 1_000);
+    this.storageTimer.unref();
   }
 }

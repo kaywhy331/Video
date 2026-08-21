@@ -90,4 +90,68 @@ describe('LLM claim extraction', () => {
     expect(db.raw.prepare(`SELECT retry_count, estimated_cost_usd FROM provider_calls WHERE operation = 'generate_script'`).get()).toEqual({ retry_count: 1, estimated_cost_usd: 0.1 });
     db.close();
   });
+
+  it('never sends raw editorial seed text to the provider or accepts its unsupported facts', async () => {
+    const { db, service } = fixture();
+    const unsupported = 'The museum was built in 1450.';
+    const scene = {
+      chapter: 'Visit', narration: unsupported, targetDurationMs: 3000,
+      requiredCountry: 'France', requiredCity: 'Paris', requiredLocation: 'Museum',
+      requiredGranularity: 'landmark', requiredObjects: ['museum'], requiredActivities: [],
+      preferredShots: ['wide'], visualTreatment: 'EXACT_LOCATION_FOOTAGE', claimIds: []
+    };
+    const responseBody = {
+      title: 'Museum', topic: 'Museum', destination: 'Paris', summary: 'Visit',
+      scenes: Array.from({ length: 3 }, () => scene)
+    };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response(JSON.stringify(responseBody))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(service.generateScript({
+      projectId: 'p1', topicTitle: 'Museum', destination: 'Paris', targetMinutes: 1,
+      coverage: { key: 'Paris' } as CoverageCluster,
+      assets: [{
+        id: 'asset-1', title: 'Museum exterior', country: 'France', city: 'Paris',
+        locationName: 'Museum', locationGranularity: 'landmark',
+        sceneDescription: 'Visitors cross the plaza.'
+      } as CatalogAsset],
+      startingScript: `Use a calm documentary tone. ${unsupported}`
+    })).rejects.toThrow('operator guidance');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      const request = JSON.parse(String((call[1] as RequestInit).body));
+      expect(JSON.stringify(request.messages)).not.toContain(unsupported);
+      expect(JSON.stringify(request.messages)).toContain('rawTextSharedWithProvider');
+    }
+    expect(db.raw.prepare(`SELECT count(*) AS count FROM research_sources`).get()).toEqual({ count: 0 });
+    expect(db.raw.prepare(`SELECT count(*) AS count FROM fact_claims`).get()).toEqual({ count: 0 });
+    db.close();
+  });
+
+  it('also blocks unsupported editorial facts from a final-script rewrite', async () => {
+    const { db, service } = fixture();
+    const unsupported = 'The museum was built in 1450.';
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response(JSON.stringify({
+      scenes: [{ sceneId: 'scene-1', narration: unsupported, pronunciation: {} }]
+    }))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(service.finalizeScript({
+      projectId: 'p1', title: 'Museum', topic: 'Museum', destination: 'Paris',
+      scenes: [{
+        id: 'scene-1', ordinal: 1, chapter: 'Visit', narration: 'Visitors cross the museum plaza.',
+        targetDurationMs: 3000, visualTreatment: 'EXACT_LOCATION_FOOTAGE',
+        requiredCountry: 'France', requiredCity: 'Paris', requiredLocation: 'Museum',
+        selectedAssetId: 'asset-1', selectedFileId: 'file-1', selectedSegmentId: 'segment-1',
+        sourceDurationMs: 3000, verificationState: 'verified', claimIds: []
+      }],
+      acceptedClaims: [], pronunciationDictionary: {},
+      startingScript: `Keep the pacing brisk. ${unsupported}`
+    })).rejects.toThrow('operator guidance');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(String((call[1] as RequestInit).body)).not.toContain(unsupported);
+    }
+    db.close();
+  });
 });

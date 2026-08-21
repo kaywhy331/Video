@@ -1,0 +1,96 @@
+{
+  "generatedAt": "2026-08-16T01:13:29.175Z",
+  "benchmark": "VideoFactory catalog 26K local qualification",
+  "environment": {
+    "platform": "linux",
+    "release": "6.17.0-14-generic",
+    "architecture": "x64",
+    "node": "v22.22.0",
+    "cpuModel": "Intel(R) Core(TM) i5-6300U CPU @ 2.40GHz",
+    "logicalCpuCount": 4,
+    "totalMemoryBytes": 3990458368
+  },
+  "fixture": {
+    "rows": 26000,
+    "xlsxBytes": 9284473,
+    "generationMs": 7259.764
+  },
+  "import": {
+    "previewMs": 9273.749,
+    "commitMs": 565401.291,
+    "totalMs": 574675.04,
+    "stagedRows": 26000,
+    "committedRows": 26000,
+    "canonicalAssets": 26000,
+    "integrity": "ok"
+  },
+  "warmDatabase": {
+    "reopenMs": 557.936,
+    "searchRoundsPerScenario": 25,
+    "searchTargetP95Ms": 300,
+    "overallP95Ms": 156.034,
+    "scenarios": [
+      {
+        "name": "recent-page",
+        "samples": 25,
+        "resultCount": 26000,
+        "returnedRows": 50,
+        "medianMs": 60.119,
+        "p95Ms": 67.307,
+        "maxMs": 68.82
+      },
+      {
+        "name": "fts-location-activity",
+        "samples": 25,
+        "resultCount": 5200,
+        "returnedRows": 50,
+        "medianMs": 153.469,
+        "p95Ms": 165.149,
+        "maxMs": 286.91
+      },
+      {
+        "name": "country-city",
+        "samples": 25,
+        "resultCount": 3250,
+        "returnedRows": 50,
+        "medianMs": 34.426,
+        "p95Ms": 46.633,
+        "maxMs": 53.132
+      },
+      {
+        "name": "orientation-country",
+        "samples": 25,
+        "resultCount": 2600,
+        "returnedRows": 50,
+        "medianMs": 75.36,
+        "p95Ms": 99.091,
+        "maxMs": 104.199
+      },
+      {
+        "name": "metadata-contains",
+        "samples": 25,
+        "resultCount": 5200,
+        "returnedRows": 50,
+        "medianMs": 55.139,
+        "p95Ms": 64.332,
+        "maxMs": 69.662
+      }
+    ]
+  },
+  "rendererContract": {
+    "catalogAssets": 26000,
+    "requestedPageSize": 50,
+    "returnedRows": 50,
+    "rendersEntireCatalog": false
+  },
+  "acceptance": {
+    "catalogImportCountAndIntegrity": "passed",
+    "warmCommonSearchP95": "passed",
+    "boundedRendererPage": "passed",
+    "xlsxImportUiResponsiveness": "not_measured_by_headless_service_benchmark",
+    "dashboardStartupUnderFiveSeconds": "not_measured_by_catalog_service_benchmark",
+    "backgroundRenderResponsiveness": "not_measured_by_catalog_service_benchmark"
+  },
+  "measuredCriteriaPassed": true,
+  "fullUiPerformanceQualification": false
+}

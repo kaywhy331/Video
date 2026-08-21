@@ -6,6 +6,12 @@ export interface ProcessResult {
   stderr: string;
 }
 
+export interface BinaryProcessResult {
+  code: number;
+  stdout: Buffer;
+  stderr: string;
+}
+
 export function runProcess(
   executable: string,
   args: string[],
@@ -54,6 +60,45 @@ export async function requireSuccess(
   options: Parameters<typeof runProcess>[2] = {}
 ): Promise<ProcessResult> {
   const result = await runProcess(executable, args, options);
+  if (result.code !== 0) {
+    throw new Error(`${executable} failed with code ${result.code}: ${result.stderr.slice(-4000)}`);
+  }
+  return result;
+}
+
+export function runProcessBinary(
+  executable: string,
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal } = {}
+): Promise<BinaryProcessResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, {
+      cwd: options.cwd,
+      env: options.env ?? process.env,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const stdout: Buffer[] = [];
+    let stderr = '';
+    child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code: code ?? -1, stdout: Buffer.concat(stdout), stderr }));
+    if (options.signal) {
+      const abort = (): void => { child.kill('SIGTERM'); };
+      if (options.signal.aborted) abort();
+      else options.signal.addEventListener('abort', abort, { once: true });
+    }
+  });
+}
+
+export async function requireSuccessBinary(
+  executable: string,
+  args: string[],
+  options: Parameters<typeof runProcessBinary>[2] = {}
+): Promise<BinaryProcessResult> {
+  const result = await runProcessBinary(executable, args, options);
   if (result.code !== 0) {
     throw new Error(`${executable} failed with code ${result.code}: ${result.stderr.slice(-4000)}`);
   }

@@ -10,14 +10,29 @@ export const CatalogSearchRequestSchema = z.object({
   city: z.string().trim().max(120).optional(),
   locationName: z.string().trim().max(200).optional(),
   author: z.string().trim().max(200).optional(),
-  orientation: z.string().trim().max(40).optional(),
+  orientation: z.enum(['landscape','portrait','square','unknown']).optional(),
+  verificationStatus: z.enum(['unverified','metadata','ai_suggested','human_verified','conflict']).optional(),
+  availabilityStatus: z.enum(['unknown','available','unavailable']).optional(),
+  minimumLocationConfidence: z.number().min(0).max(1).optional(),
   downloaded: z.boolean().optional(),
   verified: z.boolean().optional(),
+  used: z.boolean().optional(),
+  licensed: z.boolean().optional(),
+  mediaStatus: z.enum(['metadata_only','downloaded','analyzed','usable_1080p','usable_4k']).optional(),
+  metadataField: z.enum([
+    'providerAssetId','sourceRowId','canonicalPageUrl','authorName','title','description',
+    'rawAttributes','rawTags','country','city','locationName','activity','shotType',
+    'sceneDescription','objects','timeOfDay','style','declaredCodec'
+  ]).optional(),
+  metadataValue: z.string().trim().min(1).max(2_000).optional(),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(10).max(500).default(100),
   sortBy: z.enum(['title', 'country', 'city', 'location', 'updated']).optional(),
   sortDirection: z.enum(['asc', 'desc']).optional()
-});
+}).strict().refine(
+  value => Boolean(value.metadataField) === Boolean(value.metadataValue),
+  { message: 'Metadata field and value must be supplied together.' }
+);
 
 export const SettingsPatchSchema = z.object({
   dataRoot: FilePathSchema.optional(),
@@ -31,6 +46,18 @@ export const SettingsPatchSchema = z.object({
   backupDailyRetention: z.number().int().min(1).max(365).optional(),
   backupWeeklyRetention: z.number().int().min(1).max(260).optional(),
   backupMonthlyRetention: z.number().int().min(1).max(120).optional(),
+  catalogImportFile: z.string().max(32_767).optional(),
+  catalogRefreshEnabled: z.boolean().optional(),
+  catalogRefreshIntervalHours: z.number().int().min(1).max(720).optional(),
+  catalogValidationTemplateId: z.string().trim().min(1).max(200).optional(),
+  autopilotSchedulerEnabled: z.boolean().optional(),
+  autopilotCadenceDays: z.number().int().min(1).max(90).optional(),
+  autopilotPublicationHourUtc: z.number().int().min(0).max(23).optional(),
+  musicEnabled: z.boolean().optional(),
+  musicTargetGainDb: z.number().min(-40).max(-12).optional(),
+  musicDuckingDb: z.number().min(-30).max(-6).optional(),
+  automaticDerivativeCleanup: z.boolean().optional(),
+  derivativeCleanupTargetGb: z.number().min(1).max(1_000).optional(),
   ffmpegPath: z.string().max(32_767).optional(),
   ffprobePath: z.string().max(32_767).optional(),
   monthlyBudgetUsd: z.number().min(0).max(100_000).optional(),
@@ -41,9 +68,15 @@ export const SettingsPatchSchema = z.object({
   maxPrivateApproval: z.number().int().min(1).max(20).optional(),
   targetVideoMinutes: z.number().min(1).max(30).optional(),
   defaultOutput: z.enum(['1080p', 'qualified_4k']).optional(),
+  updateChannel: z.enum(['stable', 'prerelease']).optional(),
+  updateCheckEnabled: z.boolean().optional(),
   preferredShotMinSeconds: z.number().min(1.5).max(7).optional(),
   preferredShotMaxSeconds: z.number().min(1.5).max(7).optional(),
   hardShotMaxSeconds: z.number().min(2).max(7).optional(),
+  matchingMaxSourceUses: z.number().int().min(1).max(10).optional(),
+  matchingMaxConsecutiveShotMotion: z.number().int().min(1).max(5).optional(),
+  matchingPerceptualDistance: z.number().int().min(0).max(16).optional(),
+  matchingHeroStrategy: z.enum(['opening', 'first_major_transition', 'disabled']).optional(),
   narratorProvider: z.enum(['windows_sapi', 'http_tts']).optional(),
   narratorBaseUrl: z.string().url().max(2_000).optional(),
   narratorModel: z.string().trim().min(1).max(200).optional(),
@@ -83,10 +116,16 @@ export const SettingsPatchSchema = z.object({
 });
 
 export const CreateAutopilotProjectSchema = z.object({
-  destinationKey: z.string().max(500).optional(),
+  destinationKey: z.string().trim().min(1).max(500).optional(),
   targetMinutes: z.number().min(1).max(30).optional(),
-  topicId: z.string().max(200).optional()
-});
+  topicId: z.string().trim().min(1).max(200).optional(),
+  startingScript: z.string().max(20_000).refine(value => value.trim().length > 0, {
+    message: 'Starting-script guidance cannot be blank.'
+  }).optional(),
+  channelId: z.string().trim().min(1).max(200).optional(),
+  languageVoiceProfileId: z.string().trim().min(1).max(200).optional(),
+  outputProfileKey: z.enum(['landscape_1080p', 'landscape_4k', 'vertical_1080p']).optional()
+}).strict();
 
 export const IdSchema = z.string().min(1).max(200);
 
@@ -99,10 +138,144 @@ export const ProjectExportSchema = z.object({
 
 export const ProjectRebuildSchema = z.object({ projectId: IdSchema }).strict();
 
+export const SettingsProfilePathSchema = FilePathSchema.optional();
+
+export const CatalogRefreshSchema = z.object({
+  sourcePath: FilePathSchema.optional(),
+  templateId: IdSchema.optional(),
+  operationId: IdSchema.optional()
+}).strict();
+
+export const AnalyticsSnapshotSchema = z.object({
+  projectId: IdSchema,
+  videoId: z.string().trim().min(1).max(200),
+  snapshotDay: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(28), z.literal(90)]),
+  capturedAt: z.string().datetime(),
+  source: z.enum(['youtube_api', 'manual_import']),
+  metrics: z.object({
+    views: z.number().int().min(0),
+    impressions: z.number().int().min(0).nullable(),
+    clickThroughRate: z.number().min(0).max(1).nullable(),
+    watchTimeMinutes: z.number().min(0).nullable(),
+    averageViewDurationSeconds: z.number().min(0).nullable(),
+    averagePercentageViewed: z.number().min(0).max(1).nullable(),
+    subscribersGained: z.number().int().nullable(),
+    trafficSources: z.record(z.number().min(0)),
+    searchTerms: z.record(z.number().min(0)),
+    playlistStarts: z.number().int().min(0).nullable(),
+    endScreenClicks: z.number().int().min(0).nullable()
+  }).strict(),
+  retention: z.array(z.object({
+    elapsedRatio: z.number().min(0).max(1),
+    audienceWatchRatio: z.number().min(0).nullable(),
+    relativeRetention: z.number().nullable()
+  }).strict()).max(10_000)
+}).strict();
+
+export const KeywordMetricObservationSchema = z.object({
+  topicCandidateId: IdSchema.optional(),
+  keyword: z.string().trim().min(1).max(500),
+  provider: z.string().trim().min(1).max(200),
+  metricType: z.string().trim().min(1).max(200),
+  value: z.number().finite().nullable(),
+  geographyCode: z.string().trim().max(30).nullable().optional(),
+  languageCode: z.string().trim().min(2).max(35),
+  collectedAt: z.string().datetime(),
+  confidence: z.number().min(0).max(1),
+  youtubeNative: z.boolean(),
+  rawMetadata: z.record(z.unknown()).default({})
+}).strict().superRefine((input, context) => {
+  const normalized = `${input.provider} ${input.metricType}`.toLowerCase();
+  if (input.youtubeNative && (normalized.includes('google ads') || normalized.includes('google search'))) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['youtubeNative'],
+      message: 'Google Search or Google Ads metrics are proxies and cannot be marked YouTube-native.'
+    });
+  }
+});
+
+export const GoogleSheetsSyncSchema = z.object({
+  configId: IdSchema.optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  spreadsheetId: z.string().trim().min(5).max(500),
+  sheetRange: z.string().trim().min(1).max(500),
+  validationTemplateId: IdSchema.optional(),
+  operationId: IdSchema.optional()
+}).strict();
+
+export const ChannelProfileSchema = z.object({
+  id: IdSchema.optional(),
+  name: z.string().trim().min(1).max(200),
+  shortCode: z.string().trim().regex(/^[A-Za-z0-9_-]{1,12}$/),
+  defaultLanguageCode: z.string().trim().min(2).max(35),
+  defaultVoiceId: z.string().trim().max(200).nullable().optional(),
+  youtubeChannelId: z.string().trim().max(200).nullable().optional(),
+  youtubeChannelTitle: z.string().trim().max(200).nullable().optional(),
+  active: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+  policy: z.record(z.unknown()).optional()
+}).strict();
+
+export const LanguageVoiceProfileSchema = z.object({
+  id: IdSchema.optional(),
+  languageCode: z.string().trim().min(2).max(35),
+  languageName: z.string().trim().min(1).max(100),
+  voiceProvider: z.string().trim().min(1).max(100),
+  voiceId: z.string().trim().min(1).max(200),
+  displayName: z.string().trim().min(1).max(200),
+  active: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+  settings: z.record(z.unknown()).optional()
+}).strict();
+
+export const AnalyticsCollectSchema = z.object({
+  projectId: IdSchema,
+  snapshotDay: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(28), z.literal(90)])
+}).strict();
+
+export const LearningRecommendationSchema = z.object({
+  metricKey: z.enum(['preferredShotMinSeconds','preferredShotMaxSeconds','targetVideoMinutes']),
+  proposedValue: z.number().positive(),
+  rationale: z.string().trim().min(20).max(2_000),
+  evidenceSnapshotIds: z.array(IdSchema).min(2).max(250)
+}).strict();
+
+export const LearningDecisionSchema = z.object({
+  id: IdSchema,
+  decision: z.enum(['apply','reject','rollback'])
+}).strict();
+
+export const MusicImportSchema = z.object({
+  filePath: FilePathSchema.optional(),
+  title: z.string().trim().min(1).max(300),
+  provider: z.string().trim().min(1).max(200),
+  licenseType: z.string().trim().min(1).max(200),
+  licenseReference: z.string().trim().min(1).max(1_000),
+  licenseDocumentPath: FilePathSchema.optional(),
+  moods: z.array(z.string().trim().min(1).max(100)).max(25).default([]),
+  tempoBpm: z.number().min(20).max(300).nullable().optional(),
+  loopable: z.boolean().default(true),
+  licenseAttested: z.literal(true)
+}).strict();
+
+export const MusicSelectSchema = z.object({
+  projectId: IdSchema,
+  trackId: IdSchema,
+  selectedBy: z.enum(['automatic','human']).default('human')
+}).strict();
+
+export const StorageCleanupSchema = z.object({
+  dryRun: z.boolean().default(false),
+  trigger: z.enum(['manual','disk_pressure','startup']).default('manual')
+}).strict();
+
 export const ImportRequestSchema = z.object({
   filePath: FilePathSchema,
   sheetName: z.string().max(250).optional(),
-  mapping: z.record(z.string().max(100), z.string().max(250).nullable()).optional()
+  mapping: z.record(z.string().max(100), z.string().max(250).nullable()).optional(),
+  previewId: IdSchema.optional(),
+  operationId: IdSchema.optional()
 }).strict();
 
 export const SecretPatchSchema = z.object({
@@ -174,9 +347,72 @@ export const CatalogUpdateAssetSchema = z.object({
   reason: z.string().trim().min(1).max(500).optional()
 }).strict();
 
+export const CatalogBulkUpdateSchema = z.object({
+  assetIds: z.array(IdSchema).min(1).max(5_000),
+  patch: CatalogAssetPatchSchema,
+  reason: z.string().trim().min(1).max(500).optional()
+}).strict();
+
+export const CatalogSuggestionSchema = z.object({
+  assetId: IdSchema,
+  fieldName: z.enum([
+    'title','description','country','city','locationName','activity','shotType',
+    'sceneDescription','objects','timeOfDay','style','orientation',
+    'locationGranularity','locationConfidence','verificationStatus','availabilityStatus','excluded'
+  ]),
+  value: z.union([
+    z.string().max(10_000),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+    z.array(z.unknown()).max(500),
+    z.record(z.unknown())
+  ]),
+  provider: z.string().trim().min(1).max(200),
+  model: z.string().trim().min(1).max(200),
+  confidence: z.number().min(0).max(1),
+  evidenceRef: z.string().trim().max(2_000).nullable().optional(),
+  evidence: z.record(z.unknown()).optional()
+}).strict();
+
+export const CatalogReviewSuggestionSchema = z.object({
+  assertionId: IdSchema,
+  decision: z.enum(['accept','reject'])
+}).strict();
+
+export const CatalogExportSchema = z.object({
+  request: CatalogSearchRequestSchema,
+  outputPath: FilePathSchema.optional()
+}).strict();
+
+export const PlaceMergeSchema = z.object({
+  sourcePlaceIds: z.array(IdSchema).min(1).max(100),
+  targetPlaceId: IdSchema,
+  reason: z.string().trim().min(1).max(1_000)
+}).strict().refine(value => !value.sourcePlaceIds.includes(value.targetPlaceId), {
+  message: 'The merge target cannot also be a source place.'
+});
+
+export const PlaceSplitSchema = z.object({
+  sourcePlaceId: IdSchema,
+  assetIds: z.array(IdSchema).min(1).max(5_000),
+  name: z.string().trim().min(1).max(250),
+  type: z.enum(['country','region','city','neighborhood','landmark','feature']),
+  parentId: IdSchema.nullable(),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
+  aliases: z.array(z.string().trim().min(1).max(250)).max(100).default([]),
+  reason: z.string().trim().min(1).max(1_000)
+}).strict();
+
 export const AcquisitionAttestSchema = z.object({
   acquisitionId: IdSchema,
-  certificatePath: FilePathSchema.optional()
+  attachCertificate: z.boolean().default(false)
+}).strict();
+
+export const AcquisitionBatchAttestSchema = z.object({
+  projectId: IdSchema,
+  attachCertificate: z.boolean().default(false)
 }).strict();
 
 export const AcquisitionMapFileSchema = z.object({
@@ -184,11 +420,73 @@ export const AcquisitionMapFileSchema = z.object({
   filePath: FilePathSchema.optional()
 }).strict();
 
+const StoryboardReasonSchema = z.string().trim().min(3).max(2_000);
+const StoryboardNarrationSchema = z.string().trim().min(1).max(4_000);
+const StoryboardGraphicTreatmentSchema = z.enum(['MAP_OR_GRAPHIC', 'TEXT_OR_ARCHIVAL']);
+
+export const StoryboardSceneSchema = z.object({
+  projectId: IdSchema,
+  sceneId: IdSchema
+}).strict();
+
+export const StoryboardReplaceShotSchema = StoryboardSceneSchema.extend({
+  candidateId: IdSchema,
+  reason: StoryboardReasonSchema
+}).strict();
+
+export const StoryboardRewriteBeatSchema = StoryboardSceneSchema.extend({
+  narration: StoryboardNarrationSchema,
+  reason: StoryboardReasonSchema
+}).strict();
+
+export const StoryboardUseGraphicSchema = StoryboardSceneSchema.extend({
+  treatment: StoryboardGraphicTreatmentSchema,
+  reason: StoryboardReasonSchema
+}).strict();
+
+export const StoryboardSplitBeatSchema = StoryboardSceneSchema.extend({
+  firstNarration: StoryboardNarrationSchema,
+  secondNarration: StoryboardNarrationSchema,
+  secondTreatment: StoryboardGraphicTreatmentSchema,
+  reason: StoryboardReasonSchema
+}).strict();
+
+export const StoryboardMergeBeatsSchema = z.object({
+  projectId: IdSchema,
+  firstSceneId: IdSchema,
+  secondSceneId: IdSchema,
+  narration: StoryboardNarrationSchema,
+  graphicTreatment: StoryboardGraphicTreatmentSchema.optional(),
+  reason: StoryboardReasonSchema
+}).strict().refine(request => request.firstSceneId !== request.secondSceneId, {
+  message: 'Two distinct adjacent scenes are required for a merge.',
+  path: ['secondSceneId']
+});
+
+export const StoryboardVerifyLocationSchema = StoryboardSceneSchema.extend({
+  reason: StoryboardReasonSchema
+}).strict();
+
+export const StoryboardRejectCandidateSchema = StoryboardSceneSchema.extend({
+  candidateId: IdSchema,
+  reason: StoryboardReasonSchema
+}).strict();
+
 export const PackageSelectSchema = z.object({ projectId: IdSchema, packageId: IdSchema }).strict();
 export const ExceptionListSchema = z.object({ projectId: IdSchema.optional(), openOnly: z.boolean().optional() }).strict();
 export const ExceptionResolveSchema = z.object({
   id: IdSchema,
   resolution: z.record(z.string().max(100), z.unknown()).optional()
+}).strict();
+export const ExceptionOverrideSchema = z.object({
+  id: IdSchema,
+  reason: z.string().trim().min(10).max(2_000)
+}).strict();
+export const ExceptionRetrySchema = z.object({ id: IdSchema }).strict();
+
+export const AmbiguousMappingResolveSchema = z.object({
+  exceptionId: IdSchema,
+  acquisitionId: IdSchema
 }).strict();
 export const SemanticVerificationRetrySchema = z.object({ exceptionId: IdSchema }).strict();
 export const BackupRestoreSchema = FilePathSchema.optional();
@@ -198,6 +496,7 @@ export const OpenPathSchema = FilePathSchema;
 export const RenderRequestSchema = z.object({
   projectId: IdSchema,
   kind: z.enum(['range', 'draft', 'final']).default('draft'),
+  outputProfileKey: z.enum(['landscape_1080p', 'landscape_4k', 'vertical_1080p']).optional(),
   startSceneOrdinal: z.number().int().min(1).optional(),
   endSceneOrdinal: z.number().int().min(1).optional()
 }).strict().superRefine((request, context) => {
@@ -221,6 +520,37 @@ export const ApprovePublicationSchema = z.object({
   projectId: IdSchema,
   action: z.enum(['keep_private', 'publish', 'schedule']),
   scheduledAt: z.string().datetime().optional()
+});
+
+export const FinalReviewRevisionSchema = z.object({
+  projectId: IdSchema,
+  category: z.enum([
+    'packaging',
+    'caption_typo',
+    'voice_pronunciation',
+    'script_factual_issue',
+    'wrong_or_weak_shot',
+    'new_footage_required',
+    'major_story_change'
+  ]),
+  note: z.string().trim().min(3).max(2_000),
+  affectedSceneId: IdSchema.optional(),
+  affectedSectionId: IdSchema.optional(),
+  pronunciation: z.object({
+    term: z.string().trim().min(1).max(200),
+    value: z.string().trim().min(1).max(500)
+  }).strict().optional()
+}).strict().superRefine((request, context) => {
+  if (request.category === 'voice_pronunciation') {
+    if (!request.affectedSceneId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['affectedSceneId'], message: 'A pronunciation revision requires an affected scene.' });
+    }
+    if (!request.pronunciation) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['pronunciation'], message: 'A pronunciation revision requires the corrected term and pronunciation.' });
+    }
+  } else if (request.pronunciation) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['pronunciation'], message: 'Pronunciation data is accepted only for voice-pronunciation revisions.' });
+  }
 });
 
 export const SceneContractSchema = z.object({

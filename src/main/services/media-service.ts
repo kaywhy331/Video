@@ -25,10 +25,18 @@ import {
   type TimeInterval
 } from '@shared/media-analysis';
 import { resolveFfmpeg, resolveFfprobe } from '../tool-paths';
-import { requireSuccess, runProcess } from './process-utils';
+import { requireSuccess, requireSuccessBinary, runProcess } from './process-utils';
 import { ProjectStateService } from './project-state-service';
 import { RepairService } from './repair-service';
 import type { FootageVerificationService } from './footage-verification-service';
+import { cropRetainedPixels, qualifiesOutputPixels } from '@shared/output-profile';
+import {
+  assertSupportedSourceColor,
+  MEDIA_PIPELINE_VERSION,
+  type SourceColorTreatment
+} from '@shared/color-policy';
+import { canTransitionProject } from '@shared/state-machine';
+import { differenceHash } from '@shared/perceptual-hash';
 
 interface ProbeStream {
   codec_type?: string;
@@ -108,13 +116,14 @@ function toAssetFile(row: Record<string, unknown>): AssetFile {
     codec: String(row.codec),
     pixelFormat: row.pixel_format ? String(row.pixel_format) : null,
     colorSpace: row.color_space ? String(row.color_space) : null,
+    perceptualHash: row.perceptual_hash ? String(row.perceptual_hash) : null,
     audioPresent: Boolean(row.audio_present),
     createdAt: String(row.created_at)
   };
 }
 
 export class MediaService {
-  static readonly PIPELINE_VERSION = 'media-v1';
+  static readonly PIPELINE_VERSION = MEDIA_PIPELINE_VERSION;
 
   constructor(
     private readonly db: AppDatabase,
@@ -155,7 +164,8 @@ export class MediaService {
   private async createProxy(
     originalPath: string,
     proxyPath: string,
-    audioPresent: boolean
+    audioPresent: boolean,
+    color: SourceColorTreatment
   ): Promise<void> {
     const ffmpeg = resolveFfmpeg(this.settings().ffmpegPath);
     if (!ffmpeg) throw new Error('FFmpeg is not configured or bundled.');
@@ -167,7 +177,13 @@ export class MediaService {
       '-map', '0:v:0',
       ...(audioPresent ? ['-map', '0:a:0?'] : []),
       '-vf',
-      "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps=30,format=yuv420p",
+      [
+        color.videoFilter,
+        "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+        'setsar=1',
+        'fps=30',
+        'format=yuv420p'
+      ].filter(Boolean).join(','),
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-crf', '24',
@@ -178,7 +194,11 @@ export class MediaService {
     await requireSuccess(ffmpeg, args);
   }
 
-  private async createContactSheet(originalPath: string, contactSheetPath: string): Promise<void> {
+  private async createContactSheet(
+    originalPath: string,
+    contactSheetPath: string,
+    color: SourceColorTreatment
+  ): Promise<void> {
     const ffmpeg = resolveFfmpeg(this.settings().ffmpegPath);
     if (!ffmpeg) throw new Error('FFmpeg is not configured or bundled.');
     mkdirSync(dirname(contactSheetPath), { recursive: true });
@@ -186,10 +206,36 @@ export class MediaService {
       '-y',
       '-hide_banner',
       '-i', originalPath,
-      '-vf', "fps=1/4,scale=320:-1:force_original_aspect_ratio=decrease,tile=4x3:padding=6:margin=6",
+      '-vf', [
+        color.videoFilter,
+        'fps=1/4',
+        'scale=320:-1:force_original_aspect_ratio=decrease',
+        'tile=4x3:padding=6:margin=6'
+      ].filter(Boolean).join(','),
       '-frames:v', '1',
       contactSheetPath
     ]);
+  }
+
+  private async createPerceptualHash(
+    originalPath: string,
+    durationMs: number,
+    color: SourceColorTreatment
+  ): Promise<string | null> {
+    const ffmpeg = resolveFfmpeg(this.settings().ffmpegPath);
+    if (!ffmpeg) throw new Error('FFmpeg is not configured or bundled.');
+    const result = await requireSuccessBinary(ffmpeg, [
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-ss', (Math.max(0, durationMs / 2) / 1000).toFixed(3),
+      '-i', originalPath,
+      '-frames:v', '1',
+      '-vf', [color.videoFilter, 'scale=9:8:flags=bicubic', 'format=gray'].filter(Boolean).join(','),
+      '-an',
+      '-f', 'rawvideo',
+      'pipe:1'
+    ]);
+    return result.stdout.length >= 72 ? differenceHash(result.stdout.subarray(0, 72)) : null;
   }
 
   private segmentRows(
@@ -246,6 +292,238 @@ export class MediaService {
     };
   }
 
+  staleDerivativeCount(): number {
+    const row = this.db.raw.prepare(`
+      SELECT count(*) AS count
+      FROM asset_files f
+      WHERE f.pipeline_version <> ?
+        OR NOT EXISTS (
+          SELECT 1 FROM media_segments s
+          WHERE s.asset_file_id = f.id AND s.pipeline_version = ?
+        )
+    `).get(MediaService.PIPELINE_VERSION, MediaService.PIPELINE_VERSION) as { count: number };
+    return Number(row.count);
+  }
+
+  async refreshStaleDerivatives(): Promise<number> {
+    const rows = this.db.raw.prepare(`
+      SELECT f.* FROM asset_files f
+      WHERE f.pipeline_version <> ?
+        OR NOT EXISTS (
+          SELECT 1 FROM media_segments s
+          WHERE s.asset_file_id = f.id AND s.pipeline_version = ?
+        )
+      ORDER BY f.created_at, f.id
+    `).all(MediaService.PIPELINE_VERSION, MediaService.PIPELINE_VERSION) as Array<Record<string, unknown>>;
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index]!;
+      this.progress(
+        null,
+        'media-pipeline-refresh',
+        rows.length ? index / rows.length : 1,
+        `Regenerating media derivatives ${index + 1}/${rows.length}`
+      );
+      const affected = this.db.raw.prepare(`
+        SELECT DISTINCT s.project_id, p.state, p.resume_state
+        FROM project_scenes s
+        JOIN projects p ON p.id = s.project_id
+        WHERE s.selected_file_id = ?
+          AND p.state NOT IN ('SCHEDULED','PUBLISHED','ANALYTICS_ACTIVE','CANCELLED','FAILED','ARCHIVED')
+        ORDER BY s.project_id
+      `).all(row.id) as Array<{
+        project_id: string;
+        state: import('@shared/types').ProjectState;
+        resume_state: import('@shared/types').ProjectState | null;
+      }>;
+      const segments = await this.regenerateFileDerivatives(row);
+      for (const project of affected) {
+        await this.assignSegments(project.project_id, String(row.asset_id), String(row.id), segments);
+        this.invalidateProjectsForMediaRefresh(project.project_id, String(row.id));
+      }
+    }
+    if (rows.length) {
+      this.progress(null, 'media-pipeline-refresh', 1, `Regenerated ${rows.length} stale media derivative set(s)`);
+    }
+    return rows.length;
+  }
+
+  private async regenerateFileDerivatives(row: Record<string, unknown>): Promise<MediaSegment[]> {
+    const originalPath = String(row.original_path ?? '');
+    if (!originalPath || !existsSync(originalPath)) {
+      throw new Error(`Original media is missing for derivative regeneration: ${originalPath || String(row.id)}`);
+    }
+    const probe = await this.probe(originalPath);
+    const video = probe.streams?.find(stream => stream.codec_type === 'video');
+    if (!video?.width || !video.height || !video.codec_name) {
+      throw new Error(`Original media ${originalPath} has no usable video stream.`);
+    }
+    const durationMs = Math.round(Number(probe.format?.duration ?? 0) * 1000);
+    if (!durationMs) throw new Error(`Original media ${originalPath} has no measurable duration.`);
+    const audioPresent = probe.streams?.some(stream => stream.codec_type === 'audio') ?? false;
+    const frameRate = rational(video.avg_frame_rate || video.r_frame_rate) || 30;
+    const rotation = normalizedRotation(video.tags, video.side_data_list);
+    const color = assertSupportedSourceColor({
+      colorSpace: video.color_space,
+      colorTransfer: video.color_transfer,
+      colorPrimaries: video.color_primaries
+    });
+    const settings = this.settings();
+    const sha256 = String(row.sha256);
+    const proxyPath = join(settings.mediaLibraryFolder, 'proxies', sha256.slice(0, 2), `${sha256}.mp4`);
+    const contactSheetPath = join(settings.mediaLibraryFolder, 'keyframes', sha256.slice(0, 2), `${sha256}-contact.jpg`);
+    await this.createProxy(originalPath, proxyPath, audioPresent, color);
+    let contactSheetReady = false;
+    try {
+      await this.createContactSheet(originalPath, contactSheetPath, color);
+      contactSheetReady = existsSync(contactSheetPath);
+    } catch {
+      contactSheetReady = false;
+    }
+    const perceptualHash = await this.createPerceptualHash(originalPath, durationMs, color);
+    const risks = await this.analyzeVisualRisks(originalPath, durationMs);
+    const generated = this.segmentRows(
+      String(row.id), durationMs, video.width, video.height, rotation,
+      risks.blackIntervals, risks.freezeIntervals
+    );
+    const prior = this.db.raw.prepare(`
+      SELECT id, start_ms, end_ms FROM media_segments WHERE asset_file_id = ?
+    `).all(row.id) as Array<{ id: string; start_ms: number; end_ms: number }>;
+    const priorIds = new Map(prior.map(segment => [`${segment.start_ms}:${segment.end_ms}`, segment.id]));
+    const segments = generated.map(segment => ({
+      ...segment,
+      id: priorIds.get(`${segment.startMs}:${segment.endMs}`) ?? segment.id
+    }));
+    const ids = new Set(segments.map(segment => segment.id));
+    const obsoleteIds = prior.filter(segment => !ids.has(segment.id)).map(segment => segment.id);
+    const now = new Date().toISOString();
+    this.db.raw.transaction(() => {
+      if (obsoleteIds.length) {
+        this.db.raw.prepare(`
+          UPDATE project_scenes SET selected_segment_id = NULL, verification_state = 'metadata_only', updated_at = ?
+          WHERE selected_file_id = ? AND selected_segment_id IN (${obsoleteIds.map(() => '?').join(',')})
+        `).run(now, row.id, ...obsoleteIds);
+        this.db.raw.prepare(`
+          DELETE FROM media_segments WHERE asset_file_id = ? AND id IN (${obsoleteIds.map(() => '?').join(',')})
+        `).run(row.id, ...obsoleteIds);
+      }
+      this.db.raw.prepare(`
+        UPDATE project_scenes SET verification_state = 'metadata_only', updated_at = ?
+        WHERE selected_file_id = ?
+          AND project_id IN (
+            SELECT id FROM projects
+            WHERE state NOT IN ('SCHEDULED','PUBLISHED','ANALYTICS_ACTIVE','CANCELLED','FAILED','ARCHIVED')
+          )
+      `).run(now, row.id);
+      this.db.raw.prepare(`
+        UPDATE asset_files SET proxy_path = ?, contact_sheet_path = ?, file_size_bytes = ?,
+          duration_ms = ?, width = ?, height = ?, frame_rate = ?, codec = ?,
+          pixel_format = ?, color_space = ?, perceptual_hash = ?, audio_present = ?, raw_ffprobe_json = ?, pipeline_version = ?
+        WHERE id = ?
+      `).run(
+        proxyPath,
+        contactSheetReady ? contactSheetPath : null,
+        Number(probe.format?.size ?? statSync(originalPath).size),
+        durationMs,
+        video.width,
+        video.height,
+        frameRate,
+        video.codec_name,
+        video.pix_fmt ?? null,
+        video.color_space ?? null,
+        perceptualHash,
+        Number(audioPresent),
+        JSON.stringify(probe),
+        MediaService.PIPELINE_VERSION,
+        row.id
+      );
+      const upsert = this.db.raw.prepare(`
+        INSERT INTO media_segments(
+          id, asset_file_id, start_ms, end_ms, duration_ms, quality_score,
+          black_frame_risk, freeze_risk, effective_width, effective_height,
+          eligible_1080p, eligible_4k, preview_path, pipeline_version, created_at
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          start_ms = excluded.start_ms, end_ms = excluded.end_ms,
+          duration_ms = excluded.duration_ms, quality_score = excluded.quality_score,
+          black_frame_risk = excluded.black_frame_risk, freeze_risk = excluded.freeze_risk,
+          effective_width = excluded.effective_width, effective_height = excluded.effective_height,
+          eligible_1080p = excluded.eligible_1080p, eligible_4k = excluded.eligible_4k,
+          preview_path = excluded.preview_path, pipeline_version = excluded.pipeline_version
+      `);
+      for (const segment of segments) {
+        upsert.run(
+          segment.id, segment.assetFileId, segment.startMs, segment.endMs, segment.durationMs,
+          segment.qualityScore, segment.blackFrameRisk, segment.freezeRisk,
+          segment.effectiveWidth, segment.effectiveHeight, Number(segment.eligible1080p),
+          Number(segment.eligible4k), segment.previewPath, MediaService.PIPELINE_VERSION, now
+        );
+      }
+    })();
+    return segments;
+  }
+
+  private invalidateProjectsForMediaRefresh(projectId: string, fileId: string): void {
+    const sceneIds = (this.db.raw.prepare(`
+      SELECT id FROM project_scenes WHERE project_id = ? AND selected_file_id = ?
+    `).all(projectId, fileId) as Array<{ id: string }>).map(row => row.id);
+    if (!sceneIds.length) return;
+    const now = new Date().toISOString();
+    this.db.raw.transaction(() => {
+      this.db.raw.prepare(`
+        UPDATE render_fragments SET status = 'stale', updated_at = ?
+        WHERE project_id = ? AND scene_id IN (${sceneIds.map(() => '?').join(',')}) AND status = 'ready'
+      `).run(now, projectId, ...sceneIds);
+      this.db.raw.prepare(`
+        UPDATE projects SET final_render_id = NULL, youtube_video_id = NULL, updated_at = ? WHERE id = ?
+      `).run(now, projectId);
+      this.db.raw.prepare(`UPDATE packaging_candidates SET risk_status = 'blocked' WHERE project_id = ?`).run(projectId);
+      this.db.raw.prepare(`
+        UPDATE publication_records SET approval_hash = NULL, approved_at = NULL, updated_at = ? WHERE project_id = ?
+      `).run(now, projectId);
+      this.db.raw.prepare(`
+        INSERT INTO audit_log(project_id, action, actor, entity_type, entity_id, after_json, metadata_json, created_at)
+        VALUES(?, 'media.pipeline_refreshed', 'system', 'asset_file', ?, ?, ?, ?)
+      `).run(
+        projectId,
+        fileId,
+        JSON.stringify({ pipelineVersion: MediaService.PIPELINE_VERSION, affectedSceneIds: sceneIds }),
+        JSON.stringify({ finalAndPublicationPointersInvalidated: true }),
+        now
+      );
+    })();
+    const project = this.db.raw.prepare(`SELECT state, resume_state FROM projects WHERE id = ?`).get(projectId) as {
+      state: import('@shared/types').ProjectState;
+      resume_state: import('@shared/types').ProjectState | null;
+    };
+    const unverified = this.db.raw.prepare(`
+      SELECT count(*) AS count FROM project_scenes
+      WHERE project_id = ? AND verification_state NOT IN ('verified','graphic')
+    `).get(projectId) as { count: number };
+    if (Number(unverified.count)) return;
+    const downstreamStates = new Set<import('@shared/types').ProjectState>([
+      'BUILDING_TIMELINE', 'RENDERING_DRAFT', 'QC_DRAFT', 'RENDERING_FINAL', 'QC_FINAL',
+      'UPLOADING_PRIVATE', 'WAITING_YOUTUBE_PROCESSING', 'WAITING_FINAL_APPROVAL'
+    ]);
+    if (project.state === 'PAUSED') {
+      if (project.resume_state && downstreamStates.has(project.resume_state)) {
+        this.db.raw.prepare(`UPDATE projects SET resume_state = 'BUILDING_TIMELINE', updated_at = ? WHERE id = ?`)
+          .run(now, projectId);
+      }
+      return;
+    }
+    if (!downstreamStates.has(project.state) || project.state === 'BUILDING_TIMELINE') return;
+    if (!canTransitionProject(project.state, 'BUILDING_TIMELINE')) {
+      this.projectStates.transition(projectId, 'BLOCKED_EXCEPTION', {
+        reason: 'Media pipeline regeneration invalidated downstream artifacts',
+        prerequisites: { fileId, affectedSceneIds: sceneIds, pipelineVersion: MediaService.PIPELINE_VERSION }
+      });
+    }
+    this.projectStates.transition(projectId, 'BUILDING_TIMELINE', {
+      reason: 'Media derivatives were regenerated and reverified under the current pipeline',
+      prerequisites: { fileId, affectedSceneIds: sceneIds, pipelineVersion: MediaService.PIPELINE_VERSION }
+    });
+  }
+
   async ingestAcquisition(acquisitionId: string, detectedPath: string): Promise<AssetFile> {
     const acquisition = this.db.raw.prepare(`
       SELECT a.*, p.id AS project_id, x.title AS asset_title,
@@ -276,13 +554,22 @@ export class MediaService {
       | Record<string, unknown>
       | undefined;
     if (existing) {
-      const file = toAssetFile(existing);
       const expectedAssetId = String(existing.asset_id);
       if (expectedAssetId !== assetId) {
         const quarantinePath = join(settings.mediaLibraryFolder, 'quarantine', `${sha256.slice(0, 12)}-${basename(detectedPath)}`);
         movePreservingBytes(detectedPath, quarantinePath);
         throw new Error(`This physical file is already assigned to a different catalog asset and was quarantined at ${quarantinePath}.`);
       }
+      if (
+        existing.pipeline_version !== MediaService.PIPELINE_VERSION
+        || !(this.db.raw.prepare(`
+          SELECT 1 FROM media_segments WHERE asset_file_id = ? AND pipeline_version = ? LIMIT 1
+        `).get(existing.id, MediaService.PIPELINE_VERSION))
+      ) {
+        await this.regenerateFileDerivatives(existing);
+      }
+      const current = this.db.raw.prepare('SELECT * FROM asset_files WHERE id = ?').get(existing.id) as Record<string, unknown>;
+      const file = toAssetFile(current);
       if (existsSync(detectedPath)) unlinkSync(detectedPath);
       await this.attachExisting(acquisitionId, assetId, projectId, file.id);
       return file;
@@ -312,6 +599,11 @@ export class MediaService {
     if (!durationMs) throw new Error('Video duration could not be determined.');
     const frameRate = rational(video.avg_frame_rate || video.r_frame_rate) || 30;
     const rotation = normalizedRotation(video.tags, video.side_data_list);
+    const color = assertSupportedSourceColor({
+      colorSpace: video.color_space,
+      colorTransfer: video.color_transfer,
+      colorPrimaries: video.color_primaries
+    });
     movePreservingBytes(detectedPath, originalPath);
     const preservedHash = await hashFile(originalPath);
     if (preservedHash !== sha256) throw new Error('Original file hash changed during centralization.');
@@ -320,13 +612,14 @@ export class MediaService {
     const contactSheetPath = join(settings.mediaLibraryFolder, 'keyframes', sha256.slice(0, 2), `${sha256}-contact.jpg`);
 
     this.progress(projectId, 'proxy', 0.34, 'Creating 720p planning proxy');
-    await this.createProxy(originalPath, proxyPath, audio);
+    await this.createProxy(originalPath, proxyPath, audio, color);
     this.progress(projectId, 'contact-sheet', 0.52, 'Extracting representative frames');
     try {
-      await this.createContactSheet(originalPath, contactSheetPath);
+      await this.createContactSheet(originalPath, contactSheetPath, color);
     } catch {
       // The proxy remains useful even if a highly unusual source prevents a contact sheet.
     }
+    const perceptualHash = await this.createPerceptualHash(originalPath, durationMs, color);
 
     this.progress(projectId, 'visual-analysis', 0.64, 'Detecting black and frozen intervals');
     const risks = await this.analyzeVisualRisks(originalPath, durationMs);
@@ -339,9 +632,9 @@ export class MediaService {
         INSERT INTO asset_files(
           id, asset_id, sha256, original_path, proxy_path, contact_sheet_path,
           original_file_name, file_size_bytes, duration_ms, width, height,
-          frame_rate, codec, pixel_format, color_space, audio_present,
+          frame_rate, codec, pixel_format, color_space, perceptual_hash, audio_present,
           raw_ffprobe_json, pipeline_version, created_at
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         fileId,
         assetId,
@@ -358,6 +651,7 @@ export class MediaService {
         video.codec_name,
         video.pix_fmt ?? null,
         video.color_space ?? null,
+        perceptualHash,
         Number(audio),
         JSON.stringify(probe),
         MediaService.PIPELINE_VERSION,
@@ -398,11 +692,6 @@ export class MediaService {
           updated_at = ?, error = NULL
         WHERE id = ?
       `).run(fileId, now, acquisitionId);
-      this.db.raw.prepare(`
-        UPDATE project_licenses SET license_state = 'OPERATOR_ATTESTED',
-          operator_attested_at = COALESCE(operator_attested_at, ?), updated_at = ?
-        WHERE project_id = ? AND asset_id = ?
-      `).run(now, now, projectId, assetId);
       this.recordMetadataConflict(acquisition, projectId, assetId, {
         width: videoWidth,
         height: videoHeight,
@@ -433,9 +722,12 @@ export class MediaService {
       ORDER BY ordinal
     `).all(assetId, projectId, assetId) as Array<{ id: string; ordinal: number; selected_asset_id: string | null }>;
     const selectedScenes = scenes.filter(scene => scene.selected_asset_id === assetId);
-    const eligible = segments.filter(segment =>
-      segment.eligible1080p && segment.blackFrameRisk < 0.35 && segment.freezeRisk < 0.5
-    );
+    const profile = this.projectOutputDimensions(projectId);
+    const eligible = segments.filter(segment => {
+      return qualifiesOutputPixels(segment.effectiveWidth, segment.effectiveHeight, profile.width, profile.height)
+        && segment.blackFrameRisk < 0.35
+        && segment.freezeRisk < 0.5;
+    });
     if (!eligible.length) {
       const now = new Date().toISOString();
       for (const scene of selectedScenes) {
@@ -444,7 +736,7 @@ export class MediaService {
           fileId,
           sceneId: scene.id,
           sceneOrdinal: scene.ordinal,
-          failure: 'No segment satisfies 1080p, black-frame, and freeze limits.'
+          failure: `No segment satisfies the ${profile.width}×${profile.height} crop-retained pixel, black-frame, and freeze limits.`
         });
         if (route.status === 'verified') continue;
         this.db.raw.prepare(`
@@ -654,6 +946,14 @@ export class MediaService {
     await this.updateProjectAfterAcquisition(projectId);
   }
 
+  async reconcileAcquisition(projectId: string): Promise<void> {
+    const project = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as
+      | { state: import('@shared/types').ProjectState }
+      | undefined;
+    if (!project || !['WAITING_FOR_DOWNLOADS', 'INGESTING_MEDIA', 'VERIFYING_FOOTAGE', 'BLOCKED_EXCEPTION'].includes(project.state)) return;
+    await this.updateProjectAfterAcquisition(projectId);
+  }
+
   async recoverPendingSemanticAlternates(): Promise<number> {
     const rows = this.db.raw.prepare(`
       SELECT DISTINCT r.project_id, r.scene_id, r.replacement_asset_id,
@@ -720,7 +1020,7 @@ export class MediaService {
     const decision = await this.footageVerification.verifyScene(projectId, sceneId, assetId, fileId);
     let exceptionResolved = false;
     if (decision.status === 'verified') {
-      const segment = this.bestEligibleSegment(fileId);
+      const segment = this.bestEligibleSegment(fileId, projectId);
       if (!segment) throw new Error('Semantic evidence passed, but no technically safe segment remains for this footage.');
       const now = new Date().toISOString();
       this.db.raw.transaction(() => {
@@ -821,13 +1121,19 @@ export class MediaService {
     };
   }
 
-  private bestEligibleSegment(fileId: string): MediaSegment | null {
-    const row = this.db.raw.prepare(`
+  private bestEligibleSegment(fileId: string, projectId: string): MediaSegment | null {
+    const profile = this.projectOutputDimensions(projectId);
+    const rows = this.db.raw.prepare(`
       SELECT * FROM media_segments
-      WHERE asset_file_id = ? AND eligible_1080p = 1
+      WHERE asset_file_id = ?
         AND black_frame_risk < 0.35 AND freeze_risk < 0.5
-      ORDER BY quality_score DESC, start_ms, id LIMIT 1
-    `).get(fileId) as Record<string, unknown> | undefined;
+      ORDER BY quality_score DESC, start_ms, id
+    `).all(fileId) as Array<Record<string, unknown>>;
+    const row = rows.find(candidate => {
+      return qualifiesOutputPixels(
+        Number(candidate.effective_width), Number(candidate.effective_height), profile.width, profile.height
+      );
+    });
     return row ? {
       id: String(row.id),
       assetFileId: String(row.asset_file_id),
@@ -845,15 +1151,40 @@ export class MediaService {
     } : null;
   }
 
+  private projectOutputDimensions(projectId: string): { width: number; height: number } {
+    const row = this.db.raw.prepare(`
+      SELECT output_profile_snapshot_json FROM projects WHERE id = ?
+    `).get(projectId) as { output_profile_snapshot_json: string | null } | undefined;
+    try {
+      const snapshot = row?.output_profile_snapshot_json
+        ? JSON.parse(row.output_profile_snapshot_json) as { width?: number; height?: number }
+        : null;
+      if (snapshot && Number(snapshot.width) > 0 && Number(snapshot.height) > 0) {
+        return { width: Number(snapshot.width), height: Number(snapshot.height) };
+      }
+    } catch {
+      // Legacy project snapshots stay on the safe 1080p landscape default.
+    }
+    return { width: 1920, height: 1080 };
+  }
+
+
   private async updateProjectAfterAcquisition(projectId: string): Promise<void> {
     const pending = this.db.raw.prepare(`
       SELECT count(*) AS count FROM acquisition_items
-      WHERE project_id = ? AND state NOT IN ('COMPLETE','SKIPPED')
+      WHERE project_id = ? AND (
+        state NOT IN ('COMPLETE','SKIPPED')
+        OR (state <> 'SKIPPED' AND license_state NOT IN (
+          'NOT_REQUIRED','OPERATOR_ATTESTED','CERTIFICATE_ATTACHED','VERIFIED'
+        ))
+      )
     `).get(projectId) as { count: number };
     if (pending.count > 0) {
       const counts = this.db.raw.prepare(`
         SELECT count(*) AS total,
-          sum(CASE WHEN state = 'COMPLETE' THEN 1 ELSE 0 END) AS complete
+          sum(CASE WHEN state = 'COMPLETE' AND license_state IN (
+            'NOT_REQUIRED','OPERATOR_ATTESTED','CERTIFICATE_ATTACHED','VERIFIED'
+          ) THEN 1 ELSE 0 END) AS complete
         FROM acquisition_items WHERE project_id = ?
       `).get(projectId) as { total: number; complete: number | null };
       const progress = 0.27 + 0.25 * (Number(counts.complete ?? 0) / Math.max(1, counts.total));

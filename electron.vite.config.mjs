@@ -5,6 +5,17 @@ import { resolve } from 'node:path';
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          'catalog-import-worker': resolve('src/main/catalog-import-worker.ts')
+        },
+        output: {
+          entryFileNames: '[name].js'
+        }
+      }
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),

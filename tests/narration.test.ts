@@ -84,5 +84,6 @@ describe('narration visual-shot splitting', () => {
     expect(renderFragmentCacheKey({ ...base })).toBe(original);
     expect(renderFragmentCacheKey({ ...base, sceneId: 'scene-2' })).not.toBe(original);
     expect(renderFragmentCacheKey({ ...base, voiceInputHash: 'voice-repaired' })).not.toBe(original);
+    expect(renderFragmentCacheKey({ ...base, musicInputHash: 'music-selection' })).not.toBe(original);
   });
 });

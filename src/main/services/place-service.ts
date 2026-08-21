@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AppDatabase } from '../database/database';
+import type { CanonicalPlace } from '@shared/types';
 import {
   normalizePlaceName,
   placeIsSameOrDescendant,
@@ -10,14 +11,6 @@ import {
 type PlaceType = Exclude<Granularity, 'unknown'>;
 export type PlaceEvidenceType = 'imported' | 'uploader_metadata' | 'geocoder' | 'vision' | 'human';
 export type PlaceVerificationStatus = 'unverified' | 'accepted' | 'verified' | 'rejected' | 'conflict';
-
-export interface CanonicalPlace {
-  id: string;
-  name: string;
-  normalizedName: string;
-  type: PlaceType;
-  parentId: string | null;
-}
 
 export interface EffectivePlaceEvidence {
   assertionId: string;
@@ -42,7 +35,18 @@ function toPlace(row: Record<string, unknown>): CanonicalPlace {
     name: String(row.name),
     normalizedName: String(row.normalized_name),
     type: row.place_type as PlaceType,
-    parentId: row.parent_id ? String(row.parent_id) : null
+    parentId: row.parent_id ? String(row.parent_id) : null,
+    latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
+    longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
+    aliases: (() => {
+      try {
+        const parsed = JSON.parse(String(row.aliases_json ?? '[]'));
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        return [];
+      }
+    })(),
+    assetCount: Number(row.asset_count ?? 0)
   };
 }
 
@@ -136,6 +140,40 @@ export class PlaceService {
     return this.effectiveForAsset(input.assetId);
   }
 
+  recordHumanAssertion(input: {
+    assetId: string;
+    placeId: string;
+    reason: string;
+    evidenceRef?: string | null;
+    evidence?: Record<string, unknown>;
+  }): EffectivePlaceEvidence {
+    const place = this.get(input.placeId);
+    if (!place) throw new Error('Human location verification referenced an unknown canonical place.');
+    const asset = this.db.raw.prepare('SELECT id FROM assets WHERE id = ?').get(input.assetId);
+    if (!asset) throw new Error('Human location verification referenced an unknown asset.');
+    const reason = input.reason.trim();
+    if (!reason) throw new Error('Human location verification requires a reason.');
+    const now = new Date().toISOString();
+    this.db.raw.transaction(() => {
+      this.upsertAssertion({
+        assetId: input.assetId,
+        place,
+        evidenceType: 'human',
+        confidence: 1,
+        verificationStatus: 'verified',
+        evidenceRef: input.evidenceRef ?? null,
+        evidence: { ...input.evidence, reason, verifiedAt: now }
+      });
+      this.recomputeEffective(input.assetId);
+      this.applyEffectiveGeographyToAsset(input.assetId, now);
+    })();
+    const effective = this.effectiveForAsset(input.assetId);
+    if (!effective || effective.evidenceType !== 'human' || effective.verificationStatus !== 'verified') {
+      throw new Error('Human location verification did not become the effective asset evidence.');
+    }
+    return effective;
+  }
+
   effectiveForAsset(assetId: string): EffectivePlaceEvidence | null {
     const row = this.db.raw.prepare(`
       SELECT a.id AS assertion_id, a.evidence_type, a.confidence, a.verification_status,
@@ -206,6 +244,137 @@ export class PlaceService {
     return row ? toPlace(row) : null;
   }
 
+  list(query?: string): CanonicalPlace[] {
+    const needle = query?.trim() ? `%${normalizePlaceName(query)}%` : null;
+    return (this.db.raw.prepare(`
+      SELECT p.*,
+        (SELECT count(DISTINCT a.asset_id) FROM asset_place_assertions a WHERE a.place_id = p.id) AS asset_count
+      FROM places p
+      WHERE ? IS NULL OR normalized_name LIKE ? OR lower(aliases_json) LIKE ?
+      ORDER BY CASE place_type
+        WHEN 'country' THEN 0 WHEN 'region' THEN 1 WHEN 'city' THEN 2
+        WHEN 'neighborhood' THEN 3 WHEN 'landmark' THEN 4 ELSE 5 END,
+        normalized_name, stable_key
+      LIMIT 2_000
+    `).all(needle, needle, needle) as Array<Record<string, unknown>>).map(toPlace);
+  }
+
+  merge(sourcePlaceIds: string[], targetPlaceId: string, reason: string, actor = 'operator'): CanonicalPlace {
+    const sources = [...new Set(sourcePlaceIds)].filter(id => id !== targetPlaceId);
+    const target = this.get(targetPlaceId);
+    if (!target || !sources.length) throw new Error('Place merge requires valid source and target places.');
+    const sourceRows = sources.map(id => this.get(id));
+    if (sourceRows.some(place => !place)) throw new Error('One or more source places do not exist.');
+    const affected = (this.db.raw.prepare(`
+      SELECT DISTINCT asset_id FROM asset_place_assertions
+      WHERE place_id IN (${sources.map(() => '?').join(',')})
+      ORDER BY asset_id
+    `).all(...sources) as Array<{ asset_id: string }>).map(row => row.asset_id);
+    const now = new Date().toISOString();
+    const mergedAliases = new Set(target.aliases ?? []);
+    for (const source of sourceRows as CanonicalPlace[]) {
+      mergedAliases.add(source.name);
+      for (const alias of source.aliases ?? []) mergedAliases.add(alias);
+    }
+    this.db.raw.transaction(() => {
+      this.db.raw.prepare('UPDATE places SET aliases_json = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify([...mergedAliases].sort()), now, targetPlaceId);
+      for (const source of sourceRows as CanonicalPlace[]) {
+        const assertions = this.db.raw.prepare(`
+          SELECT * FROM asset_place_assertions WHERE place_id = ? ORDER BY id
+        `).all(source.id) as Array<Record<string, unknown>>;
+        for (const assertion of assertions) {
+          const existing = this.db.raw.prepare(`
+            SELECT id, confidence, updated_at FROM asset_place_assertions
+            WHERE asset_id = ? AND place_id = ? AND evidence_type = ?
+          `).get(assertion.asset_id, targetPlaceId, assertion.evidence_type) as Record<string, unknown> | undefined;
+          if (existing) {
+            if (Number(assertion.confidence) > Number(existing.confidence)) {
+              this.db.raw.prepare(`
+                UPDATE asset_place_assertions SET confidence = ?, verification_status = ?,
+                  evidence_ref = ?, evidence_json = ?, updated_at = ? WHERE id = ?
+              `).run(assertion.confidence, assertion.verification_status, assertion.evidence_ref,
+                assertion.evidence_json, now, existing.id);
+            }
+            this.db.raw.prepare('DELETE FROM asset_place_assertions WHERE id = ?').run(assertion.id);
+          } else {
+            this.db.raw.prepare(`
+              UPDATE asset_place_assertions SET place_id = ?, granularity = ?, updated_at = ? WHERE id = ?
+            `).run(targetPlaceId, target.type, now, assertion.id);
+          }
+        }
+        this.db.raw.prepare('UPDATE places SET parent_id = ?, updated_at = ? WHERE parent_id = ?')
+          .run(targetPlaceId, now, source.id);
+        this.db.raw.prepare('DELETE FROM places WHERE id = ?').run(source.id);
+      }
+      for (const assetId of affected) {
+        this.recomputeEffective(assetId);
+        this.applyEffectiveGeographyToAsset(assetId, now);
+      }
+      this.db.raw.prepare(`
+        INSERT INTO place_operations(
+          id, operation, source_place_ids_json, target_place_id,
+          affected_asset_ids_json, before_json, after_json, actor, reason, created_at
+        ) VALUES(?, 'merge', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), JSON.stringify(sources), targetPlaceId, JSON.stringify(affected),
+        JSON.stringify(sourceRows), JSON.stringify(this.get(targetPlaceId)), actor, reason, now);
+    })();
+    return this.get(targetPlaceId)!;
+  }
+
+  split(input: {
+    sourcePlaceId: string;
+    assetIds: string[];
+    name: string;
+    type: PlaceType;
+    parentId: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    aliases?: string[];
+    reason: string;
+    actor?: string;
+  }): CanonicalPlace {
+    const source = this.get(input.sourcePlaceId);
+    if (!source) throw new Error('Source place does not exist.');
+    if (input.parentId && !this.get(input.parentId)) throw new Error('Split place parent does not exist.');
+    const assetIds = [...new Set(input.assetIds)];
+    const placeholders = assetIds.map(() => '?').join(',');
+    const eligible = (this.db.raw.prepare(`
+      SELECT DISTINCT asset_id FROM asset_place_assertions
+      WHERE place_id = ? AND asset_id IN (${placeholders}) ORDER BY asset_id
+    `).all(input.sourcePlaceId, ...assetIds) as Array<{ asset_id: string }>).map(row => row.asset_id);
+    if (eligible.length !== assetIds.length) throw new Error('Every split asset must currently assert the source place.');
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    const stableKey = `${input.type}|${input.parentId ?? 'root'}|${normalizePlaceName(input.name)}|${id.slice(0, 8)}`;
+    this.db.raw.transaction(() => {
+      this.db.raw.prepare(`
+        INSERT INTO places(
+          id, stable_key, name, normalized_name, place_type, parent_id,
+          latitude, longitude, aliases_json, provider_refs_json, created_at, updated_at
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
+      `).run(id, stableKey, input.name.trim(), normalizePlaceName(input.name), input.type,
+        input.parentId, input.latitude ?? null, input.longitude ?? null,
+        JSON.stringify([...(input.aliases ?? [])].sort()), now, now);
+      this.db.raw.prepare(`
+        UPDATE asset_place_assertions SET place_id = ?, granularity = ?, updated_at = ?
+        WHERE place_id = ? AND asset_id IN (${placeholders})
+      `).run(id, input.type, now, input.sourcePlaceId, ...assetIds);
+      for (const assetId of assetIds) {
+        this.recomputeEffective(assetId);
+        this.applyEffectiveGeographyToAsset(assetId, now);
+      }
+      this.db.raw.prepare(`
+        INSERT INTO place_operations(
+          id, operation, source_place_ids_json, target_place_id,
+          affected_asset_ids_json, before_json, after_json, actor, reason, created_at
+        ) VALUES(?, 'split', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), JSON.stringify([input.sourcePlaceId]), id, JSON.stringify(assetIds),
+        JSON.stringify(source), JSON.stringify(this.get(id)), input.actor ?? 'operator', input.reason, now);
+    })();
+    return this.get(id)!;
+  }
+
   private syncAssetRow(row: Record<string, unknown>, evidenceType?: PlaceEvidenceType): EffectivePlaceEvidence | null {
     const geography: AssetGeography = {
       country: row.country ? String(row.country) : null,
@@ -249,7 +418,7 @@ export class PlaceService {
         aliases_json, provider_refs_json, created_at, updated_at
       ) VALUES(?, ?, ?, ?, ?, ?, '[]', '{}', ?, ?)
     `).run(id, stableKey, name.trim(), normalized, type, parentId, now, now);
-    return { id, name: name.trim(), normalizedName: normalized, type, parentId };
+    return { id, name: name.trim(), normalizedName: normalized, type, parentId, latitude: null, longitude: null, aliases: [], assetCount: 0 };
   }
 
   private upsertAssertion(input: {
@@ -294,6 +463,29 @@ export class PlaceService {
     `).get(assetId) as { id: string } | undefined;
     this.db.raw.prepare('UPDATE asset_place_assertions SET is_effective = 0 WHERE asset_id = ?').run(assetId);
     if (chosen) this.db.raw.prepare('UPDATE asset_place_assertions SET is_effective = 1 WHERE id = ?').run(chosen.id);
+  }
+
+  private applyEffectiveGeographyToAsset(assetId: string, now: string): void {
+    const evidence = this.effectiveForAsset(assetId);
+    if (!evidence) return;
+    const hierarchy = this.namedPlaceMap();
+    let cursor: CanonicalPlace | null = evidence.place;
+    let country: string | null = null;
+    let city: string | null = null;
+    while (cursor) {
+      if (cursor.type === 'country') country = cursor.name;
+      if (cursor.type === 'city') city = cursor.name;
+      cursor = cursor.parentId ? hierarchy.get(cursor.parentId) ?? null : null;
+    }
+    const locationName = ['country','city'].includes(evidence.place.type) ? null : evidence.place.name;
+    this.db.raw.prepare(`
+      UPDATE assets SET country = ?, city = ?, location_name = ?,
+        location_granularity = ?, location_confidence = ?,
+        verification_status = CASE WHEN ? = 'human' AND ? = 'verified'
+          THEN 'human_verified' ELSE verification_status END,
+        updated_at = ? WHERE id = ?
+    `).run(country, city, locationName, evidence.place.type, evidence.confidence,
+      evidence.evidenceType, evidence.verificationStatus, now, assetId);
   }
 
   private placeMap(): ReadonlyMap<string, CanonicalPlaceNode> {

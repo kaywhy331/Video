@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { shell } from 'electron';
 import { google, type Auth, type youtube_v3 } from 'googleapis';
 import type { AppDatabase } from '../database/database';
-import type { AppSettings, YouTubeConnectionStatus } from '@shared/types';
+import type { AppSettings, PublicationApprovalResult, YouTubeConnectionStatus } from '@shared/types';
 import type { SecretStore } from '../secret-store';
 import type { ProjectService } from './project-service';
 import { approvalFingerprint } from '@shared/approval';
@@ -17,7 +17,9 @@ import {
 const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube',
-  'https://www.googleapis.com/auth/youtube.readonly'
+  'https://www.googleapis.com/auth/youtube.readonly',
+  'https://www.googleapis.com/auth/yt-analytics.readonly',
+  'https://www.googleapis.com/auth/spreadsheets.readonly'
 ];
 
 function fileSha256(path: string): string {
@@ -34,15 +36,36 @@ interface UploadRow {
   channel_id: string | null;
 }
 
+export function assertPublicationUploadOwner(
+  existing: Pick<UploadRow, 'project_id'> | undefined,
+  projectId: string
+): void {
+  if (existing && existing.project_id !== projectId) {
+    throw new Error('This final render hash is already assigned to a different project upload.');
+  }
+}
+
+export function privateVideoStatus(
+  containsSyntheticMedia: boolean
+): youtube_v3.Schema$VideoStatus {
+  return {
+    privacyStatus: 'private',
+    selfDeclaredMadeForKids: false,
+    containsSyntheticMedia
+  };
+}
+
 interface ResumableVideoResponse {
   id?: string;
 }
 
-function responseHeader(headers: Record<string, unknown>, name: string): string | null {
-  const get = (headers as { get?: (key: string) => unknown }).get;
+function responseHeader(headers: unknown, name: string): string | null {
+  if (!headers || typeof headers !== 'object') return null;
+  const collection = headers as Record<string, unknown> & { get?: (key: string) => unknown };
+  const get = collection.get;
   const value = typeof get === 'function'
     ? get.call(headers, name)
-    : headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()];
+    : collection[name] ?? collection[name.toLowerCase()] ?? collection[name.toUpperCase()];
   return value === null || value === undefined ? null : String(value);
 }
 
@@ -61,8 +84,76 @@ function isTransientUploadError(error: unknown): boolean {
   return status === undefined || status === 408 || status === 429 || status >= 500;
 }
 
+function googleErrorDetails(error: unknown): { status: number | undefined; reasons: string[]; message: string } {
+  const candidate = error as {
+    status?: number;
+    message?: string;
+    errors?: Array<{ reason?: string; message?: string }>;
+    response?: {
+      status?: number;
+      data?: { error?: { message?: string; errors?: Array<{ reason?: string; message?: string }> } };
+    };
+  };
+  const errors = candidate.response?.data?.error?.errors ?? candidate.errors ?? [];
+  return {
+    status: candidate.response?.status ?? candidate.status,
+    reasons: errors.flatMap(item => item.reason ? [item.reason] : []),
+    message: [
+      candidate.message,
+      candidate.response?.data?.error?.message,
+      ...errors.flatMap(item => item.message ? [item.message] : [])
+    ].filter(Boolean).join(' | ')
+  };
+}
+
+export function isYouTubeStudioRestriction(error: unknown): boolean {
+  const details = googleErrorDetails(error);
+  if (details.status !== 403) return false;
+  const restrictedReasons = new Set([
+    'forbidden',
+    'youtubeSignupRequired',
+    'accountDelegationForbidden',
+    'publicAccessNotAllowed',
+    'publishAtNotAllowed'
+  ]);
+  return details.reasons.some(reason => restrictedReasons.has(reason))
+    || /unverified|restricted.*private|private.*restricted|public.*not allowed|publishAt.*not allowed|studio/i.test(details.message);
+}
+
+function studioVideoUrl(videoId: string): string {
+  return `https://studio.youtube.com/video/${encodeURIComponent(videoId)}/edit`;
+}
+
+type UpdatePublicationStatus = (
+  auth: Auth.OAuth2Client,
+  videoId: string,
+  status: youtube_v3.Schema$VideoStatus
+) => Promise<youtube_v3.Schema$VideoStatus | null>;
+
 function retryDelay(attempt: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt + Math.floor(Math.random() * 350)));
+}
+
+export async function awaitUsableYouTubeProcessing(options: {
+  readStatus: () => Promise<string | null | undefined>;
+  onProgress?: (attempt: number, status: string | null) => void;
+  sleep?: (milliseconds: number) => Promise<void>;
+  maximumAttempts?: number;
+  intervalMs?: number;
+}): Promise<void> {
+  const maximumAttempts = Math.max(1, options.maximumAttempts ?? 20);
+  const intervalMs = Math.max(0, options.intervalMs ?? 15_000);
+  const sleep = options.sleep ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
+  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+    const status = (await options.readStatus()) ?? null;
+    if (status === 'succeeded') return;
+    if (status === 'failed' || status === 'terminated') {
+      throw new Error(`YouTube processing ${status}.`);
+    }
+    options.onProgress?.(attempt, status);
+    if (attempt < maximumAttempts - 1) await sleep(intervalMs);
+  }
+  throw new Error('YouTube processing did not finish within the configured polling window.');
 }
 
 export class YouTubeService {
@@ -71,8 +162,52 @@ export class YouTubeService {
     private readonly settings: () => AppSettings,
     private readonly secrets: SecretStore,
     private readonly projects: ProjectService,
-    private readonly progress: (projectId: string, progress: number, message: string) => void
+    private readonly progress: (projectId: string, progress: number, message: string) => void,
+    private readonly updatePublicationStatus: UpdatePublicationStatus = async (auth, videoId, status) => {
+      const result = await google.youtube({ version: 'v3', auth }).videos.update({
+        part: ['status'],
+        requestBody: { id: videoId, status }
+      });
+      return result.data.status ?? null;
+    },
+    private readonly openExternal: (url: string) => Promise<unknown> = url => shell.openExternal(url, { activate: true })
   ) {}
+
+  uploadReadiness(): {
+    ready: boolean;
+    code: 'YOUTUBE_AUTH_REQUIRED' | 'YOUTUBE_AUTH_EXPIRED';
+    title: string;
+    message: string;
+  } {
+    const status = this.secrets.status();
+    if (!status.youtubeClientConfigured || !status.youtubeAuthorized) {
+      return {
+        ready: false,
+        code: 'YOUTUBE_AUTH_REQUIRED',
+        title: 'YouTube connection is required',
+        message: 'Configure the Google OAuth desktop client and connect YouTube before automatic private upload.'
+      };
+    }
+    const health = this.db.raw.prepare(`
+      SELECT status, message FROM provider_health
+      WHERE provider IN ('youtube','google') AND status = 'auth_invalid'
+      ORDER BY checked_at DESC LIMIT 1
+    `).get() as { status: string; message: string | null } | undefined;
+    if (health) {
+      return {
+        ready: false,
+        code: 'YOUTUBE_AUTH_EXPIRED',
+        title: 'YouTube authorization expired',
+        message: health.message ?? 'Reconnect YouTube before automatic private upload.'
+      };
+    }
+    return {
+      ready: true,
+      code: 'YOUTUBE_AUTH_EXPIRED',
+      title: 'YouTube is ready',
+      message: 'YouTube is configured for private upload.'
+    };
+  }
 
   private async client() {
     const secret = this.secrets.getAll();
@@ -183,7 +318,7 @@ export class YouTubeService {
 
   async uploadPrivate(projectId: string): Promise<{ videoId: string; url: string }> {
     const project = this.projects.get(projectId);
-    if (!['WAITING_FINAL_APPROVAL', 'WAITING_YOUTUBE_PROCESSING', 'UPLOADING_PRIVATE'].includes(project.state)) {
+    if (!['QC_FINAL', 'WAITING_FINAL_APPROVAL', 'WAITING_YOUTUBE_PROCESSING', 'UPLOADING_PRIVATE'].includes(project.state)) {
       throw new Error(`Private upload is not allowed from project state ${project.state}.`);
     }
     const render = project.renders.find(item => item.kind === 'final' && item.state === 'SUCCEEDED');
@@ -202,9 +337,7 @@ export class YouTubeService {
       WHERE final_sha256 = ?
       ORDER BY created_at DESC LIMIT 1
     `).get(render.sha256) as UploadRow | undefined;
-    if (existing && existing.project_id !== projectId) {
-      throw new Error('This final render hash is already assigned to a different project upload.');
-    }
+    assertPublicationUploadOwner(existing, projectId);
 
     const auth = await this.client();
     const youtube = google.youtube({ version: 'v3', auth });
@@ -227,11 +360,7 @@ export class YouTubeService {
             categoryId: this.settings().youtubeCategoryId,
             defaultLanguage: 'en'
           },
-          status: {
-            privacyStatus: 'private',
-            selfDeclaredMadeForKids: false,
-            containsSyntheticMedia: this.settings().youtubeSyntheticMediaDisclosure
-          }
+          status: privateVideoStatus(this.settings().youtubeSyntheticMediaDisclosure)
         }
       });
       if (selected.thumbnailPath && existsSync(selected.thumbnailPath)) {
@@ -317,11 +446,7 @@ export class YouTubeService {
           categoryId: this.settings().youtubeCategoryId,
           defaultLanguage: 'en'
         },
-        status: {
-          privacyStatus: 'private',
-          selfDeclaredMadeForKids: false,
-          containsSyntheticMedia: this.settings().youtubeSyntheticMediaDisclosure
-        }
+        status: privateVideoStatus(this.settings().youtubeSyntheticMediaDisclosure)
       },
       projectId
     );
@@ -530,44 +655,46 @@ export class YouTubeService {
     videoId: string,
     publicationId: string
   ): Promise<void> {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const result = await youtube.videos.list({ part: ['processingDetails', 'status'], id: [videoId] });
-      const video = result.data.items?.[0];
-      const status = video?.processingDetails?.processingStatus;
-      if (status === 'succeeded') {
-        this.db.raw.prepare(`
-          UPDATE publication_records SET processing_status = 'succeeded', error = NULL,
-            updated_at = ? WHERE id = ?
-        `).run(new Date().toISOString(), publicationId);
-        return;
-      }
-      if (status === 'failed' || status === 'terminated') {
+    try {
+      await awaitUsableYouTubeProcessing({
+        readStatus: async () => {
+          const result = await youtube.videos.list({ part: ['processingDetails', 'status'], id: [videoId] });
+          return result.data.items?.[0]?.processingDetails?.processingStatus;
+        },
+        onProgress: (attempt, status) => {
+          this.progress(projectId, attempt / 20, `Waiting for YouTube processing (${status ?? 'pending'})`);
+        }
+      });
+      this.db.raw.prepare(`
+        UPDATE publication_records SET processing_status = 'succeeded', error = NULL,
+          updated_at = ? WHERE id = ?
+      `).run(new Date().toISOString(), publicationId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const terminal = /processing (failed|terminated)/i.exec(message)?.[1]?.toLowerCase();
+      if (terminal) {
         this.db.raw.prepare(`
           UPDATE publication_records SET processing_status = ?, error = ?, updated_at = ? WHERE id = ?
-        `).run(status, `YouTube processing ${status}.`, new Date().toISOString(), publicationId);
-        throw new Error(`YouTube processing ${status}.`);
+        `).run(terminal, message, new Date().toISOString(), publicationId);
       }
-      this.progress(projectId, attempt / 20, `Waiting for YouTube processing (${status ?? 'pending'})`);
-      await new Promise(resolve => setTimeout(resolve, 15_000));
+      if (/configured polling window/i.test(message)) {
+        throw new Error('YouTube processing did not finish within five minutes. Retry will not create a duplicate upload.');
+      }
+      throw error;
     }
-    throw new Error('YouTube processing did not finish within five minutes. Retry will not create a duplicate upload.');
   }
 
   async approve(
     projectId: string,
     action: 'keep_private' | 'publish' | 'schedule',
     scheduledAt?: string
-  ): Promise<void> {
+  ): Promise<PublicationApprovalResult> {
     const project = this.projects.get(projectId);
     if (project.state !== 'WAITING_FINAL_APPROVAL') {
       throw new Error(`Publication approval is not allowed from project state ${project.state}.`);
     }
     if (!project.youtubeVideoId) {
-      if (action === 'keep_private') return;
       throw new Error('Project has not been uploaded to YouTube.');
-    }
-    if (action === 'keep_private') {
-      return;
     }
 
     const render = project.renders.find(item => item.kind === 'final' && item.state === 'SUCCEEDED');
@@ -598,26 +725,53 @@ export class YouTubeService {
       throw new Error('YouTube processing, thumbnail, and timed captions must all succeed before approval.');
     }
 
+    if (action === 'keep_private') {
+      const now = new Date().toISOString();
+      this.db.raw.transaction(() => {
+        this.db.raw.prepare(`
+          UPDATE publication_records SET privacy_status = 'private', approved_at = ?,
+            approval_hash = ?, scheduled_at = NULL, published_at = NULL, updated_at = ?
+          WHERE project_id = ? AND video_id = ?
+        `).run(now, currentApprovalHash, now, projectId, project.youtubeVideoId);
+        this.db.raw.prepare(`
+          INSERT INTO audit_log(
+            project_id, action, actor, entity_type, entity_id, metadata_json, created_at
+          ) VALUES(?, 'youtube.keep_private', 'human', 'publication', ?, ?, ?)
+        `).run(projectId, project.youtubeVideoId, JSON.stringify({ approvalHash: currentApprovalHash }), now);
+      })();
+      return { outcome: 'kept_private' };
+    }
+
+    if (action === 'schedule' && (!scheduledAt || !Number.isFinite(new Date(scheduledAt).getTime())
+      || new Date(scheduledAt).getTime() <= Date.now())) {
+      throw new Error('A valid future schedule time is required.');
+    }
+
     const auth = await this.client();
-    const youtube = google.youtube({ version: 'v3', auth });
     const status: youtube_v3.Schema$VideoStatus = action === 'publish'
       ? { privacyStatus: 'public' }
       : {
           privacyStatus: 'private',
           publishAt: scheduledAt
         };
-    if (action === 'schedule') {
-      if (!scheduledAt || new Date(scheduledAt).getTime() <= Date.now()) {
-        throw new Error('A future schedule time is required.');
+    try {
+      const responseStatus = await this.updatePublicationStatus(auth, project.youtubeVideoId, status);
+      const retainedPrivate = action === 'publish'
+        && responseStatus?.privacyStatus !== undefined
+        && responseStatus.privacyStatus !== 'public';
+      const rejectedSchedule = action === 'schedule'
+        && responseStatus !== null
+        && (responseStatus.privacyStatus !== 'private'
+          || (responseStatus.publishAt !== undefined && responseStatus.publishAt !== scheduledAt));
+      if (retainedPrivate || rejectedSchedule) {
+        const mismatch = new Error('YouTube retained private status because API publication is restricted; complete the approved action in Studio.');
+        (mismatch as Error & { status: number }).status = 403;
+        throw mismatch;
       }
+    } catch (error) {
+      if (!isYouTubeStudioRestriction(error)) throw error;
+      return this.routeToStudio(projectId, project.youtubeVideoId, action, scheduledAt, currentApprovalHash, error);
     }
-    await youtube.videos.update({
-      part: ['status'],
-      requestBody: {
-        id: project.youtubeVideoId,
-        status
-      }
-    });
     const now = new Date().toISOString();
     this.db.raw.prepare(`
       UPDATE publication_records SET privacy_status = ?, approved_at = ?, approval_hash = ?,
@@ -639,5 +793,67 @@ export class YouTubeService {
       reason: action === 'schedule' ? 'Operator approved future publication schedule' : 'Operator approved public publication',
       prerequisites: { videoId: project.youtubeVideoId, scheduledAt: action === 'schedule' ? scheduledAt : null }
     });
+    return { outcome: action === 'schedule' ? 'scheduled' : 'published' };
+  }
+
+  private async routeToStudio(
+    projectId: string,
+    videoId: string,
+    action: 'publish' | 'schedule',
+    scheduledAt: string | undefined,
+    approvalHash: string,
+    error: unknown
+  ): Promise<PublicationApprovalResult> {
+    const url = studioVideoUrl(videoId);
+    let opened = false;
+    let openError: string | null = null;
+    try {
+      await this.openExternal(url);
+      opened = true;
+    } catch (cause) {
+      openError = cause instanceof Error ? cause.message : String(cause);
+    }
+    const details = googleErrorDetails(error);
+    const now = new Date().toISOString();
+    this.db.raw.transaction(() => {
+      this.db.raw.prepare(`
+        UPDATE publication_records SET privacy_status = 'private', approved_at = ?,
+          approval_hash = ?, scheduled_at = NULL, published_at = NULL, error = ?, updated_at = ?
+        WHERE project_id = ? AND video_id = ?
+      `).run(
+        now,
+        approvalHash,
+        `API ${action} restriction; manual Studio action required.`,
+        now,
+        projectId,
+        videoId
+      );
+      this.db.raw.prepare(`
+        INSERT INTO audit_log(
+          project_id, action, actor, entity_type, entity_id, metadata_json, created_at
+        ) VALUES(?, 'youtube.studio_fallback', 'system', 'publication', ?, ?, ?)
+      `).run(projectId, videoId, JSON.stringify({
+        requestedAction: action,
+        requestedScheduleAt: action === 'schedule' ? scheduledAt ?? null : null,
+        studioUrl: url,
+        studioOpened: opened,
+        openError,
+        apiStatus: details.status ?? null,
+        apiReasons: details.reasons,
+        apiMessage: details.message
+      }), now);
+    })();
+    this.projects.states.transition(projectId, 'AWAITING_MANUAL_STUDIO_ACTION', {
+      progress: 0.99,
+      reason: 'YouTube API restriction requires the approved action in Studio',
+      prerequisites: {
+        videoId,
+        requestedAction: action,
+        scheduledAt: action === 'schedule' ? scheduledAt ?? null : null,
+        studioUrl: url,
+        studioOpened: opened
+      }
+    });
+    return { outcome: 'studio_fallback', studioUrl: url, requestedAction: action };
   }
 }

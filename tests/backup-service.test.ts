@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AppSettings } from '@shared/types';
@@ -111,6 +111,34 @@ describe('backup and restore', () => {
     const weekly = service.list().filter(record => record.path.includes(`${join('backups', 'weekly')}`));
     expect(weekly).toHaveLength(1);
     expect(weekly[0]?.path).toContain('week-2020-12-28');
+    value.raw.close();
+  });
+
+  it('[BAK-005] applies independent daily, weekly, and monthly retention without deleting newer snapshots', () => {
+    const value = fixture();
+    value.settings.backupDailyRetention = 2;
+    value.settings.backupWeeklyRetention = 3;
+    value.settings.backupMonthlyRetention = 4;
+    const service = new BackupService(value.database, () => value.settings);
+    for (const cadence of ['daily', 'weekly', 'monthly'] as const) {
+      const directory = join(value.backupFolder, cadence);
+      mkdirSync(directory, { recursive: true });
+      for (let index = 0; index < 6; index += 1) {
+        const path = join(directory, `${cadence}-${index}.sqlite`);
+        copyFileSync(value.databasePath, path);
+        const date = new Date(Date.UTC(2026, 0, index + 1));
+        utimesSync(path, date, date);
+      }
+    }
+
+    service.rotate();
+
+    expect(readdirSync(join(value.backupFolder, 'daily')).sort())
+      .toEqual(['daily-4.sqlite', 'daily-5.sqlite']);
+    expect(readdirSync(join(value.backupFolder, 'weekly')).sort())
+      .toEqual(['weekly-3.sqlite', 'weekly-4.sqlite', 'weekly-5.sqlite']);
+    expect(readdirSync(join(value.backupFolder, 'monthly')).sort())
+      .toEqual(['monthly-2.sqlite', 'monthly-3.sqlite', 'monthly-4.sqlite', 'monthly-5.sqlite']);
     value.raw.close();
   });
 

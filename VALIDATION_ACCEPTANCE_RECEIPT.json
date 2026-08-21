@@ -1,0 +1,3757 @@
+{
+  "generatedAt": "2026-08-21T03:39:32.133Z",
+  "appVersion": "0.1.0-alpha.3",
+  "databaseSchemaVersion": 18,
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+  "validationInputSha256": "b554728c72dacf874b669e5de325c4ad4b11454d71a7ff6d6743f43af80db329",
+  "validationInputFileCount": 242,
+  "acceptancePlan": "docs/prd/06-ACCEPTANCE-TESTS.md",
+  "acceptancePlanSha256": "985398f020d0b757270924bbbae2776fd1d572b5f902c4585368ff9580dea39b",
+  "acceptanceMap": "validation/acceptance-map.json",
+  "acceptanceMapSha256": "30eeec40c17de1b993642424496d4d78e450482af232a97275634afe7ed1cd7e",
+  "acceptanceBindings": "validation/acceptance-bindings.json",
+  "acceptanceBindingsSha256": "e6a761c15c2c3165014fea2616d9aad953d5f21c16681c504ddc56403b331331",
+  "validationPipeline": "validation/results/pipeline.json",
+  "validationCommands": [
+    "npm run typecheck",
+    "npm run test",
+    "npm run build",
+    "node scripts/run-electron-e2e.mjs",
+    "node scripts/validate-acceptance.mjs --record-validated"
+  ],
+  "testReports": {
+    "vitest": {
+      "path": "validation/results/vitest.json",
+      "files": 77,
+      "total": 273,
+      "passed": 273,
+      "failed": 0,
+      "pending": 0
+    },
+    "playwright": {
+      "path": "validation/results/playwright.json",
+      "total": 4,
+      "passed": 4,
+      "failed": 0
+    }
+  },
+  "summary": {
+    "total": 151,
+    "passedLocalValidation": 136,
+    "externalPending": 15,
+    "productionQualified": false
+  },
+  "cases": [
+    {
+      "id": "E2E-001",
+      "title": "Complete real production",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/workflow-service.test.ts",
+        "tests/final-review-service.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "pendingReason": "Requires configured live research, generation, acquisition, and YouTube accounts plus licensed production media; local workflow simulations are supporting evidence only."
+    },
+    {
+      "id": "E2E-002",
+      "title": "Final approval and scheduling",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/workflow-service.test.ts",
+        "tests/final-review-service.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "pendingReason": "Requires configured live research, generation, acquisition, and YouTube accounts plus licensed production media; local workflow simulations are supporting evidence only."
+    },
+    {
+      "id": "E2E-003",
+      "title": "Send-back scoped regeneration",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/render-service-range.integration.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/final-review-service.test.ts",
+          "title": "uses the exact seven smallest-stage routes and invalidates prior approval",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/final-review-service.test.ts",
+          "title": "stores structured pronunciation and stales only the affected narration section",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/final-script-narration.test.ts",
+          "title": "persists section audio and word timing while reusing identical section synthesis",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "reuses the cached full-render fragment in an explicit scene range",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "E2E-004",
+      "title": "Crash and resume",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "pendingReason": "Deterministic crash reconciliation is automated, but forced process termination at every real ingest, render, and upload stage remains a production drill."
+    },
+    {
+      "id": "E2E-005",
+      "title": "Five-video pilot",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "docs/IMPLEMENTATION-COVERAGE.md",
+        "VALIDATION_REPORT.md"
+      ],
+      "pendingReason": "Requires the five-video licensed-media pilot and operator activity log review."
+    },
+    {
+      "id": "SYS-001",
+      "title": "Clean Windows install",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "scripts/windows/build-installer.ps1",
+        "scripts/windows/setup-and-run.ps1"
+      ],
+      "pendingReason": "Requires install and first-run evidence on a clean supported Windows x64 machine without developer tooling."
+    },
+    {
+      "id": "SYS-002",
+      "title": "FFmpeg diagnostic",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/diagnostics-service.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/diagnostics-service.integration.test.ts",
+          "title": "exercises a usable H.264 fallback, performs an encode/probe round trip, and saves the report",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SYS-003",
+      "title": "Hardware encoder discovery",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/diagnostics-service.integration.test.ts"
+      ],
+      "pendingReason": "Software fallback and discovery logic are automated; the NVENC, Quick Sync, and AMD AMF hardware matrix requires representative Windows hardware."
+    },
+    {
+      "id": "SYS-004",
+      "title": "Invalid path handling",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/operations-service.test.ts",
+        "tests/storage-service.test.ts"
+      ],
+      "pendingReason": "Requires a target-platform matrix with read-only, disconnected NAS, and genuinely low-space volumes."
+    },
+    {
+      "id": "SYS-005",
+      "title": "Tray/background operation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/shutdown-coordinator.test.ts",
+        "src/main/index.ts"
+      ],
+      "pendingReason": "Requires packaged Windows tray, close-window, suspend-prevention, and blocker-release observation."
+    },
+    {
+      "id": "SYS-006",
+      "title": "Power management",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/shutdown-coordinator.test.ts",
+        "src/main/index.ts"
+      ],
+      "pendingReason": "Requires packaged Windows tray, close-window, suspend-prevention, and blocker-release observation."
+    },
+    {
+      "id": "CAT-001",
+      "title": "Full 26k import",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ],
+      "pendingReason": "The 26k service and main-process receipts pass; renderer interaction, scrolling, and concurrent background-render responsiveness remain an external Electron performance run."
+    },
+    {
+      "id": "CAT-002",
+      "title": "CSV import",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "[CAT-002] imports equivalent CSV with identical canonical identities and effective values",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-003",
+      "title": "Stable identity",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "[CAT-003] preserves canonical identities when source rows reorder and row IDs change",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-004",
+      "title": "Import diff",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "requires a staged diff, preserves duplicate source rows, and reports missing assets without deleting them",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-005",
+      "title": "Human override preservation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "enforces human-over-normalized-over-accepted-AI-over-raw precedence and reviews suggestions",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-006",
+      "title": "Null normalization",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/normalization.test.ts",
+          "title": "converts spreadsheet null markers into actual null values",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-007",
+      "title": "Duration/size/rate parsing",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/normalization.test.ts",
+          "title": "parses duration, file size, and resolution formats",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-008",
+      "title": "Search relevance",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "[CAT-008][CAT-010][UX-004] ranks grounded fields and transactionally updates and restores FTS metadata",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-009",
+      "title": "Filter performance",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ],
+      "pendingReason": "The 26k service and main-process receipts pass; renderer interaction, scrolling, and concurrent background-render responsiveness remain an external Electron performance run."
+    },
+    {
+      "id": "CAT-010",
+      "title": "FTS update",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "[CAT-008][CAT-010][UX-004] ranks grounded fields and transactionally updates and restores FTS metadata",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-011",
+      "title": "Duplicate source URL",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "requires a staged diff, preserves duplicate source rows, and reports missing assets without deleting them",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-012",
+      "title": "Import cancellation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "cancels staged imports without changing assets and rolls failed commits back atomically",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "cooperatively cancels an active commit and rolls its transaction back",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "CAT-013",
+      "title": "Failed import rollback",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "cancels staged imports without changing assets and rolls failed commits back atomically",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-001",
+      "title": "Exact landmark pass",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/geography.test.ts",
+          "title": "accepts an exact landmark match",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-002",
+      "title": "Same-country rejection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/geography.test.ts",
+          "title": "rejects a visually similar location in another city or country",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-003",
+      "title": "City-level contextual pass",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/footage-verification.test.ts",
+          "title": "accepts only high-confidence geography and required visual matches",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-004",
+      "title": "Insufficient granularity",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/geography.test.ts",
+          "title": "does not allow country-level evidence to satisfy a named landmark",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-005",
+      "title": "Vision conflict",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/footage-verification-service.test.ts",
+          "title": "records a high-confidence incompatible place as a conflict without replacing human evidence",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-006",
+      "title": "Human verification precedence",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/footage-verification-service.test.ts",
+          "title": "preserves human evidence and fails closed without provider evidence for semantic requirements",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-007",
+      "title": "Parent/child logic",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/geography.test.ts",
+          "title": "accepts descendants but rejects sibling places in the canonical hierarchy",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "GEO-008",
+      "title": "No silent fallback",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/storyboard-service.test.ts",
+          "title": "requires canonical or accepted evidence for graphics and rejects narrated footage-only claims",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "TOP-001",
+      "title": "Coverage-first ideation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/planning-policy.test.ts",
+          "title": "qualifies deep diverse coverage and records explainable components",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "TOP-002",
+      "title": "Insufficient coverage rejection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/planning-policy.test.ts",
+          "title": "rejects thin coverage before weighted scoring",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "TOP-003",
+      "title": "Demand proxy labeling",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/expansion-service.test.ts",
+          "title": "labels Google Search as a proxy and persists explainable weighted opportunity components",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "TOP-004",
+      "title": "Competition scoring explainability",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/expansion-service.test.ts",
+          "title": "labels Google Search as a proxy and persists explainable weighted opportunity components",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "TOP-005",
+      "title": "Topic duplicate prevention",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/planning-policy.test.ts",
+          "title": "detects materially duplicate topic signatures",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "TOP-006",
+      "title": "Queue limit",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/scheduler-service.test.ts",
+          "title": "pauses when disabled, blocks on recoverable gates, and creates only when manually due and clear",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "TOP-007",
+      "title": "Budget gate",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/provider-policy.test.ts",
+          "title": "enforces monthly and per-project hard limits",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-001",
+      "title": "Sourced material claims",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/research-persistence.test.ts",
+          "title": "permits acceptance only after a same-project active source citation exists",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-002",
+      "title": "No invented source",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/ai-claims.test.ts",
+          "title": "uses one corrective retry then rejects invented source IDs",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-003",
+      "title": "Time-sensitive freshness",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/research-policy.test.ts",
+          "title": "omits stale time-sensitive claims before acceptance",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-004",
+      "title": "Conflicting sources",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/research-policy.test.ts",
+          "title": "marks material disagreement as conflict rather than choosing a claim",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-005",
+      "title": "Visual-first constraint",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/storyboard-service.test.ts",
+          "title": "versions a narration rewrite and assigns an evidence-bound graphic without stale approval",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-006",
+      "title": "Two-pass rewrite",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/final-review-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/storyboard-service.test.ts",
+          "title": "versions a narration rewrite and assigns an evidence-bound graphic without stale approval",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/final-review-service.test.ts",
+          "title": "uses the exact seven smallest-stage routes and invalidates prior approval",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-007",
+      "title": "Script schema validation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/ai-claims.test.ts",
+          "title": "corrects an invented script claim once and records both billed attempts",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-008",
+      "title": "Claim wording fidelity",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/ai-claims.test.ts",
+          "title": "also blocks unsupported editorial facts from a final-script rewrite",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SCR-009",
+      "title": "Versioning",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/final-script-narration.test.ts",
+          "title": "parents and locks a final script, preserving scene IDs and pronunciation notes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-001",
+      "title": "Hard filters before scoring",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-001][MAT-002] hard-filters geography and explains every scored candidate",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-002",
+      "title": "Candidate explanation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-001][MAT-002] hard-filters geography and explains every scored candidate",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-003",
+      "title": "Source reuse limit",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-003] enforces configured source-use limits unless an explicit exception is supplied",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-004",
+      "title": "Duplicate cluster avoidance",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-004] blocks adjacent perceptual duplicates and penalizes similar candidates globally",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-005",
+      "title": "Shot variety",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-005] limits consecutive identical shot-type and motion signatures when alternatives exist",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-006",
+      "title": "Hero reservation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-006][MAT-010] reserves the highest-ranked hero for the requested scene deterministically",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-007",
+      "title": "Severe crop penalty",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-007] rejects known media below the crop-retained output gate",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-008",
+      "title": "Beat/shot separation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/narration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/narration.test.ts",
+          "title": "splits long narration into bounded chunks without losing words",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/media-policy.test.ts",
+          "title": "enforces the seven-second hard gate",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-009",
+      "title": "Graphics fallback",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/storyboard-service.test.ts",
+          "title": "requires canonical or accepted evidence for graphics and rejects narrated footage-only claims",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MAT-010",
+      "title": "Determinism",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-006][MAT-010] reserves the highest-ranked hero for the requested scene deterministically",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-001",
+      "title": "Ordered manifest",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/acquisition-manifest.test.ts",
+          "title": "[ACQ-001] deduplicates downloads and labels primary, alternate, hero, and license-only work",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-002",
+      "title": "URL allowlist",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/acquisition-service.test.ts",
+          "title": "[ACQ-002] accepts only credential-free HTTPS Envato acquisition URLs",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-003",
+      "title": "Temporary file ignored",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-policy.test.ts",
+          "title": "ignores incomplete browser downloads",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-004",
+      "title": "Stable file detection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/download-watcher.test.ts",
+          "title": "[ACQ-004] does not accept a growing file until every configured stable poll passes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-005",
+      "title": "Active-item auto mapping",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/download-watcher.test.ts",
+          "title": "[ACQ-005] maps one stable file to the sole active item with persisted evidence",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-006",
+      "title": "Ambiguous mapping",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/ambiguous-mapping-service.test.ts",
+          "title": "uses persisted active IDs as the authoritative candidate set",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/ambiguous-mapping-service.test.ts",
+          "title": "falls back to pending acquisitions when the watcher had no active IDs",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-007",
+      "title": "Duplicate physical file",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/acquisition-service.test.ts",
+          "title": "keeps a license pending when an already-known media file is ingested",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-008",
+      "title": "License-only reuse",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/acquisition-service.test.ts",
+          "title": "atomically attaches one certificate and only completes license-only local assets",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-009",
+      "title": "Missing license blocker",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-policy.test.ts",
+          "title": "blocks a selected asset when its project license row is missing or pending",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ACQ-010",
+      "title": "Wrong file quarantine",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-ingest-safety.integration.test.ts",
+          "title": "[ACQ-010] quarantines a known physical file assigned to the wrong expected asset",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-001",
+      "title": "Original preservation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-pipeline-invalidation.integration.test.ts",
+          "title": "[MED-001][MED-002][MED-003][MED-010][MED-011] regenerates versioned derivatives, preserves the original, and reuses current analysis",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-002",
+      "title": "Actual metadata override",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-pipeline-invalidation.integration.test.ts",
+          "title": "[MED-001][MED-002][MED-003][MED-010][MED-011] regenerates versioned derivatives, preserves the original, and reuses current analysis",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-003",
+      "title": "720p proxy",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-pipeline-invalidation.integration.test.ts",
+          "title": "[MED-001][MED-002][MED-003][MED-010][MED-011] regenerates versioned derivatives, preserves the original, and reuses current analysis",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-004",
+      "title": "Black-frame detection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-analysis.test.ts",
+          "title": "parses black and freeze intervals and scores overlap",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-005",
+      "title": "Frozen-frame detection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-analysis.test.ts",
+          "title": "parses black and freeze intervals and scores overlap",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/media-analysis.test.ts",
+          "title": "closes a trailing freeze interval at media duration",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-006",
+      "title": "Corrupt file",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-ingest-safety.integration.test.ts",
+          "title": "[MED-006] turns a corrupt fixture into one media exception without escaping the watcher task",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-007",
+      "title": "Segment limits",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-policy.test.ts",
+          "title": "generates only valid candidate windows",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-008",
+      "title": "Sliding windows",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts",
+        "tests/matching-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-policy.test.ts",
+          "title": "generates only valid candidate windows",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/matching-service.test.ts",
+          "title": "[MAT-003] enforces configured source-use limits unless an explicit exception is supplied",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-009",
+      "title": "Contact-sheet minimization",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/vision-service.test.ts",
+          "title": "sends a bounded image input, validates the response, and reuses the cache",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-010",
+      "title": "Analysis cache",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-pipeline-invalidation.integration.test.ts",
+          "title": "[MED-001][MED-002][MED-003][MED-010][MED-011] regenerates versioned derivatives, preserves the original, and reuses current analysis",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "MED-011",
+      "title": "Pipeline invalidation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-pipeline-invalidation.integration.test.ts",
+          "title": "[MED-001][MED-002][MED-003][MED-010][MED-011] regenerates versioned derivatives, preserves the original, and reuses current analysis",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-001",
+      "title": "Default 1080p",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-fixture.integration.test.ts",
+          "title": "probes as the required 1080p H.264/AAC profile",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-002",
+      "title": "4K qualification pass",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "renders a coordinate-backed generated graphic without stock media",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-003",
+      "title": "4K blocker",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "reports exact 4K blockers and falls back truthfully to the 1080p final profile",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-004",
+      "title": "No 1080p upscaling",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-policy.test.ts",
+          "title": "never silently authorizes upscaling",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-005",
+      "title": "Rotation handling",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts",
+        "tests/media-analysis.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-analysis.test.ts",
+          "title": "normalizes side-data and tag rotation",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-006",
+      "title": "Shot duration hard gate",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-policy.test.ts",
+          "title": "enforces the seven-second hard gate",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-007",
+      "title": "Final media profile",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-fixture.integration.test.ts",
+          "title": "probes as the required 1080p H.264/AAC profile",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-008",
+      "title": "Fast start",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-fixture.integration.test.ts",
+          "title": "contains fast-start metadata before the media payload",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-009",
+      "title": "Mixed frame rates",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts",
+        "tests/render-input-normalization.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-input-normalization.integration.test.ts",
+          "title": "[REN-009] converts 24/29.97/30 inputs to 30 fps with correct duration and no interpolation filter",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-010",
+      "title": "Alpha source",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts",
+        "tests/render-input-normalization.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-input-normalization.integration.test.ts",
+          "title": "[REN-010] flattens an alpha-bearing source to an opaque yuv420p final profile",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-011",
+      "title": "HDR/log normalization",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/color-policy.test.ts",
+          "title": "fails closed for log, ambiguous wide-gamut, and malformed HDR metadata",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/media-fixture.integration.test.ts",
+          "title": "tone-maps a tagged BT.2020 PQ source into a tagged BT.709 SDR output",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-012",
+      "title": "Range preview",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "reuses the cached full-render fragment in an explicit scene range",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-013",
+      "title": "Render interruption",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-recovery.test.ts",
+          "title": "requeues the prior-process job, releases its lock, and closes only stale running render attempts",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "REN-014",
+      "title": "Render idempotency",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "reuses the cached full-render fragment in an explicit scene range",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-001",
+      "title": "Section caching",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts",
+        "tests/final-review-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/final-review-service.test.ts",
+          "title": "stores structured pronunciation and stales only the affected narration section",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/final-script-narration.test.ts",
+          "title": "persists section audio and word timing while reusing identical section synthesis",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-002",
+      "title": "Word timing",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/final-script-narration.test.ts",
+          "title": "persists section audio and word timing while reusing identical section synthesis",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-003",
+      "title": "Pronunciation dictionary",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts",
+        "tests/final-review-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/final-review-service.test.ts",
+          "title": "stores structured pronunciation and stales only the affected narration section",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/final-script-narration.test.ts",
+          "title": "parents and locks a final script, preserving scene IDs and pronunciation notes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-004",
+      "title": "Missing section",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/tts-service.test.ts",
+          "title": "[AUD-004] rejects an implausibly short provider section before timeline use",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-005",
+      "title": "Loudness and peak",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/media-fixture.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-pipeline.integration.test.ts",
+          "title": "assembles before measuring and produces a two-pass normalized fast-start file",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/media-fixture.integration.test.ts",
+          "title": "returns finite EBU R128 loudness measurements",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-006",
+      "title": "Silence detection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/qc.test.ts",
+          "title": "detects excessive silence and caption overlap, bounds, and line length",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-007",
+      "title": "Music ducking",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/music-service.integration.test.ts",
+          "title": "preserves a licensed hash, snapshots project use, and produces a ducked/faded final mix",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-008",
+      "title": "Caption generation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/narration.test.ts",
+          "title": "derives bounded caption cues from word timing",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "AUD-009",
+      "title": "Caption upload",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-resumable.test.ts",
+          "title": "reuses an existing English caption after a crash before local receipt persistence",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "PKG-001",
+      "title": "Three distinct concepts",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/approval.test.ts",
+        "tests/qc.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "generates and validates the final package before the automatic private-upload handoff",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "PKG-002",
+      "title": "Actual-frame thumbnail",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/approval.test.ts",
+        "tests/qc.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "generates and validates the final package before the automatic private-upload handoff",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "PKG-003",
+      "title": "No deceptive destination",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/approval.test.ts",
+        "tests/qc.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "generates and validates the final package before the automatic private-upload handoff",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/qc.test.ts",
+          "title": "rejects unsupported packaging absolutes and invalid timeline chapters",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "PKG-004",
+      "title": "Thumbnail format/size",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/approval.test.ts",
+        "tests/qc.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/render-service-range.integration.test.ts",
+          "title": "generates and validates the final package before the automatic private-upload handoff",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "PKG-005",
+      "title": "Chapter validation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/approval.test.ts",
+        "tests/qc.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/qc.test.ts",
+          "title": "rejects unsupported packaging absolutes and invalid timeline chapters",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "PKG-006",
+      "title": "Package hash approval",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/approval.test.ts",
+        "tests/qc.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/approval.test.ts",
+          "title": "is deterministic and invalidates every approved artifact change",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-001",
+      "title": "OAuth token encryption",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/secret-store.test.ts",
+          "title": "[YT-001] encrypts OAuth refresh tokens at rest and round-trips only through OS storage",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-002",
+      "title": "Private default",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-upload-policy.test.ts",
+          "title": "[YT-002][YT-007] builds a private request and durably records the configured synthetic disclosure",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-003",
+      "title": "Resumable network recovery",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-resumable.test.ts",
+          "title": "converts the committed Range response into the next byte offset",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-resumable.test.ts",
+          "title": "builds a valid remaining Content-Range and rejects completed ranges",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-004",
+      "title": "Duplicate upload prevention",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-upload-policy.test.ts",
+          "title": "[YT-004] reuses only the owning project receipt and rejects a duplicate final upload identity",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/workflow-service.test.ts",
+          "title": "runs a manual private upload through the durable workflow job and reuses its receipt",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-005",
+      "title": "Processing polling",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-processing.test.ts",
+          "title": "[YT-005] waits through pending states and returns only after usable processing succeeds",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-006",
+      "title": "API restriction fallback",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-approval.test.ts",
+          "title": "[YT-006] preserves private state and routes an API restriction to the exact Studio editor",
+          "status": "passed"
+        },
+        {
+          "runner": "playwright",
+          "file": "tests/e2e/electron-accessibility.spec.ts",
+          "title": "[YT-006][SEC-006] renders the exact Studio fallback and serves only recorded local review media",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-007",
+      "title": "Synthetic-media field",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-upload-policy.test.ts",
+          "title": "[YT-002][YT-007] builds a private request and durably records the configured synthetic disclosure",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "YT-008",
+      "title": "Schedule rule",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/youtube-approval.test.ts",
+          "title": "[YT-008] validates schedule time before an API update and sends private future status",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ANA-001",
+      "title": "Snapshot schedule",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/analytics-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/analytics-service.test.ts",
+          "title": "creates exactly five durable checkpoints and activates analytics on first success",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ANA-002",
+      "title": "Retention mapping",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/analytics-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/analytics-service.test.ts",
+          "title": "maps retention to immutable final scenes and requires repeated evidence before bounded changes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ANA-003",
+      "title": "Search-term storage",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/analytics-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/analytics-service.test.ts",
+          "title": "maps retention to immutable final scenes and requires repeated evidence before bounded changes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ANA-004",
+      "title": "Learning threshold",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/analytics-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/analytics-service.test.ts",
+          "title": "maps retention to immutable final scenes and requires repeated evidence before bounded changes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "ANA-005",
+      "title": "Reversible recommendation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/analytics-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/analytics-service.test.ts",
+          "title": "maps retention to immutable final scenes and requires repeated evidence before bounded changes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-001",
+      "title": "Lease recovery",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/job-service.test.ts",
+          "title": "recovers only expired running leases and clears stale project locks",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-002",
+      "title": "Dependency ordering",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/job-service.test.ts",
+          "title": "blocks dependencies and concurrent project mutation, then releases the lock",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-003",
+      "title": "Idempotent provider call",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/research-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/research-service.test.ts",
+          "title": "bounds queries, validates real URLs, records receipts, and reuses cached results",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-004",
+      "title": "Bounded retry",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/job-service.test.ts",
+          "title": "[JOB-004] backs transient failures off and enforces the configured maximum attempt count",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-005",
+      "title": "Permanent validation error",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/ai-claims.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/ai-claims.test.ts",
+          "title": "corrects an invented script claim once and records both billed attempts",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-006",
+      "title": "Human wait",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/job-service.test.ts",
+          "title": "[JOB-006] preserves a human wait across recovery without consuming another attempt",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-007",
+      "title": "Project lock",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/job-service.test.ts",
+          "title": "blocks dependencies and concurrent project mutation, then releases the lock",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-008",
+      "title": "Resource concurrency",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/job-service.test.ts",
+          "title": "leases one global final-render slot and defers another project without consuming an attempt",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "JOB-009",
+      "title": "Budget stop",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/provider-policy.test.ts",
+          "title": "enforces monthly and per-project hard limits",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-001",
+      "title": "Renderer Node isolation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "playwright",
+          "file": "tests/e2e/electron-accessibility.spec.ts",
+          "title": "[SEC-001][SEC-008] boots the isolated production renderer and scans every primary view",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-002",
+      "title": "IPC schema rejection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/contracts.test.ts",
+          "title": "rejects unknown settings keys and unsafe policy values",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-003",
+      "title": "Sender validation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/security-policy.test.ts",
+          "title": "[SEC-003] rejects IPC from a different webContents, subframe, or renderer URL",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-004",
+      "title": "Navigation/new-window block",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/security-policy.test.ts",
+          "title": "[SEC-004] denies new windows, navigation, and webview attachment",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-005",
+      "title": "External URL validation",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/security-policy.test.ts",
+          "title": "allows only the explicit HTTPS external-host list",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-006",
+      "title": "Media protocol traversal",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/media-protocol.test.ts",
+          "title": "fails closed for traversal, malformed encoding, query smuggling, and unknown types",
+          "status": "passed"
+        },
+        {
+          "runner": "playwright",
+          "file": "tests/e2e/electron-accessibility.spec.ts",
+          "title": "[YT-006][SEC-006] renders the exact Studio fallback and serves only recorded local review media",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-007",
+      "title": "Secret redaction",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/security-policy.test.ts",
+          "title": "redacts bearer, JSON token, secret, key, and credential URL values",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "SEC-008",
+      "title": "CSP",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "playwright",
+          "file": "tests/e2e/electron-accessibility.spec.ts",
+          "title": "[SEC-001][SEC-008] boots the isolated production renderer and scans every primary view",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "BAK-001",
+      "title": "Online backup",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/backup-service.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/storage-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/backup-service.test.ts",
+          "title": "creates a checksummed, integrity-checked backup and reports missing originals",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "BAK-002",
+      "title": "Restore",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/backup-service.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/storage-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/backup-service.test.ts",
+          "title": "stages and atomically applies a validated restore on restart",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "BAK-003",
+      "title": "Missing derivative rebuild",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/backup-service.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/storage-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/project-artifact-service.integration.test.ts",
+          "title": "rebuilds missing regenerable derivatives from verified immutable inputs",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "BAK-004",
+      "title": "Missing original detection",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/backup-service.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/storage-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/backup-service.test.ts",
+          "title": "creates a checksummed, integrity-checked backup and reports missing originals",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "BAK-005",
+      "title": "Retention policy",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/backup-service.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/storage-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/backup-service.test.ts",
+          "title": "[BAK-005] applies independent daily, weekly, and monthly retention without deleting newer snapshots",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "PERF-001",
+      "title": "Startup",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ],
+      "pendingReason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware."
+    },
+    {
+      "id": "PERF-002",
+      "title": "Background responsiveness",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ],
+      "pendingReason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware."
+    },
+    {
+      "id": "PERF-003",
+      "title": "Virtualized table",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ],
+      "pendingReason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware."
+    },
+    {
+      "id": "PERF-004",
+      "title": "Progress visibility",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-import-worker-service.test.ts",
+          "title": "reports progress, rejects concurrent work, streams stage rows, and clears completed status",
+          "status": "passed"
+        },
+        {
+          "runner": "playwright",
+          "file": "tests/e2e/electron-accessibility.spec.ts",
+          "title": "[UX-002][PERF-004] exposes deferred pause state and accessible evidence on every project tab",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "UX-001",
+      "title": "Two-gate clean project",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "external",
+      "result": "external_pending",
+      "artifacts": [
+        "docs/IMPLEMENTATION-COVERAGE.md",
+        "VALIDATION_REPORT.md"
+      ],
+      "pendingReason": "Requires the five-video licensed-media pilot and operator activity log review."
+    },
+    {
+      "id": "UX-002",
+      "title": "Next action clarity",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/exception-service.test.ts",
+        "tests/operator-shortcuts.test.ts",
+        "tests/project-detail.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "playwright",
+          "file": "tests/e2e/electron-accessibility.spec.ts",
+          "title": "[UX-002][PERF-004] exposes deferred pause state and accessible evidence on every project tab",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "UX-003",
+      "title": "Exception resolution",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/exception-service.test.ts",
+        "tests/operator-shortcuts.test.ts",
+        "tests/project-detail.test.ts",
+        "tests/ambiguous-mapping-service.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/ambiguous-mapping-service.test.ts",
+          "title": "uses persisted active IDs as the authoritative candidate set",
+          "status": "passed"
+        },
+        {
+          "runner": "vitest",
+          "file": "tests/ambiguous-mapping-service.test.ts",
+          "title": "falls back to pending acquisitions when the watcher had no active IDs",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "UX-004",
+      "title": "Undo metadata edit",
+      "appVersion": "0.1.0-alpha.3",
+      "databaseSchemaVersion": 18,
+      "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+      "classification": "automated",
+      "result": "passed_local_validation",
+      "artifacts": [
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/exception-service.test.ts",
+        "tests/operator-shortcuts.test.ts",
+        "tests/project-detail.test.ts"
+      ],
+      "assertions": [
+        {
+          "runner": "vitest",
+          "file": "tests/catalog-evidence.integration.test.ts",
+          "title": "[CAT-008][CAT-010][UX-004] ranks grounded fields and transactionally updates and restores FTS metadata",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}

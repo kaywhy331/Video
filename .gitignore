@@ -3,6 +3,8 @@ out/
 dist/
 release/
 coverage/
+test-results/
+validation/results/*.json
 *.log
 *.db
 *.db-shm

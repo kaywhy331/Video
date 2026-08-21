@@ -2,13 +2,22 @@ import { randomUUID } from 'node:crypto';
 import type { AppDatabase } from '../database/database';
 import type {
   AppSettings,
+  AnalyticsSnapshot,
+  AuditLogEntry,
+  CoverageCluster,
   CreateAutopilotProjectRequest,
   DerivativeRebuildReport,
   NarrationSection,
   PackagingCandidate,
   ProjectDetail,
   ProjectExportReport,
+  ProjectGuidance,
+  ProjectFactClaim,
+  ProjectLicenseDetail,
+  ProjectPublicationDetail,
+  ProjectResearchSource,
   ProjectScene,
+  ProjectScriptVersion,
   ProjectSummary,
   QcResult,
   RenderRecord
@@ -26,6 +35,57 @@ import type { ResearchService } from './research-service';
 import type { VisionService } from './vision-service';
 import { evaluateClaims, type EvaluatedClaim } from '@shared/research';
 import { createHash } from 'node:crypto';
+import { outputDimensions } from '@shared/output-profile';
+import { canTransitionProject } from '@shared/state-machine';
+import { buildAcquisitionManifest } from '@shared/acquisition-manifest';
+
+interface GuidedTopicCandidate {
+  id: string;
+  destinationKey: string;
+  title: string;
+  destination: string;
+  feasibility: string;
+}
+
+export function resolveAutopilotGuidance(
+  coverage: CoverageCluster[],
+  request: Pick<CreateAutopilotProjectRequest, 'destinationKey' | 'topicId'>,
+  orientation: 'landscape' | 'portrait' | 'square',
+  topic?: GuidedTopicCandidate
+): { cluster: CoverageCluster; destination: string; title: string } {
+  if (!coverage.length) throw new Error('Import a footage catalog before starting Autopilot.');
+  if (request.topicId && (!topic || topic.id !== request.topicId)) {
+    throw new Error('The requested topic candidate does not exist.');
+  }
+  if (topic && topic.feasibility !== 'qualified') {
+    throw new Error('The requested topic candidate is not production-qualified.');
+  }
+  if (request.destinationKey && topic && request.destinationKey !== topic.destinationKey) {
+    throw new Error('The requested topic candidate does not belong to the selected destination.');
+  }
+  const effectiveDestinationKey = request.destinationKey ?? topic?.destinationKey;
+  const requestedCluster = effectiveDestinationKey
+    ? coverage.find(cluster => cluster.key === effectiveDestinationKey)
+    : undefined;
+  if (effectiveDestinationKey && !requestedCluster) {
+    throw new Error('The requested destination is unavailable in current catalog coverage.');
+  }
+  const cluster = requestedCluster
+    ?? coverage.find(item => item.assetCount >= 12
+      && (orientation === 'portrait' ? item.portraitCount : item.landscapeCount) >= Math.max(6, item.assetCount * 0.45))
+    ?? coverage[0];
+  if (!cluster) throw new Error('No supportable destination cluster is available.');
+  const destination = topic?.destination
+    ?? cluster.locationName
+    ?? cluster.city
+    ?? cluster.country
+    ?? 'Selected destination';
+  return {
+    cluster,
+    destination,
+    title: topic?.title ?? `A Visual Guide to ${destination}`
+  };
+}
 
 function jsonArray(value: unknown): string[] {
   if (!value) return [];
@@ -50,7 +110,47 @@ function jsonObject(value: unknown): Record<string, string> {
   }
 }
 
+function jsonRecord(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function guidanceFromRow(row: Record<string, unknown>): ProjectGuidance {
+  return {
+    mode: row.mode as ProjectGuidance['mode'],
+    startingScript: row.starting_script === null ? null : String(row.starting_script),
+    startingScriptSha256: row.starting_script_sha256 === null ? null : String(row.starting_script_sha256),
+    requestedDestinationKey: row.requested_destination_key === null ? null : String(row.requested_destination_key),
+    requestedTopicId: row.requested_topic_id === null ? null : String(row.requested_topic_id),
+    requestedTargetDurationMs: row.requested_target_duration_ms === null
+      ? null
+      : Number(row.requested_target_duration_ms),
+    resolvedDestinationKey: String(row.resolved_destination_key),
+    resolvedDestination: String(row.resolved_destination),
+    resolvedTopicTitle: String(row.resolved_topic_title),
+    resolvedTargetDurationMs: Number(row.resolved_target_duration_ms),
+    constraints: jsonRecord(row.constraints_json),
+    createdAt: String(row.created_at)
+  };
+}
+
 function projectSummary(row: Record<string, unknown>): ProjectSummary {
+  let outputProfileKey: ProjectSummary['outputProfileKey'] = 'landscape_1080p';
+  if (row.output_profile_snapshot_json) {
+    try {
+      const snapshot = JSON.parse(String(row.output_profile_snapshot_json)) as { profileKey?: ProjectSummary['outputProfileKey'] };
+      outputProfileKey = snapshot.profileKey ?? outputProfileKey;
+    } catch {
+      // Legacy or corrupt snapshots stay on the safe default profile.
+    }
+  }
   return {
     id: String(row.id),
     sequence: Number(row.sequence),
@@ -66,8 +166,13 @@ function projectSummary(row: Record<string, unknown>): ProjectSummary {
     acquiredCount: Number(row.acquired_count ?? 0),
     acquisitionCount: Number(row.acquisition_count ?? 0),
     openExceptions: Number(row.open_exceptions ?? 0),
+    finalRenderId: row.final_render_id ? String(row.final_render_id) : null,
     finalRenderPath: row.final_render_path ? String(row.final_render_path) : null,
     youtubeVideoId: row.youtube_video_id ? String(row.youtube_video_id) : null,
+    channelId: row.channel_id ? String(row.channel_id) : null,
+    languageVoiceProfileId: row.language_voice_profile_id ? String(row.language_voice_profile_id) : null,
+    outputProfileKey,
+    pendingLifecycleAction: row.pending_lifecycle_action === 'pause' ? 'pause' : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -299,6 +404,177 @@ export class ProjectService {
       createdAt: String(row.created_at),
       completedAt: row.completed_at ? String(row.completed_at) : null
     } satisfies DerivativeRebuildReport));
+    const guidanceRow = this.db.raw.prepare(`
+      SELECT * FROM project_guidance WHERE project_id = ?
+    `).get(projectId) as Record<string, unknown> | undefined;
+    const researchSources = (this.db.raw.prepare(`
+      SELECT * FROM research_sources WHERE project_id = ? ORDER BY accessed_at DESC, id
+    `).all(projectId) as Array<Record<string, unknown>>).map(source => ({
+      id: String(source.id),
+      url: String(source.url),
+      title: String(source.title),
+      publisher: source.publisher ? String(source.publisher) : null,
+      sourceType: String(source.source_type ?? 'unknown'),
+      summary: source.summary ? String(source.summary) : null,
+      excerpt: source.excerpt ? String(source.excerpt) : null,
+      contentHash: source.content_hash ? String(source.content_hash) : null,
+      status: source.status as ProjectResearchSource['status'],
+      publishedAt: source.published_at ? String(source.published_at) : null,
+      accessedAt: String(source.accessed_at),
+      freshnessDays: source.freshness_days === null || source.freshness_days === undefined
+        ? null : Number(source.freshness_days),
+      expiresAt: source.expires_at ? String(source.expires_at) : null
+    } satisfies ProjectResearchSource));
+    const claimSceneRows = this.db.raw.prepare(`
+      SELECT link.claim_id, link.scene_id
+      FROM project_scene_claims link
+      JOIN project_scenes scene ON scene.id = link.scene_id
+      WHERE scene.project_id = ?
+      ORDER BY scene.ordinal, link.claim_id
+    `).all(projectId) as Array<{ claim_id: string; scene_id: string }>;
+    const claimScenes = new Map<string, string[]>();
+    for (const link of claimSceneRows) {
+      claimScenes.set(link.claim_id, [...(claimScenes.get(link.claim_id) ?? []), link.scene_id]);
+    }
+    const factClaims = (this.db.raw.prepare(`
+      SELECT * FROM fact_claims WHERE project_id = ? ORDER BY created_at, id
+    `).all(projectId) as Array<Record<string, unknown>>).map(claim => ({
+      id: String(claim.id),
+      text: String(claim.text),
+      category: String(claim.category),
+      confidence: Number(claim.confidence),
+      stability: String(claim.stability),
+      validAsOf: claim.valid_as_of ? String(claim.valid_as_of) : null,
+      status: String(claim.status),
+      material: Boolean(claim.material),
+      sourceIds: jsonArray(claim.source_ids_json),
+      sceneIds: claimScenes.get(String(claim.id)) ?? [],
+      normalizedKey: claim.normalized_key ? String(claim.normalized_key) : null,
+      freshnessDays: claim.freshness_days === null || claim.freshness_days === undefined
+        ? null : Number(claim.freshness_days),
+      expiresAt: claim.expires_at ? String(claim.expires_at) : null,
+      conflictGroup: claim.conflict_group ? String(claim.conflict_group) : null,
+      omissionReason: claim.omission_reason ? String(claim.omission_reason) : null,
+      evidence: jsonRecord(claim.evidence_json),
+      createdAt: String(claim.created_at),
+      updatedAt: claim.updated_at ? String(claim.updated_at) : null
+    } satisfies ProjectFactClaim));
+    const scriptVersions = (this.db.raw.prepare(`
+      SELECT * FROM script_versions WHERE project_id = ? ORDER BY version_number DESC, created_at DESC
+    `).all(projectId) as Array<Record<string, unknown>>).map(script => ({
+      id: String(script.id),
+      parentId: script.parent_id ? String(script.parent_id) : null,
+      versionNumber: Number(script.version_number),
+      title: String(script.title),
+      topic: String(script.topic),
+      summary: script.summary ? String(script.summary) : null,
+      script: jsonRecord(script.script_json),
+      generationReason: String(script.generation_reason),
+      provider: String(script.provider),
+      model: String(script.model),
+      inputHash: String(script.input_hash),
+      locked: Boolean(script.locked),
+      scriptType: script.script_type as ProjectScriptVersion['scriptType'],
+      lockedAt: script.locked_at ? String(script.locked_at) : null,
+      createdAt: String(script.created_at)
+    } satisfies ProjectScriptVersion));
+    const licenses = (this.db.raw.prepare(`
+      SELECT license.*, asset.title AS asset_title,
+        file.id AS file_id, file.original_file_name, file.sha256, file.width,
+        file.height, file.duration_ms, file.codec, file.pipeline_version
+      FROM project_licenses license
+      JOIN assets asset ON asset.id = license.asset_id
+      LEFT JOIN asset_files file ON file.id = asset.local_file_id
+      WHERE license.project_id = ?
+      ORDER BY asset.title, license.asset_id
+    `).all(projectId) as Array<Record<string, unknown>>).map(license => ({
+      id: String(license.id),
+      assetId: String(license.asset_id),
+      assetTitle: String(license.asset_title),
+      licenseState: license.license_state as ProjectLicenseDetail['licenseState'],
+      envatoProjectName: String(license.envato_project_name),
+      certificatePath: license.certificate_path ? String(license.certificate_path) : null,
+      operatorAttestedAt: license.operator_attested_at ? String(license.operator_attested_at) : null,
+      verifiedAt: license.verified_at ? String(license.verified_at) : null,
+      notes: license.notes ? String(license.notes) : null,
+      file: license.file_id ? {
+        id: String(license.file_id),
+        fileName: String(license.original_file_name),
+        sha256: String(license.sha256),
+        width: Number(license.width),
+        height: Number(license.height),
+        durationMs: Number(license.duration_ms),
+        codec: String(license.codec),
+        pipelineVersion: String(license.pipeline_version)
+      } : null,
+      createdAt: String(license.created_at),
+      updatedAt: String(license.updated_at)
+    } satisfies ProjectLicenseDetail));
+    const publicationRecords = (this.db.raw.prepare(`
+      SELECT * FROM publication_records WHERE project_id = ? ORDER BY created_at DESC
+    `).all(projectId) as Array<Record<string, unknown>>).map(publication => ({
+      id: String(publication.id),
+      videoId: publication.video_id ? String(publication.video_id) : null,
+      privacyStatus: String(publication.privacy_status),
+      processingStatus: publication.processing_status ? String(publication.processing_status) : null,
+      selectedPackageId: publication.selected_package_id ? String(publication.selected_package_id) : null,
+      captionId: publication.caption_id ? String(publication.caption_id) : null,
+      thumbnailUploaded: Boolean(publication.thumbnail_uploaded),
+      approvedAt: publication.approved_at ? String(publication.approved_at) : null,
+      scheduledAt: publication.scheduled_at ? String(publication.scheduled_at) : null,
+      publishedAt: publication.published_at ? String(publication.published_at) : null,
+      syntheticMedia: Boolean(publication.synthetic_media),
+      error: publication.error ? String(publication.error) : null,
+      createdAt: String(publication.created_at),
+      updatedAt: String(publication.updated_at)
+    } satisfies ProjectPublicationDetail));
+    const analyticsRows = this.db.raw.prepare(`
+      SELECT * FROM analytics_snapshots WHERE project_id = ? ORDER BY snapshot_day, captured_at
+    `).all(projectId) as Array<Record<string, unknown>>;
+    const analyticsSnapshots = analyticsRows.map(snapshot => {
+      const mappings = (this.db.raw.prepare(`
+        SELECT * FROM retention_mappings WHERE analytics_snapshot_id = ? ORDER BY position_ms
+      `).all(snapshot.id) as Array<Record<string, unknown>>).map(mapping => ({
+        positionMs: Number(mapping.position_ms),
+        elapsedRatio: Number(mapping.elapsed_ratio),
+        audienceWatchRatio: mapping.audience_watch_ratio === null ? null : Number(mapping.audience_watch_ratio),
+        relativeRetention: mapping.relative_retention === null ? null : Number(mapping.relative_retention),
+        sceneId: mapping.scene_id ? String(mapping.scene_id) : null,
+        sceneOrdinal: mapping.scene_ordinal === null ? null : Number(mapping.scene_ordinal),
+        chapter: mapping.chapter ? String(mapping.chapter) : null,
+        visualTreatment: mapping.visual_treatment ? String(mapping.visual_treatment) : null,
+        shotLengthMs: mapping.shot_length_ms === null ? null : Number(mapping.shot_length_ms),
+        sourceKind: mapping.source_kind ? String(mapping.source_kind) : null,
+        locationName: mapping.location_name ? String(mapping.location_name) : null,
+        voiceWordsPerMinute: mapping.voice_words_per_minute === null ? null : Number(mapping.voice_words_per_minute)
+      }));
+      return {
+        id: String(snapshot.id),
+        projectId: String(snapshot.project_id),
+        videoId: String(snapshot.video_id),
+        snapshotDay: Number(snapshot.snapshot_day) as AnalyticsSnapshot['snapshotDay'],
+        metrics: JSON.parse(String(snapshot.metrics_json)),
+        retention: JSON.parse(String(snapshot.retention_json ?? '[]')),
+        capturedAt: String(snapshot.captured_at ?? snapshot.collected_at),
+        source: snapshot.source as AnalyticsSnapshot['source'],
+        sourceHash: String(snapshot.source_hash ?? ''),
+        mappings
+      } satisfies AnalyticsSnapshot;
+    });
+    const auditLog = (this.db.raw.prepare(`
+      SELECT * FROM audit_log WHERE project_id = ? ORDER BY id DESC LIMIT 250
+    `).all(projectId) as Array<Record<string, unknown>>).map(entry => ({
+      id: Number(entry.id),
+      projectId: entry.project_id ? String(entry.project_id) : null,
+      action: String(entry.action),
+      actor: String(entry.actor),
+      entityType: entry.entity_type ? String(entry.entity_type) : null,
+      entityId: entry.entity_id ? String(entry.entity_id) : null,
+      before: entry.before_json ? jsonRecord(entry.before_json) : null,
+      after: entry.after_json ? jsonRecord(entry.after_json) : null,
+      metadata: entry.metadata_json ? jsonRecord(entry.metadata_json) : null,
+      createdAt: String(entry.created_at)
+    } satisfies AuditLogEntry));
 
     return {
       ...projectSummary(row),
@@ -306,19 +582,33 @@ export class ProjectService {
       opportunityScore: row.opportunity_score === null || row.opportunity_score === undefined
         ? null : Number(row.opportunity_score),
       scriptVersionId: row.script_version_id ? String(row.script_version_id) : null,
+      channelSnapshot: row.channel_snapshot_json ? JSON.parse(String(row.channel_snapshot_json)) : null,
+      languageVoiceSnapshot: row.language_voice_snapshot_json ? JSON.parse(String(row.language_voice_snapshot_json)) : null,
+      outputProfileSnapshot: row.output_profile_snapshot_json ? JSON.parse(String(row.output_profile_snapshot_json)) : null,
+      guidance: guidanceRow ? guidanceFromRow(guidanceRow) : null,
+      researchSources,
+      factClaims,
+      scriptVersions,
       scenes,
       acquisitions,
+      licenses,
       renders,
       packaging,
       qc,
       repairs: this.repairs.list(projectId),
       narrationSections,
+      publicationRecords,
+      analyticsSnapshots,
+      auditLog,
       exports,
       rebuilds
     };
   }
 
-  private loadAssetsForCluster(cluster: { country: string | null; city: string | null; locationName: string | null }): import('@shared/types').CatalogAsset[] {
+  private loadAssetsForCluster(
+    cluster: { country: string | null; city: string | null; locationName: string | null },
+    preferredOrientation: 'landscape' | 'portrait'
+  ): import('@shared/types').CatalogAsset[] {
     const where: string[] = ['excluded = 0', `availability_status <> 'unavailable'`];
     const params: unknown[] = [];
     if (cluster.country) { where.push('country = ? COLLATE NOCASE'); params.push(cluster.country); }
@@ -336,11 +626,11 @@ export class ProjectService {
           ELSE 2
         END,
         location_confidence DESC,
-        CASE WHEN orientation = 'landscape' THEN 0 ELSE 1 END,
+        CASE WHEN orientation = ? THEN 0 ELSE 1 END,
         declared_width DESC,
         updated_at DESC
       LIMIT 600
-    `).all(...params) as Array<Record<string, unknown>>;
+    `).all(...params, preferredOrientation) as Array<Record<string, unknown>>;
 
     // Catalog search already owns the public mapper. Reuse it safely in bounded pages.
     const ids = new Set(rows.map(row => String(row.id)));
@@ -358,18 +648,30 @@ export class ProjectService {
 
   async createAutopilot(request: CreateAutopilotProjectRequest): Promise<ProjectDetail> {
     const settings = this.settings();
+    const startingScript = request.startingScript;
+    if (startingScript !== undefined && (!startingScript.trim() || startingScript.length > 20_000)) {
+      throw new Error('Starting-script guidance must contain between 1 and 20,000 characters.');
+    }
+    const requestedProfileKey = request.outputProfileKey
+      ?? (settings.defaultOutput === 'qualified_4k' ? 'landscape_4k' : 'landscape_1080p');
+    const requestedOutput = outputDimensions(requestedProfileKey);
     const coverage = this.catalog.coverage(250);
-    if (!coverage.length) throw new Error('Import a footage catalog before starting Autopilot.');
-    const requestedCluster = request.destinationKey
-      ? coverage.find(cluster => cluster.key === request.destinationKey)
+    const requestedTopic = request.topicId
+      ? this.db.raw.prepare(`SELECT * FROM topic_candidates WHERE id = ?`).get(request.topicId) as Record<string, unknown> | undefined
       : undefined;
-    const cluster = requestedCluster
-      ?? coverage.find(item => item.assetCount >= 12 && item.landscapeCount >= Math.max(6, item.assetCount * 0.45))
-      ?? coverage[0];
-    if (!cluster) throw new Error('No supportable destination cluster is available.');
-
-    const destination = cluster.locationName ?? cluster.city ?? cluster.country ?? 'Selected destination';
-    const title = `A Visual Guide to ${destination}`;
+    const guidance = resolveAutopilotGuidance(
+      coverage,
+      request,
+      requestedOutput.orientation,
+      requestedTopic ? {
+        id: String(requestedTopic.id),
+        destinationKey: String(requestedTopic.destination_key),
+        title: String(requestedTopic.title),
+        destination: String(requestedTopic.destination),
+        feasibility: String(requestedTopic.feasibility)
+      } : undefined
+    );
+    const { cluster, destination, title } = guidance;
     assertPlanningCapacity(this.db, settings, title);
     if (settings.researchProvider === 'tavily' && !this.research?.configured()) {
       throw new Error('Tavily research is enabled but its encrypted API key is not configured; no project or provider call was started.');
@@ -384,66 +686,156 @@ export class ProjectService {
       throw new Error('The semantic vision provider is enabled but its encrypted API key is not configured; no project or provider call was started.');
     }
     const targetMinutes = request.targetMinutes ?? settings.targetVideoMinutes;
-    const planning = evaluateCoverage(cluster, targetMinutes);
+    const targetDurationMs = Math.round(targetMinutes * 60_000);
+    const planning = evaluateCoverage(cluster, targetMinutes, { orientation: requestedOutput.orientation });
     if (!planning.qualified) {
       throw new Error(`Destination coverage is below the production threshold: ${planning.reasons.join('; ')}`);
     }
-    const assets = this.loadAssetsForCluster(cluster);
+    const assets = this.loadAssetsForCluster(cluster, requestedOutput.orientation);
     if (assets.length < 3) {
       throw new Error(`Not enough eligible assets for ${destination}.`);
     }
+    const opportunityScore = requestedTopic && Number.isFinite(Number(requestedTopic.opportunity_score))
+      ? Number(requestedTopic.opportunity_score)
+      : planning.opportunityScore;
 
     const sequenceRow = this.db.raw.prepare(`SELECT coalesce(max(sequence), 0) + 1 AS next FROM projects`).get() as { next: number };
     const sequence = sequenceRow.next;
     const slug = slugify(title);
     const projectId = randomUUID();
     const now = new Date().toISOString();
-    const envatoProjectName = `YT-${new Date().getFullYear()}-${settings.channelShort || 'TRAVEL'}-${String(sequence).padStart(4, '0')}-${slug.toUpperCase()}`;
+    const channel = this.db.raw.prepare(`
+      SELECT * FROM channels WHERE id = coalesce(?, (SELECT id FROM channels WHERE is_default = 1)) AND active = 1
+    `).get(request.channelId ?? null) as Record<string, unknown> | undefined;
+    if (!channel) throw new Error('The requested channel profile is unavailable.');
+    const languageVoice = this.db.raw.prepare(`
+      SELECT * FROM language_voice_profiles
+      WHERE id = coalesce(?, (SELECT id FROM language_voice_profiles WHERE is_default = 1)) AND active = 1
+    `).get(request.languageVoiceProfileId ?? null) as Record<string, unknown> | undefined;
+    if (!languageVoice) throw new Error('The requested language and voice profile is unavailable.');
+    const outputProfileRow = this.db.raw.prepare(`
+      SELECT * FROM output_profiles WHERE profile_key = ? AND active = 1
+    `).get(requestedProfileKey) as Record<string, unknown> | undefined;
+    if (!outputProfileRow) throw new Error('The requested output profile is unavailable.');
+    const channelSnapshot = {
+      id: String(channel.id), name: String(channel.name), shortCode: String(channel.short_code),
+      defaultLanguageCode: String(channel.default_language_code),
+      youtubeChannelId: channel.youtube_channel_id ? String(channel.youtube_channel_id) : null,
+      policy: JSON.parse(String(channel.policy_json)),
+      externalQualification: String(channel.external_qualification), capturedAt: now
+    };
+    const languageVoiceSnapshot = {
+      id: String(languageVoice.id), languageCode: String(languageVoice.language_code),
+      languageName: String(languageVoice.language_name), voiceProvider: String(languageVoice.voice_provider),
+      voiceId: String(languageVoice.voice_id), displayName: String(languageVoice.display_name),
+      settings: JSON.parse(String(languageVoice.settings_json)),
+      externalQualification: String(languageVoice.external_qualification), capturedAt: now
+    };
+    const outputProfileSnapshot = {
+      id: String(outputProfileRow.id), profileKey: String(outputProfileRow.profile_key),
+      displayName: String(outputProfileRow.display_name), width: Number(outputProfileRow.width),
+      height: Number(outputProfileRow.height), orientation: String(outputProfileRow.orientation),
+      frameRate: Number(outputProfileRow.frame_rate), videoCodec: String(outputProfileRow.video_codec),
+      audioCodec: String(outputProfileRow.audio_codec),
+      qualificationPolicy: JSON.parse(String(outputProfileRow.qualification_policy_json)),
+      active: Boolean(outputProfileRow.active), isDefault: Boolean(outputProfileRow.is_default), capturedAt: now
+    };
+    const envatoProjectName = `YT-${new Date().getFullYear()}-${String(channel.short_code || settings.channelShort || 'TRAVEL')}-${String(sequence).padStart(4, '0')}-${slug.toUpperCase()}`;
 
-    this.db.raw.prepare(`
-      INSERT INTO projects(
+    this.db.raw.transaction(() => {
+      this.db.raw.prepare(`
+        INSERT INTO projects(
         id, sequence, slug, title, topic, description, destination_key, destination,
         state, progress, envato_project_name, target_duration_ms, opportunity_score,
         provider_budget_usd, provider_policy_json,
+        channel_id, language_voice_profile_id, output_profile_id,
+        channel_snapshot_json, language_voice_snapshot_json, output_profile_snapshot_json,
         created_at, updated_at
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', 0.02, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      projectId,
-      sequence,
-      slug,
-      title,
-      title,
-      `Autopilot visual production for ${destination}.`,
-      cluster.key,
-      destination,
-      envatoProjectName,
-      Math.round(targetMinutes * 60_000),
-      planning.opportunityScore,
-      settings.projectBudgetUsd,
-      JSON.stringify({
-        monthlyBudgetUsd: settings.monthlyBudgetUsd,
-        projectBudgetUsd: settings.projectBudgetUsd,
-        researchProvider: settings.researchProvider,
-        llmProvider: settings.llmProvider,
-        visionProvider: settings.visionProvider,
-        capturedAt: now
-      }),
-      now,
-      now
-    );
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', 0.02, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        projectId,
+        sequence,
+        slug,
+        title,
+        title,
+        `Autopilot visual production for ${destination}.`,
+        cluster.key,
+        destination,
+        envatoProjectName,
+        targetDurationMs,
+        opportunityScore,
+        settings.projectBudgetUsd,
+        JSON.stringify({
+          monthlyBudgetUsd: settings.monthlyBudgetUsd,
+          projectBudgetUsd: settings.projectBudgetUsd,
+          researchProvider: settings.researchProvider,
+          llmProvider: settings.llmProvider,
+          visionProvider: settings.visionProvider,
+          capturedAt: now
+        }),
+        channel.id,
+        languageVoice.id,
+        outputProfileRow.id,
+        JSON.stringify(channelSnapshot),
+        JSON.stringify(languageVoiceSnapshot),
+        JSON.stringify(outputProfileSnapshot),
+        now,
+        now
+      );
+      const guided = Boolean(
+        request.destinationKey
+        || request.topicId
+        || request.targetMinutes !== undefined
+        || startingScript
+      );
+      this.db.raw.prepare(`
+        INSERT INTO project_guidance(
+          project_id, mode, starting_script, starting_script_sha256,
+          requested_destination_key, requested_topic_id, requested_target_duration_ms,
+          resolved_destination_key, resolved_destination, resolved_topic_title,
+          resolved_target_duration_ms, constraints_json, created_at
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        projectId,
+        guided ? 'guided' : 'automatic',
+        startingScript ?? null,
+        startingScript ? createHash('sha256').update(startingScript).digest('hex') : null,
+        request.destinationKey ?? null,
+        request.topicId ?? null,
+        request.targetMinutes === undefined ? null : targetDurationMs,
+        cluster.key,
+        destination,
+        title,
+        targetDurationMs,
+        JSON.stringify({
+          schemaVersion: 'guided-editorial-seed-v1',
+          role: 'editorial_guidance_only',
+          evidenceEligible: false,
+          researchSourceEligible: false,
+          acceptedClaimEligible: false,
+          rawTextSharedWithLanguageProvider: false,
+          safeUses: ['catalog_grounded_emphasis', 'tone', 'pacing', 'structure'],
+          factualNarrationPolicy: 'independent_source_or_catalog_evidence_required'
+        }),
+        now
+      );
+    })();
 
     this.db.raw.prepare(`
       INSERT INTO topic_candidates(
         id, project_id, destination_key, title, destination, angle, viewer_promise,
         keywords_json, coverage_json, demand_score, competition_score, opportunity_score,
         feasibility, reasons_json, raw_metrics_json, created_at
-      ) VALUES(?, ?, ?, ?, ?, 'visual guide', ?, ?, ?, NULL, NULL, ?, 'qualified', ?, ?, ?)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 'qualified', ?, ?, ?)
     `).run(
       randomUUID(), projectId, cluster.key, title, destination,
-      `A truthful visual journey grounded in available ${destination} footage.`,
-      JSON.stringify([destination, 'travel', 'visual guide']), JSON.stringify(cluster),
-      planning.opportunityScore, JSON.stringify(planning.reasons), JSON.stringify({
-        signalLabel: 'catalog-coverage-only',
+      requestedTopic ? String(requestedTopic.angle) : 'visual guide',
+      requestedTopic ? String(requestedTopic.viewer_promise) : `A truthful visual journey grounded in available ${destination} footage.`,
+      requestedTopic ? String(requestedTopic.keywords_json) : JSON.stringify([destination, 'travel', 'visual guide']),
+      JSON.stringify(cluster),
+      opportunityScore, JSON.stringify(planning.reasons), JSON.stringify({
+        signalLabel: requestedTopic ? 'selected-qualified-topic' : 'catalog-coverage-only',
+        selectedTopicCandidateId: request.topicId ?? null,
         estimatedShots: planning.estimatedShots,
         requiredShots: planning.requiredShots,
         components: planning.components
@@ -552,7 +944,8 @@ export class ProjectService {
         targetMinutes,
         coverage: cluster,
         assets,
-        acceptedClaims: acceptedResearchClaims.map(claim => ({ id: claim.id, text: claim.text, category: claim.category, sourceIds: claim.sourceIds }))
+        acceptedClaims: acceptedResearchClaims.map(claim => ({ id: claim.id, text: claim.text, category: claim.category, sourceIds: claim.sourceIds })),
+        startingScript
       });
       const acceptedClaimIds = new Set(acceptedResearchClaims.map(claim => claim.id));
       const acceptedClaimText = new Map(acceptedResearchClaims.map(claim => [claim.id, claim.text]));
@@ -586,6 +979,36 @@ export class ProjectService {
         now
       );
 
+      const matchingScenes = script.scenes.map(scene => ({
+        requiredCountry: scene.requiredCountry,
+        requiredCity: scene.requiredCity,
+        requiredLocation: scene.requiredLocation,
+        requiredGranularity: scene.requiredGranularity,
+        requiredObjects: scene.requiredObjects,
+        requiredActivities: scene.requiredActivities,
+        preferredShots: scene.preferredShots,
+        narration: scene.narration,
+        forceGraphic: scene.visualTreatment === 'MAP_OR_GRAPHIC' || scene.visualTreatment === 'TEXT_OR_ARCHIVAL'
+      }));
+      const footageOrdinals = matchingScenes.flatMap((scene, index) => scene.forceGraphic ? [] : [index + 1]);
+      const firstTransitionOrdinal = script.scenes.findIndex((scene, index) => index > 0
+        && !matchingScenes[index]!.forceGraphic
+        && scene.chapter !== script.scenes[index - 1]!.chapter) + 1;
+      const heroSceneOrdinal = settings.matchingHeroStrategy === 'disabled'
+        ? null
+        : settings.matchingHeroStrategy === 'first_major_transition' && firstTransitionOrdinal > 0
+          ? firstTransitionOrdinal
+          : footageOrdinals[0] ?? null;
+      const matchingPlan = this.matcher.optimizeSequence(matchingScenes, assets, {
+        width: outputProfileSnapshot.width,
+        height: outputProfileSnapshot.height,
+        orientation: outputProfileSnapshot.orientation as 'landscape' | 'portrait' | 'square'
+      }, {
+        maxSourceUses: settings.matchingMaxSourceUses,
+        maxConsecutiveShotMotion: settings.matchingMaxConsecutiveShotMotion,
+        perceptualDuplicateDistance: settings.matchingPerceptualDistance,
+        heroSceneOrdinal
+      });
       const useCount = new Map<string, number>();
       const plannedAlternateBudget = Math.max(1, Math.min(5, Math.ceil(script.scenes.length * 0.15)));
       let plannedAlternates = 0;
@@ -594,7 +1017,7 @@ export class ProjectService {
         assetId: string;
         score: number;
         reasons: string[];
-        role: 'selected' | 'alternate';
+        role: 'selected' | 'alternate' | 'hero';
       }> = [];
       const insertScene = this.db.raw.prepare(`
         INSERT INTO project_scenes(
@@ -614,24 +1037,20 @@ export class ProjectService {
         });
         script.scenes.forEach((scene, index) => {
           const ordinal = index + 1;
-          const ranked = this.matcher.rank({
-            requiredCountry: scene.requiredCountry,
-            requiredCity: scene.requiredCity,
-            requiredLocation: scene.requiredLocation,
-            requiredGranularity: scene.requiredGranularity,
-            requiredObjects: scene.requiredObjects,
-            requiredActivities: scene.requiredActivities,
-            preferredShots: scene.preferredShots,
-            narration: scene.narration
-          }, assets, useCount);
-          const selected = ranked[0];
-          const alternates = selected && ranked[1] && plannedAlternates < plannedAlternateBudget && shouldAcquireAlternate({
+          const planned = matchingPlan[index]!;
+          const ranked = planned.candidates;
+          const selected = planned.selected ?? undefined;
+          const alternateCandidate = selected
+            ? ranked.find(candidate => candidate.asset.id !== selected.asset.id
+              && (useCount.get(candidate.asset.id) ?? 0) < settings.matchingMaxSourceUses)
+            : undefined;
+          const alternates = selected && alternateCandidate && plannedAlternates < plannedAlternateBudget && shouldAcquireAlternate({
             score: selected.score,
             locationConfidence: selected.asset.locationConfidence,
             verificationStatus: selected.asset.verificationStatus,
             localFileId: selected.asset.localFileId
-          }) && (ranked[1].asset.canonicalPageUrl || ranked[1].asset.localFileId)
-            ? ranked.slice(1, 2)
+          }) && (alternateCandidate.asset.canonicalPageUrl || alternateCandidate.asset.localFileId)
+            ? [alternateCandidate]
             : [];
           const requestedGraphic = scene.visualTreatment === 'MAP_OR_GRAPHIC' || scene.visualTreatment === 'TEXT_OR_ARCHIVAL';
           const selectedFootage = requestedGraphic ? undefined : selected;
@@ -643,7 +1062,7 @@ export class ProjectService {
               assetId: selectedFootage.asset.id,
               score: selectedFootage.score,
               reasons: selectedFootage.reasons,
-              role: 'selected'
+              role: planned.role === 'hero' ? 'hero' : 'selected'
             });
           }
           const sceneId = randomUUID();
@@ -682,7 +1101,10 @@ export class ProjectService {
             now,
             now
           );
-          if (!requestedGraphic) ranked.slice(0, 3).forEach((candidate, rankIndex) => {
+          const persistedCandidates = selected
+            ? [selected, ...ranked.filter(candidate => candidate.asset.id !== selected.asset.id)].slice(0, 3)
+            : ranked.slice(0, 3);
+          if (!requestedGraphic) persistedCandidates.forEach((candidate, rankIndex) => {
             this.db.raw.prepare(`
               INSERT INTO shot_candidates(
                 id, project_id, scene_id, asset_id, candidate_rank,
@@ -692,7 +1114,7 @@ export class ProjectService {
             `).run(
               randomUUID(), projectId, sceneId, candidate.asset.id, rankIndex + 1,
               candidate.score, JSON.stringify(candidate.components), JSON.stringify(candidate.reasons),
-              rankIndex === 0 ? 'selected' : 'eligible', now, now
+              candidate.asset.id === selected?.asset.id ? 'selected' : 'eligible', now, now
             );
           });
           for (const alternate of requestedGraphic ? [] : alternates) {
@@ -744,39 +1166,8 @@ export class ProjectService {
           }
         });
 
-        const grouped = new Map<string, {
-          ordinals: number[];
-          score: number;
-          reasons: string[];
-          selected: boolean;
-          alternate: boolean;
-        }>();
-        for (const selected of selectedByScene) {
-          const current = grouped.get(selected.assetId) ?? {
-            ordinals: [],
-            score: selected.score,
-            reasons: selected.reasons,
-            selected: false,
-            alternate: false
-          };
-          current.ordinals.push(selected.sceneOrdinal);
-          current.score = Math.max(current.score, selected.score);
-          current.selected ||= selected.role === 'selected';
-          current.alternate ||= selected.role === 'alternate';
-          grouped.set(selected.assetId, current);
-        }
-
-        let acqOrdinal = 1;
-        for (const [assetId, data] of grouped) {
-          const asset = assets.find(item => item.id === assetId);
-          if (!asset) continue;
-          const local = Boolean(asset.localFileId);
-          if (!local && !asset.canonicalPageUrl) continue;
-          const role = local
-            ? 'license_only'
-            : data.selected && data.ordinals.includes(1)
-              ? 'hero'
-              : data.selected ? 'primary' : 'alternate';
+        const acquisitionManifest = buildAcquisitionManifest(selectedByScene, assets);
+        for (const item of acquisitionManifest) {
           this.db.raw.prepare(`
             INSERT INTO acquisition_items(
               id, project_id, asset_id, ordinal, role, state, license_state,
@@ -786,14 +1177,14 @@ export class ProjectService {
           `).run(
             randomUUID(),
             projectId,
-            assetId,
-            acqOrdinal++,
-            role,
-            local ? 'LICENSE_ONLY_PENDING' : 'READY_TO_OPEN',
-            asset.canonicalPageUrl ?? `urn:videofactory:catalog:${asset.id}`,
-            JSON.stringify(data.ordinals),
-            data.score,
-            JSON.stringify(data.reasons),
+            item.assetId,
+            item.ordinal,
+            item.role,
+            item.state,
+            item.sourceUrl,
+            JSON.stringify(item.requiredSceneOrdinals),
+            item.matchScore,
+            JSON.stringify(item.reasons),
             now,
             now
           );
@@ -802,8 +1193,29 @@ export class ProjectService {
               id, project_id, asset_id, license_state, envato_project_name,
               created_at, updated_at
             ) VALUES(?, ?, ?, 'PENDING', ?, ?, ?)
-          `).run(randomUUID(), projectId, assetId, envatoProjectName, now, now);
+          `).run(randomUUID(), projectId, item.assetId, envatoProjectName, now, now);
         }
+
+        this.db.raw.prepare(`
+          INSERT INTO audit_log(
+            project_id, action, actor, entity_type, entity_id, metadata_json, created_at
+          ) VALUES(?, 'storyboard.global_match_optimized', 'system', 'project', ?, ?, ?)
+        `).run(projectId, projectId, JSON.stringify({
+          policy: {
+            maxSourceUses: settings.matchingMaxSourceUses,
+            maxConsecutiveShotMotion: settings.matchingMaxConsecutiveShotMotion,
+            perceptualDuplicateDistance: settings.matchingPerceptualDistance,
+            heroStrategy: settings.matchingHeroStrategy,
+            heroSceneOrdinal
+          },
+          selections: matchingPlan.map((item, index) => ({
+            sceneOrdinal: index + 1,
+            assetId: item.selected?.asset.id ?? null,
+            role: item.role,
+            score: item.selected?.score ?? null,
+            reasons: item.selected?.reasons ?? ['Graphic fallback selected by sequence policy']
+          }))
+        }), now);
 
         this.db.raw.prepare(`
           UPDATE script_versions SET locked = 1, script_type = 'provisional', locked_at = ?
@@ -811,10 +1223,10 @@ export class ProjectService {
         `).run(now, scriptId);
         this.db.raw.prepare('UPDATE projects SET script_version_id = ?, updated_at = ? WHERE id = ?')
           .run(scriptId, new Date().toISOString(), projectId);
-        this.states.transition(projectId, grouped.size ? 'WAITING_FOR_DOWNLOADS' : 'BLOCKED_EXCEPTION', {
-          progress: grouped.size ? 0.27 : 0.15,
-          reason: grouped.size ? 'Acquisition manifest created' : 'No eligible exact-location footage matched',
-          prerequisites: { acquisitionCount: grouped.size, sceneCount: script.scenes.length }
+        this.states.transition(projectId, acquisitionManifest.length ? 'WAITING_FOR_DOWNLOADS' : 'BLOCKED_EXCEPTION', {
+          progress: acquisitionManifest.length ? 0.27 : 0.15,
+          reason: acquisitionManifest.length ? 'Acquisition manifest created' : 'No eligible exact-location footage matched',
+          prerequisites: { acquisitionCount: acquisitionManifest.length, sceneCount: script.scenes.length }
         });
       });
       transaction();
@@ -886,6 +1298,139 @@ export class ProjectService {
       JSON.stringify({ claims: claims.map(claim => ({ id: claim.id, text: claim.text, sourceIds: claim.sourceIds, conflictGroup: claim.conflictGroup })) }),
       JSON.stringify(['omit_claims', 'operator_review_sources']), now
     );
+  }
+
+  pause(projectId: string): ProjectDetail {
+    const project = this.get(projectId);
+    if (project.state === 'PAUSED') return project;
+    if (['SCHEDULED', 'PUBLISHED', 'ANALYTICS_ACTIVE', 'CANCELLED', 'FAILED', 'ARCHIVED'].includes(project.state)) {
+      throw new Error(`Project cannot be paused from ${project.state}.`);
+    }
+    if (!canTransitionProject(project.state, 'PAUSED')) {
+      throw new Error(`Project cannot be paused from ${project.state}.`);
+    }
+    const lock = this.db.raw.prepare(`SELECT locked_by_job_id FROM projects WHERE id = ?`).get(projectId) as {
+      locked_by_job_id: string | null;
+    };
+    if (lock.locked_by_job_id) {
+      if (project.pendingLifecycleAction === 'pause') return project;
+      const now = new Date().toISOString();
+      this.db.raw.transaction(() => {
+        this.db.raw.prepare(`UPDATE projects SET pending_lifecycle_action = 'pause', updated_at = ? WHERE id = ?`)
+          .run(now, projectId);
+        this.db.raw.prepare(`
+          INSERT INTO audit_log(project_id, action, actor, entity_type, entity_id, before_json, after_json, metadata_json, created_at)
+          VALUES(?, 'project.pause_requested', 'human', 'project', ?, ?, ?, ?, ?)
+        `).run(
+          projectId,
+          projectId,
+          JSON.stringify({ pendingLifecycleAction: null, state: project.state }),
+          JSON.stringify({ pendingLifecycleAction: 'pause', state: project.state }),
+          JSON.stringify({ activeJobId: lock.locked_by_job_id, applyAt: 'next_job_checkpoint' }),
+          now
+        );
+      })();
+      return this.get(projectId);
+    }
+    this.db.raw.prepare(`UPDATE projects SET pending_lifecycle_action = NULL WHERE id = ?`).run(projectId);
+    this.states.transition(projectId, 'PAUSED', {
+      reason: 'Operator paused project automation',
+      prerequisites: { priorState: project.state }
+    });
+    return this.get(projectId);
+  }
+
+  resume(projectId: string): ProjectDetail {
+    const project = this.get(projectId);
+    if (!['PAUSED', 'BLOCKED_EXCEPTION'].includes(project.state)) {
+      throw new Error(`Project cannot resume from ${project.state}.`);
+    }
+    this.assertLifecycleUnlocked(projectId);
+    this.db.raw.prepare(`UPDATE projects SET pending_lifecycle_action = NULL WHERE id = ?`).run(projectId);
+    if (project.state === 'BLOCKED_EXCEPTION') {
+      const blockers = this.db.raw.prepare(`
+        SELECT count(*) AS count FROM exceptions
+        WHERE project_id = ? AND status = 'OPEN' AND severity IN ('BLOCKER','HIGH')
+      `).get(projectId) as { count: number };
+      if (Number(blockers.count)) {
+        throw new Error('Resolve every open blocker and high-severity exception before resuming this project.');
+      }
+    }
+    this.states.resume(projectId, 'Operator resumed project automation');
+    return this.get(projectId);
+  }
+
+  cancel(projectId: string): ProjectDetail {
+    const project = this.get(projectId);
+    if (project.state === 'CANCELLED') return project;
+    if (['SCHEDULED', 'PUBLISHED', 'ANALYTICS_ACTIVE', 'FAILED', 'ARCHIVED'].includes(project.state)) {
+      throw new Error(`Project cannot be cancelled from ${project.state}.`);
+    }
+    this.assertLifecycleUnlocked(projectId);
+    this.db.raw.prepare(`UPDATE projects SET pending_lifecycle_action = NULL WHERE id = ?`).run(projectId);
+    this.states.transition(projectId, 'CANCELLED', {
+      reason: 'Operator cancelled project production',
+      prerequisites: { priorState: project.state }
+    });
+    this.cancelPendingJobs(projectId, 'Project was cancelled by the operator');
+    return this.get(projectId);
+  }
+
+  archive(projectId: string): ProjectDetail {
+    const project = this.get(projectId);
+    if (project.state === 'ARCHIVED') return project;
+    if (!['PUBLISHED', 'ANALYTICS_ACTIVE', 'CANCELLED', 'FAILED'].includes(project.state)) {
+      throw new Error(`Only completed, cancelled, or failed projects can be archived, not ${project.state}.`);
+    }
+    this.assertLifecycleUnlocked(projectId);
+    this.db.raw.prepare(`UPDATE projects SET pending_lifecycle_action = NULL WHERE id = ?`).run(projectId);
+    this.states.transition(projectId, 'ARCHIVED', {
+      reason: 'Operator archived inactive project',
+      prerequisites: { priorState: project.state }
+    });
+    this.cancelPendingJobs(projectId, 'Project was archived by the operator');
+    return this.get(projectId);
+  }
+
+  private cancelPendingJobs(projectId: string, reason: string): void {
+    const now = new Date().toISOString();
+    this.db.raw.prepare(`
+      UPDATE jobs SET state = 'CANCELLED', error = ?, lease_owner = NULL,
+        lease_until = NULL, completed_at = ?, updated_at = ?
+      WHERE project_id = ?
+        AND state IN ('QUEUED','READY','WAITING_EXTERNAL','WAITING_HUMAN',
+          'RETRY_SCHEDULED','FAILED_RETRYABLE','FAILED_PERMANENT')
+    `).run(reason, now, now, projectId);
+  }
+
+  private assertLifecycleUnlocked(projectId: string): void {
+    const row = this.db.raw.prepare(`SELECT locked_by_job_id FROM projects WHERE id = ?`).get(projectId) as
+      | { locked_by_job_id: string | null }
+      | undefined;
+    if (!row) throw new Error('Project not found.');
+    if (row.locked_by_job_id) {
+      throw new Error('Wait for the active project job to reach a checkpoint before changing lifecycle state.');
+    }
+  }
+
+  applyPendingLifecycle(projectId: string): boolean {
+    return this.db.raw.transaction(() => {
+      const row = this.db.raw.prepare(`
+        SELECT state, locked_by_job_id, pending_lifecycle_action FROM projects WHERE id = ?
+      `).get(projectId) as {
+        state: import('@shared/types').ProjectState;
+        locked_by_job_id: string | null;
+        pending_lifecycle_action: string | null;
+      } | undefined;
+      if (!row || row.locked_by_job_id || row.pending_lifecycle_action !== 'pause') return false;
+      this.db.raw.prepare(`UPDATE projects SET pending_lifecycle_action = NULL WHERE id = ?`).run(projectId);
+      if (!canTransitionProject(row.state, 'PAUSED') || ['SCHEDULED'].includes(row.state)) return false;
+      this.states.transition(projectId, 'PAUSED', {
+        reason: 'Applied operator pause request at a completed job checkpoint',
+        prerequisites: { priorState: row.state, deferredRequest: true }
+      });
+      return true;
+    })();
   }
 
   delete(projectId: string): void {

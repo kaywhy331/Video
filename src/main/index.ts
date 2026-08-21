@@ -1,11 +1,13 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage, net, protocol, powerSaveBlocker, dialog } from 'electron';
+import { app, BrowserWindow, Menu, Tray, nativeImage, net, protocol, powerSaveBlocker, dialog, Notification } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { AppContext } from './app-context';
 import { registerIpc } from './ipc';
-import { pathIsInside } from './security-policy';
+import { resolveMediaRequest } from './media-protocol';
+import { ShutdownCoordinator } from './shutdown-coordinator';
+import { installNavigationGuards } from './window-security';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -24,7 +26,6 @@ let mainWindow: BrowserWindow | null = null;
 let context: AppContext | null = null;
 let tray: Tray | null = null;
 let blockerId: number | null = null;
-let isQuitting = false;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -88,9 +89,7 @@ function createWindow(): BrowserWindow {
   });
 
   window.on('ready-to-show', () => window.show());
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  window.webContents.on('will-navigate', event => event.preventDefault());
-  window.webContents.on('will-attach-webview', event => event.preventDefault());
+  installNavigationGuards(window.webContents);
 
   return window;
 }
@@ -103,49 +102,83 @@ async function loadWindow(window: BrowserWindow): Promise<void> {
   }
 }
 
+function updateTrayMenu(quitEnabled = true): void {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open VideoFactory', click: () => mainWindow?.show() },
+    { label: 'Pause/Resume is controlled inside the app', enabled: false },
+    { type: 'separator' },
+    { label: quitEnabled ? 'Quit' : 'Waiting to quit safely…', enabled: quitEnabled, click: () => app.quit() }
+  ]));
+}
+
 function setupTray(): void {
   const iconPath = join(process.resourcesPath, 'resources', 'icon-256.png');
   const developmentIcon = join(process.cwd(), 'resources', 'icon-256.png');
   const icon = nativeImage.createFromPath(existsSync(iconPath) ? iconPath : developmentIcon);
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.setToolTip('VideoFactory Desktop');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open VideoFactory', click: () => mainWindow?.show() },
-    { label: 'Pause/Resume is controlled inside the app', enabled: false },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() }
-  ]));
+  updateTrayMenu();
   tray.on('double-click', () => mainWindow?.show());
 }
 
+const shutdown = new ShutdownCoordinator({
+  stop: async () => {
+    await context?.stop();
+  },
+  completeQuit: () => {
+    if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
+      powerSaveBlocker.stop(blockerId);
+      blockerId = null;
+    }
+    app.quit();
+  },
+  onBegin: () => updateTrayMenu(false),
+  onPending: () => {
+    const labels = context?.pendingOperations().map(operation => operation.label) ?? [];
+    const detail = labels.length ? ` Active: ${labels.slice(0, 3).join(', ')}.` : '';
+    const message = `Quit is waiting for active work to finish safely.${detail}`;
+    if (Notification.isSupported()) {
+      new Notification({ title: 'VideoFactory is finishing safely', body: message }).show();
+    } else if (tray) {
+      tray.displayBalloon({ title: 'VideoFactory is finishing safely', content: message });
+    }
+  },
+  onError: error => {
+    const message = errorMessage(error);
+    console.error('VideoFactory shutdown failed:', message);
+    dialog.showErrorBox(
+      'VideoFactory could not quit safely',
+      `Shutdown did not complete, so the application database was not closed underneath active work.\n\n${message.slice(0, 1600)}`
+    );
+  },
+  graceMs: 30_000
+});
+
 function setupMediaProtocol(): void {
   protocol.handle('videofactory', async request => {
-    if (!context) return new Response('App is not ready.', { status: 503 });
-    const url = new URL(request.url);
-    const type = url.hostname;
-    const id = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
-    let path: string | null = null;
-    if (type === 'render') {
-      const row = context.db.raw.prepare('SELECT output_path FROM renders WHERE id = ?').get(id) as
-        | { output_path: string | null }
-        | undefined;
-      path = row?.output_path ?? null;
-    } else if (type === 'proxy') {
-      const row = context.db.raw.prepare('SELECT proxy_path FROM asset_files WHERE id = ?').get(id) as
-        | { proxy_path: string | null }
-        | undefined;
-      path = row?.proxy_path ?? null;
-    } else if (type === 'thumbnail') {
-      const row = context.db.raw.prepare('SELECT thumbnail_path FROM packaging_candidates WHERE id = ?').get(id) as
-        | { thumbnail_path: string | null }
-        | undefined;
-      path = row?.thumbnail_path ?? null;
-    }
+    if (!context || !context.acceptsOperations()) return new Response('App is not ready.', { status: 503 });
     const settings = context.settings();
-    if (!path || !existsSync(path) || !pathIsInside(path, [settings.mediaLibraryFolder, settings.projectFolder, settings.outputFolder])) {
-      return new Response('Media not found.', { status: 404 });
+    const stringLookup = (sql: string, id: string, key: string): string | null => {
+      const row = context!.db.raw.prepare(sql).get(id) as Record<string, unknown> | undefined;
+      return row?.[key] ? String(row[key]) : null;
+    };
+    const result = resolveMediaRequest(request.url, settings, {
+      render: id => stringLookup('SELECT output_path FROM renders WHERE id = ?', id, 'output_path'),
+      proxy: id => stringLookup('SELECT proxy_path FROM asset_files WHERE id = ?', id, 'proxy_path'),
+      thumbnail: id => stringLookup('SELECT thumbnail_path FROM packaging_candidates WHERE id = ?', id, 'thumbnail_path'),
+      captionManifest: id => stringLookup('SELECT manifest_path FROM renders WHERE id = ?', id, 'manifest_path')
+    });
+    if (result.status !== 200) return new Response(result.message, { status: result.status });
+    if (result.kind === 'caption') {
+      return new Response(readFileSync(result.path, 'utf8'), {
+        headers: {
+          'Content-Type': 'text/vtt; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
     }
-    return net.fetch(pathToFileURL(path).toString());
+    return net.fetch(pathToFileURL(result.path).toString());
   });
 }
 
@@ -170,7 +203,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   await loadWindow(mainWindow);
 
   mainWindow.on('close', event => {
-    if (!isQuitting) {
+    if (!shutdown.isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -180,13 +213,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   app.quit();
 });
 
-app.on('before-quit', () => {
-  isQuitting = true;
-  if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
-    powerSaveBlocker.stop(blockerId);
-  }
-  void context?.stop();
-});
+app.on('before-quit', event => shutdown.handleBeforeQuit(event));
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {

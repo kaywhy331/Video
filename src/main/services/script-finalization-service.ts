@@ -93,6 +93,14 @@ export class ScriptFinalizationService {
         `).all(projectId) as Array<{ id: string; text: string }>).filter(claim => claimIds.has(claim.id))
       : [];
     const acceptedClaimIds = new Set(acceptedClaims.map(claim => claim.id));
+    const factualRevision = this.db.raw.prepare(`
+      SELECT note FROM revision_requests
+      WHERE project_id = ? AND category = 'script_factual_issue' AND status = 'in_progress'
+      ORDER BY created_at DESC LIMIT 1
+    `).get(projectId) as { note: string } | undefined;
+    const guidance = this.db.raw.prepare(`
+      SELECT starting_script FROM project_guidance WHERE project_id = ?
+    `).get(projectId) as { starting_script: string | null } | undefined;
     const input: FinalizeScriptInput = {
       projectId,
       title: project.title,
@@ -116,7 +124,9 @@ export class ScriptFinalizationService {
         claimIds: ids(row.claim_ids_json).filter(claimId => acceptedClaimIds.has(claimId))
       })),
       acceptedClaims,
-      pronunciationDictionary: this.settings().pronunciationDictionary
+      pronunciationDictionary: this.settings().pronunciationDictionary,
+      revisionInstruction: factualRevision?.note,
+      startingScript: guidance?.starting_script ?? undefined
     };
     const rewrite = await this.ai.finalizeScript(input);
     const rewrittenById = new Map(rewrite.scenes.map(scene => [scene.sceneId, scene]));

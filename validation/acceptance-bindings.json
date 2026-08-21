@@ -1,0 +1,729 @@
+{
+  "version": 1,
+  "bindings": [
+    {
+      "ids": ["E2E-003"],
+      "runner": "vitest",
+      "file": "tests/final-review-service.test.ts",
+      "title": "uses the exact seven smallest-stage routes and invalidates prior approval"
+    },
+    {
+      "ids": ["E2E-003", "AUD-001", "AUD-003"],
+      "runner": "vitest",
+      "file": "tests/final-review-service.test.ts",
+      "title": "stores structured pronunciation and stales only the affected narration section"
+    },
+    {
+      "ids": ["E2E-003", "AUD-001", "AUD-002"],
+      "runner": "vitest",
+      "file": "tests/final-script-narration.test.ts",
+      "title": "persists section audio and word timing while reusing identical section synthesis"
+    },
+    {
+      "ids": ["E2E-003"],
+      "runner": "vitest",
+      "file": "tests/render-service-range.integration.test.ts",
+      "title": "reuses the cached full-render fragment in an explicit scene range"
+    },
+    {
+      "ids": ["SYS-002"],
+      "runner": "vitest",
+      "file": "tests/diagnostics-service.integration.test.ts",
+      "title": "exercises a usable H.264 fallback, performs an encode/probe round trip, and saves the report"
+    },
+
+    {
+      "ids": ["CAT-002"],
+      "runner": "vitest",
+      "file": "tests/catalog-evidence.integration.test.ts",
+      "title": "[CAT-002] imports equivalent CSV with identical canonical identities and effective values"
+    },
+    {
+      "ids": ["CAT-003"],
+      "runner": "vitest",
+      "file": "tests/catalog-evidence.integration.test.ts",
+      "title": "[CAT-003] preserves canonical identities when source rows reorder and row IDs change"
+    },
+    {
+      "ids": ["CAT-004", "CAT-011"],
+      "runner": "vitest",
+      "file": "tests/catalog-evidence.integration.test.ts",
+      "title": "requires a staged diff, preserves duplicate source rows, and reports missing assets without deleting them"
+    },
+    {
+      "ids": ["CAT-005"],
+      "runner": "vitest",
+      "file": "tests/catalog-evidence.integration.test.ts",
+      "title": "enforces human-over-normalized-over-accepted-AI-over-raw precedence and reviews suggestions"
+    },
+    {
+      "ids": ["CAT-006"],
+      "runner": "vitest",
+      "file": "tests/normalization.test.ts",
+      "title": "converts spreadsheet null markers into actual null values"
+    },
+    {
+      "ids": ["CAT-007"],
+      "runner": "vitest",
+      "file": "tests/normalization.test.ts",
+      "title": "parses duration, file size, and resolution formats"
+    },
+    {
+      "ids": ["CAT-008", "CAT-010", "UX-004"],
+      "runner": "vitest",
+      "file": "tests/catalog-evidence.integration.test.ts",
+      "title": "[CAT-008][CAT-010][UX-004] ranks grounded fields and transactionally updates and restores FTS metadata"
+    },
+    {
+      "ids": ["CAT-012", "CAT-013"],
+      "runner": "vitest",
+      "file": "tests/catalog-evidence.integration.test.ts",
+      "title": "cancels staged imports without changing assets and rolls failed commits back atomically"
+    },
+    {
+      "ids": ["CAT-012"],
+      "runner": "vitest",
+      "file": "tests/catalog-evidence.integration.test.ts",
+      "title": "cooperatively cancels an active commit and rolls its transaction back"
+    },
+
+    {
+      "ids": ["GEO-001"],
+      "runner": "vitest",
+      "file": "tests/geography.test.ts",
+      "title": "accepts an exact landmark match"
+    },
+    {
+      "ids": ["GEO-002"],
+      "runner": "vitest",
+      "file": "tests/geography.test.ts",
+      "title": "rejects a visually similar location in another city or country"
+    },
+    {
+      "ids": ["GEO-003"],
+      "runner": "vitest",
+      "file": "tests/footage-verification.test.ts",
+      "title": "accepts only high-confidence geography and required visual matches"
+    },
+    {
+      "ids": ["GEO-004"],
+      "runner": "vitest",
+      "file": "tests/geography.test.ts",
+      "title": "does not allow country-level evidence to satisfy a named landmark"
+    },
+    {
+      "ids": ["GEO-005"],
+      "runner": "vitest",
+      "file": "tests/footage-verification-service.test.ts",
+      "title": "records a high-confidence incompatible place as a conflict without replacing human evidence"
+    },
+    {
+      "ids": ["GEO-006"],
+      "runner": "vitest",
+      "file": "tests/footage-verification-service.test.ts",
+      "title": "preserves human evidence and fails closed without provider evidence for semantic requirements"
+    },
+    {
+      "ids": ["GEO-007"],
+      "runner": "vitest",
+      "file": "tests/geography.test.ts",
+      "title": "accepts descendants but rejects sibling places in the canonical hierarchy"
+    },
+    {
+      "ids": ["GEO-008", "MAT-009"],
+      "runner": "vitest",
+      "file": "tests/storyboard-service.test.ts",
+      "title": "requires canonical or accepted evidence for graphics and rejects narrated footage-only claims"
+    },
+
+    {
+      "ids": ["TOP-001"],
+      "runner": "vitest",
+      "file": "tests/planning-policy.test.ts",
+      "title": "qualifies deep diverse coverage and records explainable components"
+    },
+    {
+      "ids": ["TOP-002"],
+      "runner": "vitest",
+      "file": "tests/planning-policy.test.ts",
+      "title": "rejects thin coverage before weighted scoring"
+    },
+    {
+      "ids": ["TOP-003", "TOP-004"],
+      "runner": "vitest",
+      "file": "tests/expansion-service.test.ts",
+      "title": "labels Google Search as a proxy and persists explainable weighted opportunity components"
+    },
+    {
+      "ids": ["TOP-005"],
+      "runner": "vitest",
+      "file": "tests/planning-policy.test.ts",
+      "title": "detects materially duplicate topic signatures"
+    },
+    {
+      "ids": ["TOP-006"],
+      "runner": "vitest",
+      "file": "tests/scheduler-service.test.ts",
+      "title": "pauses when disabled, blocks on recoverable gates, and creates only when manually due and clear"
+    },
+    {
+      "ids": ["TOP-007", "JOB-009"],
+      "runner": "vitest",
+      "file": "tests/provider-policy.test.ts",
+      "title": "enforces monthly and per-project hard limits"
+    },
+
+    {
+      "ids": ["SCR-001"],
+      "runner": "vitest",
+      "file": "tests/research-persistence.test.ts",
+      "title": "permits acceptance only after a same-project active source citation exists"
+    },
+    {
+      "ids": ["SCR-002"],
+      "runner": "vitest",
+      "file": "tests/ai-claims.test.ts",
+      "title": "uses one corrective retry then rejects invented source IDs"
+    },
+    {
+      "ids": ["SCR-003"],
+      "runner": "vitest",
+      "file": "tests/research-policy.test.ts",
+      "title": "omits stale time-sensitive claims before acceptance"
+    },
+    {
+      "ids": ["SCR-004"],
+      "runner": "vitest",
+      "file": "tests/research-policy.test.ts",
+      "title": "marks material disagreement as conflict rather than choosing a claim"
+    },
+    {
+      "ids": ["SCR-005", "SCR-006"],
+      "runner": "vitest",
+      "file": "tests/storyboard-service.test.ts",
+      "title": "versions a narration rewrite and assigns an evidence-bound graphic without stale approval"
+    },
+    {
+      "ids": ["SCR-006"],
+      "runner": "vitest",
+      "file": "tests/final-review-service.test.ts",
+      "title": "uses the exact seven smallest-stage routes and invalidates prior approval"
+    },
+    {
+      "ids": ["SCR-007", "JOB-005"],
+      "runner": "vitest",
+      "file": "tests/ai-claims.test.ts",
+      "title": "corrects an invented script claim once and records both billed attempts"
+    },
+    {
+      "ids": ["SCR-008"],
+      "runner": "vitest",
+      "file": "tests/ai-claims.test.ts",
+      "title": "also blocks unsupported editorial facts from a final-script rewrite"
+    },
+    {
+      "ids": ["SCR-009", "AUD-003"],
+      "runner": "vitest",
+      "file": "tests/final-script-narration.test.ts",
+      "title": "parents and locks a final script, preserving scene IDs and pronunciation notes"
+    },
+
+    {
+      "ids": ["MAT-001", "MAT-002"],
+      "runner": "vitest",
+      "file": "tests/matching-service.test.ts",
+      "title": "[MAT-001][MAT-002] hard-filters geography and explains every scored candidate"
+    },
+    {
+      "ids": ["MAT-003"],
+      "runner": "vitest",
+      "file": "tests/matching-service.test.ts",
+      "title": "[MAT-003] enforces configured source-use limits unless an explicit exception is supplied"
+    },
+    {
+      "ids": ["MAT-004"],
+      "runner": "vitest",
+      "file": "tests/matching-service.test.ts",
+      "title": "[MAT-004] blocks adjacent perceptual duplicates and penalizes similar candidates globally"
+    },
+    {
+      "ids": ["MAT-005"],
+      "runner": "vitest",
+      "file": "tests/matching-service.test.ts",
+      "title": "[MAT-005] limits consecutive identical shot-type and motion signatures when alternatives exist"
+    },
+    {
+      "ids": ["MAT-006", "MAT-010"],
+      "runner": "vitest",
+      "file": "tests/matching-service.test.ts",
+      "title": "[MAT-006][MAT-010] reserves the highest-ranked hero for the requested scene deterministically"
+    },
+    {
+      "ids": ["MAT-007"],
+      "runner": "vitest",
+      "file": "tests/matching-service.test.ts",
+      "title": "[MAT-007] rejects known media below the crop-retained output gate"
+    },
+    {
+      "ids": ["MAT-008"],
+      "runner": "vitest",
+      "file": "tests/narration.test.ts",
+      "title": "splits long narration into bounded chunks without losing words"
+    },
+    {
+      "ids": ["MAT-008"],
+      "runner": "vitest",
+      "file": "tests/media-policy.test.ts",
+      "title": "enforces the seven-second hard gate"
+    },
+
+    {
+      "ids": ["ACQ-001"],
+      "runner": "vitest",
+      "file": "tests/acquisition-manifest.test.ts",
+      "title": "[ACQ-001] deduplicates downloads and labels primary, alternate, hero, and license-only work"
+    },
+    {
+      "ids": ["ACQ-002"],
+      "runner": "vitest",
+      "file": "tests/acquisition-service.test.ts",
+      "title": "[ACQ-002] accepts only credential-free HTTPS Envato acquisition URLs"
+    },
+    {
+      "ids": ["ACQ-003"],
+      "runner": "vitest",
+      "file": "tests/media-policy.test.ts",
+      "title": "ignores incomplete browser downloads"
+    },
+    {
+      "ids": ["ACQ-004"],
+      "runner": "vitest",
+      "file": "tests/download-watcher.test.ts",
+      "title": "[ACQ-004] does not accept a growing file until every configured stable poll passes"
+    },
+    {
+      "ids": ["ACQ-005"],
+      "runner": "vitest",
+      "file": "tests/download-watcher.test.ts",
+      "title": "[ACQ-005] maps one stable file to the sole active item with persisted evidence"
+    },
+    {
+      "ids": ["ACQ-006", "UX-003"],
+      "runner": "vitest",
+      "file": "tests/ambiguous-mapping-service.test.ts",
+      "title": "uses persisted active IDs as the authoritative candidate set"
+    },
+    {
+      "ids": ["ACQ-006", "UX-003"],
+      "runner": "vitest",
+      "file": "tests/ambiguous-mapping-service.test.ts",
+      "title": "falls back to pending acquisitions when the watcher had no active IDs"
+    },
+    {
+      "ids": ["ACQ-007"],
+      "runner": "vitest",
+      "file": "tests/acquisition-service.test.ts",
+      "title": "keeps a license pending when an already-known media file is ingested"
+    },
+    {
+      "ids": ["ACQ-008"],
+      "runner": "vitest",
+      "file": "tests/acquisition-service.test.ts",
+      "title": "atomically attaches one certificate and only completes license-only local assets"
+    },
+    {
+      "ids": ["ACQ-009"],
+      "runner": "vitest",
+      "file": "tests/media-policy.test.ts",
+      "title": "blocks a selected asset when its project license row is missing or pending"
+    },
+    {
+      "ids": ["ACQ-010"],
+      "runner": "vitest",
+      "file": "tests/media-ingest-safety.integration.test.ts",
+      "title": "[ACQ-010] quarantines a known physical file assigned to the wrong expected asset"
+    },
+
+    {
+      "ids": ["MED-001", "MED-002", "MED-003", "MED-010", "MED-011"],
+      "runner": "vitest",
+      "file": "tests/media-pipeline-invalidation.integration.test.ts",
+      "title": "[MED-001][MED-002][MED-003][MED-010][MED-011] regenerates versioned derivatives, preserves the original, and reuses current analysis"
+    },
+    {
+      "ids": ["MED-004", "MED-005"],
+      "runner": "vitest",
+      "file": "tests/media-analysis.test.ts",
+      "title": "parses black and freeze intervals and scores overlap"
+    },
+    {
+      "ids": ["MED-005"],
+      "runner": "vitest",
+      "file": "tests/media-analysis.test.ts",
+      "title": "closes a trailing freeze interval at media duration"
+    },
+    {
+      "ids": ["MED-006"],
+      "runner": "vitest",
+      "file": "tests/media-ingest-safety.integration.test.ts",
+      "title": "[MED-006] turns a corrupt fixture into one media exception without escaping the watcher task"
+    },
+    {
+      "ids": ["MED-007", "MED-008"],
+      "runner": "vitest",
+      "file": "tests/media-policy.test.ts",
+      "title": "generates only valid candidate windows"
+    },
+    {
+      "ids": ["MED-008"],
+      "runner": "vitest",
+      "file": "tests/matching-service.test.ts",
+      "title": "[MAT-003] enforces configured source-use limits unless an explicit exception is supplied"
+    },
+    {
+      "ids": ["MED-009"],
+      "runner": "vitest",
+      "file": "tests/vision-service.test.ts",
+      "title": "sends a bounded image input, validates the response, and reuses the cache"
+    },
+
+    {
+      "ids": ["REN-001", "REN-007"],
+      "runner": "vitest",
+      "file": "tests/media-fixture.integration.test.ts",
+      "title": "probes as the required 1080p H.264/AAC profile"
+    },
+    {
+      "ids": ["REN-002"],
+      "runner": "vitest",
+      "file": "tests/render-service-range.integration.test.ts",
+      "title": "renders a coordinate-backed generated graphic without stock media"
+    },
+    {
+      "ids": ["REN-003"],
+      "runner": "vitest",
+      "file": "tests/render-service-range.integration.test.ts",
+      "title": "reports exact 4K blockers and falls back truthfully to the 1080p final profile"
+    },
+    {
+      "ids": ["REN-004"],
+      "runner": "vitest",
+      "file": "tests/media-policy.test.ts",
+      "title": "never silently authorizes upscaling"
+    },
+    {
+      "ids": ["REN-005"],
+      "runner": "vitest",
+      "file": "tests/media-analysis.test.ts",
+      "title": "normalizes side-data and tag rotation"
+    },
+    {
+      "ids": ["REN-006"],
+      "runner": "vitest",
+      "file": "tests/media-policy.test.ts",
+      "title": "enforces the seven-second hard gate"
+    },
+    {
+      "ids": ["REN-008"],
+      "runner": "vitest",
+      "file": "tests/media-fixture.integration.test.ts",
+      "title": "contains fast-start metadata before the media payload"
+    },
+    {
+      "ids": ["REN-009"],
+      "runner": "vitest",
+      "file": "tests/render-input-normalization.integration.test.ts",
+      "title": "[REN-009] converts 24/29.97/30 inputs to 30 fps with correct duration and no interpolation filter"
+    },
+    {
+      "ids": ["REN-010"],
+      "runner": "vitest",
+      "file": "tests/render-input-normalization.integration.test.ts",
+      "title": "[REN-010] flattens an alpha-bearing source to an opaque yuv420p final profile"
+    },
+    {
+      "ids": ["REN-011"],
+      "runner": "vitest",
+      "file": "tests/color-policy.test.ts",
+      "title": "fails closed for log, ambiguous wide-gamut, and malformed HDR metadata"
+    },
+    {
+      "ids": ["REN-011"],
+      "runner": "vitest",
+      "file": "tests/media-fixture.integration.test.ts",
+      "title": "tone-maps a tagged BT.2020 PQ source into a tagged BT.709 SDR output"
+    },
+    {
+      "ids": ["REN-012", "REN-014"],
+      "runner": "vitest",
+      "file": "tests/render-service-range.integration.test.ts",
+      "title": "reuses the cached full-render fragment in an explicit scene range"
+    },
+    {
+      "ids": ["REN-013"],
+      "runner": "vitest",
+      "file": "tests/render-recovery.test.ts",
+      "title": "requeues the prior-process job, releases its lock, and closes only stale running render attempts"
+    },
+
+    {
+      "ids": ["AUD-004"],
+      "runner": "vitest",
+      "file": "tests/tts-service.test.ts",
+      "title": "[AUD-004] rejects an implausibly short provider section before timeline use"
+    },
+    {
+      "ids": ["AUD-005"],
+      "runner": "vitest",
+      "file": "tests/render-pipeline.integration.test.ts",
+      "title": "assembles before measuring and produces a two-pass normalized fast-start file"
+    },
+    {
+      "ids": ["AUD-005"],
+      "runner": "vitest",
+      "file": "tests/media-fixture.integration.test.ts",
+      "title": "returns finite EBU R128 loudness measurements"
+    },
+    {
+      "ids": ["AUD-006"],
+      "runner": "vitest",
+      "file": "tests/qc.test.ts",
+      "title": "detects excessive silence and caption overlap, bounds, and line length"
+    },
+    {
+      "ids": ["AUD-007"],
+      "runner": "vitest",
+      "file": "tests/music-service.integration.test.ts",
+      "title": "preserves a licensed hash, snapshots project use, and produces a ducked/faded final mix"
+    },
+    {
+      "ids": ["AUD-008"],
+      "runner": "vitest",
+      "file": "tests/narration.test.ts",
+      "title": "derives bounded caption cues from word timing"
+    },
+    {
+      "ids": ["AUD-009"],
+      "runner": "vitest",
+      "file": "tests/youtube-resumable.test.ts",
+      "title": "reuses an existing English caption after a crash before local receipt persistence"
+    },
+
+    {
+      "ids": ["PKG-001", "PKG-002", "PKG-003", "PKG-004"],
+      "runner": "vitest",
+      "file": "tests/render-service-range.integration.test.ts",
+      "title": "generates and validates the final package before the automatic private-upload handoff"
+    },
+    {
+      "ids": ["PKG-003", "PKG-005"],
+      "runner": "vitest",
+      "file": "tests/qc.test.ts",
+      "title": "rejects unsupported packaging absolutes and invalid timeline chapters"
+    },
+    {
+      "ids": ["PKG-006"],
+      "runner": "vitest",
+      "file": "tests/approval.test.ts",
+      "title": "is deterministic and invalidates every approved artifact change"
+    },
+
+    {
+      "ids": ["YT-001"],
+      "runner": "vitest",
+      "file": "tests/secret-store.test.ts",
+      "title": "[YT-001] encrypts OAuth refresh tokens at rest and round-trips only through OS storage"
+    },
+    {
+      "ids": ["YT-002", "YT-007"],
+      "runner": "vitest",
+      "file": "tests/youtube-upload-policy.test.ts",
+      "title": "[YT-002][YT-007] builds a private request and durably records the configured synthetic disclosure"
+    },
+    {
+      "ids": ["YT-003"],
+      "runner": "vitest",
+      "file": "tests/youtube-resumable.test.ts",
+      "title": "converts the committed Range response into the next byte offset"
+    },
+    {
+      "ids": ["YT-003"],
+      "runner": "vitest",
+      "file": "tests/youtube-resumable.test.ts",
+      "title": "builds a valid remaining Content-Range and rejects completed ranges"
+    },
+    {
+      "ids": ["YT-004"],
+      "runner": "vitest",
+      "file": "tests/youtube-upload-policy.test.ts",
+      "title": "[YT-004] reuses only the owning project receipt and rejects a duplicate final upload identity"
+    },
+    {
+      "ids": ["YT-004"],
+      "runner": "vitest",
+      "file": "tests/workflow-service.test.ts",
+      "title": "runs a manual private upload through the durable workflow job and reuses its receipt"
+    },
+    {
+      "ids": ["YT-005"],
+      "runner": "vitest",
+      "file": "tests/youtube-processing.test.ts",
+      "title": "[YT-005] waits through pending states and returns only after usable processing succeeds"
+    },
+    {
+      "ids": ["YT-006"],
+      "runner": "vitest",
+      "file": "tests/youtube-approval.test.ts",
+      "title": "[YT-006] preserves private state and routes an API restriction to the exact Studio editor"
+    },
+    {
+      "ids": ["YT-006"],
+      "runner": "playwright",
+      "file": "tests/e2e/electron-accessibility.spec.ts",
+      "title": "[YT-006][SEC-006] renders the exact Studio fallback and serves only recorded local review media"
+    },
+    {
+      "ids": ["YT-008"],
+      "runner": "vitest",
+      "file": "tests/youtube-approval.test.ts",
+      "title": "[YT-008] validates schedule time before an API update and sends private future status"
+    },
+
+    {
+      "ids": ["ANA-001"],
+      "runner": "vitest",
+      "file": "tests/analytics-service.test.ts",
+      "title": "creates exactly five durable checkpoints and activates analytics on first success"
+    },
+    {
+      "ids": ["ANA-002", "ANA-003", "ANA-004", "ANA-005"],
+      "runner": "vitest",
+      "file": "tests/analytics-service.test.ts",
+      "title": "maps retention to immutable final scenes and requires repeated evidence before bounded changes"
+    },
+
+    {
+      "ids": ["JOB-001"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "recovers only expired running leases and clears stale project locks"
+    },
+    {
+      "ids": ["JOB-002", "JOB-007"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "blocks dependencies and concurrent project mutation, then releases the lock"
+    },
+    {
+      "ids": ["JOB-003"],
+      "runner": "vitest",
+      "file": "tests/research-service.test.ts",
+      "title": "bounds queries, validates real URLs, records receipts, and reuses cached results"
+    },
+    {
+      "ids": ["JOB-004"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-004] backs transient failures off and enforces the configured maximum attempt count"
+    },
+    {
+      "ids": ["JOB-006"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-006] preserves a human wait across recovery without consuming another attempt"
+    },
+    {
+      "ids": ["JOB-008"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "leases one global final-render slot and defers another project without consuming an attempt"
+    },
+
+    {
+      "ids": ["SEC-001", "SEC-008"],
+      "runner": "playwright",
+      "file": "tests/e2e/electron-accessibility.spec.ts",
+      "title": "[SEC-001][SEC-008] boots the isolated production renderer and scans every primary view"
+    },
+    {
+      "ids": ["SEC-002"],
+      "runner": "vitest",
+      "file": "tests/contracts.test.ts",
+      "title": "rejects unknown settings keys and unsafe policy values"
+    },
+    {
+      "ids": ["SEC-003"],
+      "runner": "vitest",
+      "file": "tests/security-policy.test.ts",
+      "title": "[SEC-003] rejects IPC from a different webContents, subframe, or renderer URL"
+    },
+    {
+      "ids": ["SEC-004"],
+      "runner": "vitest",
+      "file": "tests/security-policy.test.ts",
+      "title": "[SEC-004] denies new windows, navigation, and webview attachment"
+    },
+    {
+      "ids": ["SEC-005"],
+      "runner": "vitest",
+      "file": "tests/security-policy.test.ts",
+      "title": "allows only the explicit HTTPS external-host list"
+    },
+    {
+      "ids": ["SEC-006"],
+      "runner": "vitest",
+      "file": "tests/media-protocol.test.ts",
+      "title": "fails closed for traversal, malformed encoding, query smuggling, and unknown types"
+    },
+    {
+      "ids": ["SEC-006"],
+      "runner": "playwright",
+      "file": "tests/e2e/electron-accessibility.spec.ts",
+      "title": "[YT-006][SEC-006] renders the exact Studio fallback and serves only recorded local review media"
+    },
+    {
+      "ids": ["SEC-007"],
+      "runner": "vitest",
+      "file": "tests/security-policy.test.ts",
+      "title": "redacts bearer, JSON token, secret, key, and credential URL values"
+    },
+
+    {
+      "ids": ["BAK-001", "BAK-004"],
+      "runner": "vitest",
+      "file": "tests/backup-service.test.ts",
+      "title": "creates a checksummed, integrity-checked backup and reports missing originals"
+    },
+    {
+      "ids": ["BAK-002"],
+      "runner": "vitest",
+      "file": "tests/backup-service.test.ts",
+      "title": "stages and atomically applies a validated restore on restart"
+    },
+    {
+      "ids": ["BAK-003"],
+      "runner": "vitest",
+      "file": "tests/project-artifact-service.integration.test.ts",
+      "title": "rebuilds missing regenerable derivatives from verified immutable inputs"
+    },
+    {
+      "ids": ["BAK-005"],
+      "runner": "vitest",
+      "file": "tests/backup-service.test.ts",
+      "title": "[BAK-005] applies independent daily, weekly, and monthly retention without deleting newer snapshots"
+    },
+
+    {
+      "ids": ["PERF-004"],
+      "runner": "vitest",
+      "file": "tests/catalog-import-worker-service.test.ts",
+      "title": "reports progress, rejects concurrent work, streams stage rows, and clears completed status"
+    },
+    {
+      "ids": ["PERF-004", "UX-002"],
+      "runner": "playwright",
+      "file": "tests/e2e/electron-accessibility.spec.ts",
+      "title": "[UX-002][PERF-004] exposes deferred pause state and accessible evidence on every project tab"
+    }
+  ]
+}

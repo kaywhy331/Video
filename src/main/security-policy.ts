@@ -4,6 +4,7 @@ const EXTERNAL_HOSTS = new Set([
   'youtube.com',
   'www.youtube.com',
   'studio.youtube.com',
+  'github.com',
   'elements.envato.com',
   'envato.com'
 ]);
@@ -26,14 +27,54 @@ export function pathIsInside(candidate: string, roots: string[]): boolean {
   });
 }
 
-export function isAllowedRendererUrl(url: string, development: boolean): boolean {
-  if (development) {
-    try {
-      const parsed = new URL(url);
-      return parsed.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
-    } catch {
-      return false;
+export function isAllowedRendererUrl(
+  url: string,
+  development: boolean,
+  productionEntryUrl?: string
+): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'file:') {
+      if (!productionEntryUrl) return false;
+      const expected = new URL(productionEntryUrl);
+      parsed.hash = '';
+      parsed.search = '';
+      expected.hash = '';
+      expected.search = '';
+      return expected.protocol === 'file:' && parsed.href === expected.href;
     }
+    return development
+      && parsed.protocol === 'http:'
+      && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+  } catch {
+    return false;
   }
-  return url.startsWith('file://');
+}
+
+export interface IpcSenderFrameLike {
+  url: string;
+}
+
+export interface IpcSenderContentsLike {
+  mainFrame: IpcSenderFrameLike | null;
+}
+
+export function assertAuthorizedIpcSender(
+  event: {
+    sender: IpcSenderContentsLike;
+    senderFrame: IpcSenderFrameLike | null;
+  },
+  authorizedWebContents: IpcSenderContentsLike | null,
+  development: boolean,
+  productionEntryUrl: string
+): void {
+  if (!authorizedWebContents || event.sender !== authorizedWebContents) {
+    throw new Error('IPC sender is not authorized.');
+  }
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('IPC sender is not authorized.');
+  }
+  if (!isAllowedRendererUrl(event.senderFrame.url, development, productionEntryUrl)) {
+    throw new Error('IPC sender is not authorized.');
+  }
 }
