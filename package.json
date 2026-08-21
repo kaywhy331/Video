@@ -1,6 +1,6 @@
 {
   "name": "videofactory-desktop",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "private": true,
   "description": "Internal metadata-first stock-footage-to-YouTube production desktop application",
   "main": "./out/main/index.js",
@@ -21,6 +21,8 @@
     "validate:acceptance": "node scripts/validate-acceptance.mjs",
     "security:audit": "npm audit --audit-level=low",
     "security:sbom": "node scripts/generate-sbom.mjs",
+    "release:manifest": "node scripts/generate-release-manifest.mjs",
+    "release:verify": "node scripts/generate-release-manifest.mjs --verify",
     "benchmark:catalog": "vite-node --config vitest.config.ts scripts/benchmark-catalog.ts",
     "benchmark:catalog:responsiveness": "npm run build && vite-node --config vitest.config.ts scripts/benchmark-catalog-responsiveness.ts",
     "validate": "node scripts/run-validation.mjs",

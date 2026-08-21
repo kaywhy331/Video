@@ -22,6 +22,10 @@ if (parsed.bomFormat !== 'CycloneDX' || !Array.isArray(parsed.components)) {
 
 const releaseFolder = resolve(root, 'release');
 const outputPath = resolve(releaseFolder, 'videofactory-sbom.cdx.json');
+const archivedOutputPath = resolve(root, 'validation', 'results', 'videofactory-sbom.cdx.json');
 mkdirSync(releaseFolder, { recursive: true });
-writeFileSync(outputPath, `${JSON.stringify(parsed, null, 2)}\n`);
+mkdirSync(resolve(root, 'validation', 'results'), { recursive: true });
+const serialized = `${JSON.stringify(parsed, null, 2)}\n`;
+writeFileSync(outputPath, serialized);
+writeFileSync(archivedOutputPath, serialized);
 console.log(`CycloneDX SBOM written with ${parsed.components.length} components: ${outputPath}`);

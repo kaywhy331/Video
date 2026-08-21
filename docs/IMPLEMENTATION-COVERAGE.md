@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-20 after the local PRD-completion pass through schema migration 017, UI/exception/color-policy closure, built-Electron accessibility validation, and acceptance-evidence hardening.
+Updated 2026-08-21 after the local PRD-completion pass through schema migration 018, UI/exception/color-policy closure, built-Electron accessibility validation, and release-evidence hardening.
 
 Status meanings:
 
@@ -48,7 +48,7 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 |---|---|---|
 | Desktop shell and sandbox | Implemented + tested | Electron/Vite production bundle plus built-app Playwright/Axe journeys, IPC/security tests, responsive workspaces, focus-visible controls, and deterministic operator-shortcut routing |
 | Clean Windows install/runtime | Implemented, external validation pending | CI builds unsigned NSIS/ZIP; clean-machine launch remains unrun |
-| SQLite schema and migration | Implemented + tested | Migrations 001–017, integrity, source/resource parity, reopen/idempotency tests, composite catalog-search indexes, immutable project-guidance provenance, job-resource leases, and deferred lifecycle intent |
+| SQLite schema and migration | Implemented + tested | Migrations 001–018, integrity, source/resource parity plus packaging preflight, contiguous-version enforcement, reopen/idempotency tests, composite catalog-search indexes, immutable project-guidance provenance, job-resource leases, deferred lifecycle intent, and perceptual-match keys |
 | Project detail workspace | Implemented + tested | Nine accessible tabs expose overview, research/sources/claims, script/coverage, storyboard, assets/licenses, voice/audio, renders/QC, publishing/analytics, and audit history from complete backend queries |
 | Catalog XLSX/CSV import and search | Implemented + tested | Worker-thread preview/commit/refresh, progress/status/ping, cooperative cancellation with rollback, staged diff, duplicate-row retention, source-scoped missing detection, validation templates, scheduled refresh staging, normalization/geography, filtered search/export, semantics-preserving initial-import assertion batching, and invalidated facet caching. App-root operation recovery preserves phase/progress/cancel controls across view remounts, including the pre-worker Google Sheets fetch. Repeatable 26K receipts cover count/integrity, bounded-page, warm-search, Sheets staging, cancellation, and main-process responsiveness; renderer startup/interaction/memory and concurrent-render behavior remain externally unqualified |
 | Metadata revisions and undo | Implemented + tested | Revision persistence/undo, layered raw/normalized/AI/human assertions, review inbox, bulk edit, place merge/split, and checksummed filtered export |
@@ -68,7 +68,7 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 | Actionable exception recovery | Implemented + tested | Project context, evidence, action history, server-computed retry/resolve/override policy, safe alternatives, and reasoned audited override are available across failure classes; ambiguous mappings remain non-dismissible until successful ingestion |
 | Backup/restore/retention, storage, and export | Implemented + tested | Scheduled verified backups, configurable rotation, staged restore/safety copy, original hash verification, persisted rebuild receipts, deterministic derivative regeneration, checksummed secret-redacted project exports, and pressure cleanup restricted to regenerable derivatives while preserving originals and licensed music |
 | Cost/quota controls | Implemented + tested | Cached calls are exempt; call receipts, monthly and project-snapshot hard budgets, and persisted auth/quota preflight cover research, LLM, vision, and HTTP TTS adapters; live quota behavior remains an external qualification gate |
-| Operations and diagnostics | Implemented + tested | Secret-free settings-profile import/export, release discovery, persisted diagnostics, zero-advisory audit gate, CycloneDX SBOM, and exact Autopilot spend/disk/provider/worker health |
+| Operations and diagnostics | Implemented + tested | Secret-free settings-profile import/export, release discovery, persisted diagnostics, zero-advisory audit gate, CycloneDX SBOM, exact source/runner provenance, checksummed release inventory, and exact Autopilot spend/disk/provider/worker health |
 | Autopilot cadence scheduler | Implemented + tested | Durable due-state, queue/provider/storage gates, pause/resume creation controls, startup/timer/manual evaluation, recoverable blocked status, Full Autopilot creation, and bounded Guided inputs; real scheduled production cadence remains externally unqualified |
 | Licensed music | Implemented, external validation pending | Content-addressed import, license snapshots, project selection, narration-sidechain ducking, fades, two-pass loudness normalization, and QC; representative licensed-track rehearsal remains external |
 | Analytics learning loop | Implemented, external validation pending | Exactly five deduplicated checkpoints at days 1/3/7/28/90, publication-visibility confirmation before collection, retry-accounted provider failures, persisted YouTube Analytics receipts, immutable final-manifest retention mapping, minimum-evidence gates, bounded recommendations, human apply/reject, and rollback; live OAuth/API collection remains unrun |
@@ -117,6 +117,14 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 - editable-control-safe operator shortcuts, visible focus treatment, responsive storyboard collapse, and managed active-final WebVTT preview captions.
 - real PQ-to-BT.709 tone mapping, stale media-pipeline regeneration, contained media/caption protocol resolution, nine-tab project detail, generic exception actions, and deferred pause checkpoints;
 - built Electron Playwright/Axe journeys, 151-ID acceptance traceability, zero-vulnerability dependency audit, and CycloneDX SBOM generation.
+
+## Release evidence added in alpha.4
+
+- exact source commit/ref and Node/npm/runner provenance in pipeline, status, and acceptance receipts;
+- audit and SBOM stages inside the canonical validation pipeline, with hashes and sizes for generated evidence;
+- contiguous source/resource migration parity in preflight instead of a hard-coded latest migration;
+- exact Windows artifact inventory, per-file SHA-256 values, attached validation/SBOM evidence, branch-versus-tag identity, and post-generation verification;
+- CI packaging ordered after exact-head validation and pinned by `.nvmrc` on Linux and Windows.
 
 ## Measured catalog performance and remaining UI boundary
 

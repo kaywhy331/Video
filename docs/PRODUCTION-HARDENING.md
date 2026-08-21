@@ -1,8 +1,8 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-20 after completing the local render-recovery, UI/evidence, color-pipeline, accessibility, dependency-provenance, and acceptance-traceability milestones.
+Updated 2026-08-21 after adding exact-head validation provenance, release-artifact checksums, migration-parity preflight, and pinned CI toolchain evidence.
 
-Alpha.3 closes the highest-risk local durability, security, rendering, backup, and publishing defects found during the production-readiness audit. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
+Alpha.4 preserves the Alpha.3 durability, security, rendering, backup, and publishing work while closing the local release-evidence gaps. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
 ## P0 before production qualification
 
@@ -21,7 +21,7 @@ Alpha.3 closes the highest-risk local durability, security, rendering, backup, a
 - Add crash reporting only with an explicit privacy/redaction policy.
 - Validate Windows fixtures covering ProRes, H.264, H.265, alpha, variable frame rate, interlaced sources, rotation, and unusual color spaces.
 - Benchmark dashboard startup and project operations against the PRD data-size targets; production catalog search and worker/main-loop import now have checked-in 26K receipts.
-- Preserve the implemented acceptance receipt, zero-advisory audit gate, CycloneDX SBOM, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`.
+- Preserve the implemented acceptance receipt, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`.
 
 ## P1 after qualification
 

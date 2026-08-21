@@ -4,9 +4,9 @@ VideoFactory treats the lockfile as release input. Production and CI installs us
 
 ## Required release checks
 
-1. Run `npm run security:audit`. Any npm advisory at low severity or above fails the release gate until it is upgraded, removed, or documented with a time-bounded exception approved by the owner.
-2. Run `npm run validate` against the same lockfile.
-3. Run `npm run security:sbom`. Preserve `release/videofactory-sbom.cdx.json` with the build and the acceptance receipt.
+1. Run `npm run validate` against the release lockfile. Its canonical pipeline includes the low-severity dependency audit, CycloneDX SBOM, tests, build, Electron E2E, and acceptance receipt; any failed stage blocks packaging.
+2. Build the Windows installer and ZIP from the same exact commit and Node version recorded by validation.
+3. Attach the validation status, acceptance receipt, test reports, and `release/videofactory-sbom.cdx.json`, then run `npm run release:manifest -- --require-validation` and `npm run release:verify`.
 4. Re-run the affected provider, import, packaging, and security tests after dependency changes.
 
 Critical and high findings block packaging. Moderate findings block promotion until assessed. Exceptions must identify the advisory, affected path, exploitability, compensating control, owner, and expiry; silent suppression is not allowed.
@@ -17,4 +17,4 @@ SheetJS Community Edition is pinned to the official 0.20.3 tarball because the n
 
 ## Evidence
 
-Linux CI runs the audit after the full validation suite, generates a CycloneDX 1.5 SBOM, and uploads the SBOM together with `VALIDATION_ACCEPTANCE_RECEIPT.json`. Windows installers remain unsigned until the separate signing gate is completed.
+Linux CI records the exact source and runner/toolchain, runs the audit and CycloneDX 1.5 SBOM stages inside the full validation pipeline, and uploads the complete validation evidence. The Windows job depends on that exact-head result, attaches the evidence to the installer/ZIP bundle, and generates `RELEASE_PROVENANCE.json` plus `SHA256SUMS.txt`. Verification rejects changed, missing, duplicate, or extra artifacts and stale version evidence. These hashes detect integrity drift but are not an authenticity mechanism; Windows installers remain unsigned until the separate signing gate is completed.

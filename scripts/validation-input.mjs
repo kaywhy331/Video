@@ -3,7 +3,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 
 const INPUTS = [
-  '.github/workflows/ci.yml',
+  '.github',
+  '.nvmrc',
   'VALIDATION_CATALOG_PERFORMANCE.json',
   'VALIDATION_CATALOG_RESPONSIVENESS.json',
   'docs/prd/06-ACCEPTANCE-TESTS.md',

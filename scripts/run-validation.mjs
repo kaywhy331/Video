@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { arch, platform, release as operatingSystemRelease } from 'node:os';
 import { resolve } from 'node:path';
 import { validationInputDigest } from './validation-input.mjs';
 
@@ -9,18 +10,36 @@ const pipelinePath = resolve(resultsDirectory, 'pipeline.json');
 const receiptPath = resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
 const statusPath = resolve(root, 'VALIDATION_STATUS.json');
 const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const source = {
+  commit: process.env.GITHUB_SHA ?? commandOutput('git', ['rev-parse', 'HEAD']),
+  ref: process.env.GITHUB_REF ?? commandOutput('git', ['branch', '--show-current']),
+  repository: process.env.GITHUB_REPOSITORY ?? null,
+  runId: process.env.GITHUB_RUN_ID ?? null,
+  runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+  dirty: commandOutput('git', ['status', '--porcelain']).length > 0
+};
+const environment = {
+  platform: platform(),
+  release: operatingSystemRelease(),
+  architecture: arch(),
+  node: process.version,
+  npm: commandOutput(npmCommand, ['--version'])
+};
 mkdirSync(resultsDirectory, { recursive: true });
-for (const name of ['pipeline.json', 'vitest.json', 'playwright.json']) {
+for (const name of ['pipeline.json', 'vitest.json', 'playwright.json', 'videofactory-sbom.cdx.json']) {
   rmSync(resolve(resultsDirectory, name), { force: true });
 }
 rmSync(receiptPath, { force: true });
+rmSync(resolve(root, 'release', 'videofactory-sbom.cdx.json'), { force: true });
 
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const stages = [
-  { name: 'typecheck', command: npm, args: ['run', 'typecheck'] },
-  { name: 'vitest', command: npm, args: ['run', 'test'] },
-  { name: 'build', command: npm, args: ['run', 'build'] },
-  { name: 'electron_e2e', command: process.execPath, args: ['scripts/run-electron-e2e.mjs'] }
+  { name: 'typecheck', command: npmCommand, args: ['run', 'typecheck'] },
+  { name: 'vitest', command: npmCommand, args: ['run', 'test'] },
+  { name: 'build', command: npmCommand, args: ['run', 'build'] },
+  { name: 'electron_e2e', command: process.execPath, args: ['scripts/run-electron-e2e.mjs'] },
+  { name: 'security_audit', command: npmCommand, args: ['run', 'security:audit'] },
+  { name: 'sbom', command: npmCommand, args: ['run', 'security:sbom'] }
 ];
 const input = validationInputDigest(root);
 const startedAt = new Date().toISOString();
@@ -84,6 +103,8 @@ function writePipeline(value) {
     inputFileCount: value.input.fileCount,
     startedAt: value.startedAt,
     completed: value.completed,
+    source,
+    environment,
     stages: value.results
   };
   const temporary = `${pipelinePath}.tmp`;
@@ -96,6 +117,8 @@ function writeStatus(status, error) {
     generatedAt: new Date().toISOString(),
     release: packageJson.version,
     validationInputSha256: input.sha256,
+    source,
+    environment,
     pipeline: {
       status,
       report: 'validation/results/pipeline.json',
@@ -116,4 +139,9 @@ function writeStatus(status, error) {
   const temporary = `${statusPath}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
   renameSync(temporary, statusPath);
+}
+
+function commandOutput(command, args) {
+  const result = spawnSync(command, args, { cwd: root, encoding: 'utf8' });
+  return result.status === 0 ? result.stdout.trim() : '';
 }

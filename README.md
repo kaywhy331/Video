@@ -1,6 +1,6 @@
 # VideoFactory Desktop
 
-**Build:** 0.1.0-alpha.3 production hardening
+**Build:** 0.1.0-alpha.4 release-evidence hardening
 
 VideoFactory Desktop is a single-user Windows application that turns a licensed stock-footage metadata catalog into exact-location-grounded YouTube videos. It is metadata-first and fail-closed: it does not silently substitute footage that merely looks similar, upscale a source to pass resolution policy, or publish before the final human gate.
 
@@ -23,7 +23,7 @@ The repository is a production-hardened alpha with the local P0 buildout and bou
 ## Implemented
 
 - Electron, React, and TypeScript desktop shell with sandboxed renderer
-- SQLite/WAL/FTS5 data store with 17 atomic forward migrations, nested savepoints, composite catalog-search indexes, immutable Guided-input provenance, and deferred lifecycle intent at active-job checkpoints
+- SQLite/WAL/FTS5 data store with 18 atomic forward migrations, nested savepoints, composite catalog-search indexes, immutable Guided-input provenance, deferred lifecycle intent at active-job checkpoints, and source/package migration-parity preflight
 - worker-thread XLSX/CSV/Google Sheets staging with progress, cooperative cancellation, responsive status/ping, mapping preview, duplicate/raw-row retention, source-scoped missing detection, atomic commit/rollback, validation-gated refresh, revisions, undo, cached facets, and paginated search; checked-in 26K receipts cover warm-search and main-process responsiveness while the import worker runs
 - layered raw/normalized/AI/human metadata evidence, review inbox, bulk edits, audited place merge/split, filtered checksummed export, and catalog search
 - explainable topic scoring from labeled native/proxy evidence plus geographic coverage, capacity, spend, and duplicate gates; bounded Guided starting text is immutable guidance, never evidence, and only its hash plus safe editorial signals reach the language provider
@@ -91,9 +91,11 @@ npm run benchmark:catalog:responsiveness
 npm run security:audit
 npm run security:sbom
 npm run package:win
+npm run release:manifest -- --require-validation
+npm run release:verify
 ```
 
-`npm run validate` performs TypeScript checking, the automated test suite, the production Electron/Vite build, built-application Playwright/Axe accessibility and keyboard journeys, and acceptance-receipt generation. `npm run security:audit` is a zero-advisory gate; `npm run security:sbom` writes a CycloneDX artifact under `release/`. Windows artifacts are written to `release/`. GitHub Actions validates and preserves the acceptance/SBOM evidence on Linux and builds unsigned Windows NSIS/ZIP artifacts; a successful CI package is not the same as a clean-machine installation test.
+`npm run validate` performs TypeScript checking, the automated test suite, the production Electron/Vite build, built-application Playwright/Axe accessibility and keyboard journeys, the zero-advisory dependency audit, CycloneDX SBOM generation, and acceptance-receipt generation. Windows artifacts are written to `release/`. GitHub Actions packages Windows only after the exact commit passes validation, attaches the receipt/status/test reports/SBOM, and writes an exact artifact manifest plus `SHA256SUMS.txt`. Branch builds record their ref without claiming a release tag; tag builds must exactly match the package version. These are integrity and provenance receipts, not code signing or a clean-machine installation test.
 
 `npm run benchmark:catalog` generates a real 26,000-row XLSX, runs production catalog preview/commit, reopens the database, executes 25 rounds of five common paginated searches, checks integrity and row counts, and writes `VALIDATION_CATALOG_PERFORMANCE.json`. The current receipt is a service-level benchmark, not an Electron UI responsiveness qualification, and takes roughly ten minutes on the recorded i5-6300U environment.
 
