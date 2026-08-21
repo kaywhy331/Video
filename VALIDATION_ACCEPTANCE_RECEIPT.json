@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-08-21T20:28:03.076Z",
+  "generatedAt": "2026-08-21T22:41:09.851Z",
   "appVersion": "0.1.0-alpha.5",
   "databaseSchemaVersion": 18,
   "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
-  "validationInputSha256": "65b33cf7fc815a9f2ec1c31c1084a676e47e4803b4a097c6ea2042fb424fb2d8",
-  "validationInputFileCount": 246,
+  "validationInputSha256": "ab28d15f5fdf32575c5dae2f78463ab7bf4ab369977e1033c395e3774012bb5c",
+  "validationInputFileCount": 248,
   "source": {
-    "commit": "8cbffd27306fad761b896a42564c3a9a3802c46e",
-    "ref": "fix/upload-safe-windows-artifacts",
+    "commit": "086f720fa5f8c6e31635996f9c2de802df5cf398",
+    "ref": "harden/windows-package-smoke",
     "repository": null,
     "runId": null,
     "runAttempt": null,
@@ -39,18 +39,18 @@
   "testReports": {
     "vitest": {
       "path": "validation/results/vitest.json",
-      "sha256": "817217db1073888eb5276d228c9b5a8ff84691b84bb2204db3ae3fdc76de4f47",
-      "sizeBytes": 107901,
+      "sha256": "fcfe5437894c7d896b9d631d2f43cb72ea0d52592915a72a751108f9b9ea4a82",
+      "sizeBytes": 108857,
       "files": 79,
-      "total": 286,
-      "passed": 286,
+      "total": 289,
+      "passed": 289,
       "failed": 0,
       "pending": 0
     },
     "playwright": {
       "path": "validation/results/playwright.json",
-      "sha256": "502842d585d81611424a13460a8194eb4c7510adfb86eb96148612435074dd64",
-      "sizeBytes": 7087,
+      "sha256": "18afb66641d898c409258c223e20f9631cc71536aef24a557a6c14760bef746e",
+      "sizeBytes": 7080,
       "total": 4,
       "passed": 4,
       "failed": 0
@@ -59,12 +59,12 @@
   "evidence": {
     "pipeline": {
       "path": "validation/results/pipeline.json",
-      "sha256": "a1cdbaa5cd56de84734281e8e869ccff84ef5ea9aaa503ab6157bffcd5463697",
-      "sizeBytes": 1947
+      "sha256": "55cd1c5d8cf0c8efbe9518a5296550ccc2d2ba536cc0af9e88e3d85660edf2a5",
+      "sizeBytes": 1942
     },
     "sbom": {
       "path": "release/videofactory-sbom.cdx.json",
-      "sha256": "c55c66f6a7ebaead69fabc3d8fdb06ee603745d527855317050045cd301b30ee",
+      "sha256": "7fa17c8b776e71362bf175b2b6057edb74bfc8de2b145f7ccba6e46f7f2b3780",
       "sizeBytes": 718062
     }
   },

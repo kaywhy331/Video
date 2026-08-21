@@ -711,7 +711,7 @@ details pre { overflow: auto; max-height: 240px; padding: 12px; border-radius: 8
   top: 0;
   z-index: 1;
   padding: 9px;
-  color: #687587;
+  color: var(--subtle);
   background: #10151c;
   border-bottom: 1px solid var(--border);
   font-size: 8px;
@@ -779,7 +779,7 @@ details pre { overflow: auto; max-height: 240px; padding: 12px; border-radius: 8
 .catalog-table-selectable tbody tr.selected { background: rgba(105,228,255,.035); }
 .coverage-matrix-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
 .coverage-matrix { width: 100%; min-width: 1100px; border-collapse: collapse; }
-.coverage-matrix th { position: sticky; top: 0; padding: 9px; color: #687587; background: #10151c; border-bottom: 1px solid var(--border); font-size: 8px; letter-spacing: .6px; text-align: left; text-transform: uppercase; }
+.coverage-matrix th { position: sticky; top: 0; padding: 9px; color: var(--subtle); background: #10151c; border-bottom: 1px solid var(--border); font-size: 8px; letter-spacing: .6px; text-align: left; text-transform: uppercase; }
 .coverage-matrix td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.035); vertical-align: top; }
 .coverage-matrix tbody tr { cursor: pointer; }
 .coverage-matrix tbody tr:hover { background: rgba(105,228,255,.025); }

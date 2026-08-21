@@ -102,6 +102,10 @@ jobs:
             Start-Sleep -Seconds $delaySeconds
           }
 
+      - name: Smoke test packaged Windows artifacts
+        shell: pwsh
+        run: ./scripts/windows/test-packaged-app.ps1
+
       - name: Download exact-head validation evidence
         uses: actions/download-artifact@v7
         with:
@@ -119,7 +123,7 @@ jobs:
           Copy-Item "$evidenceRoot/validation/results/vitest.json" release/VITEST_RESULTS.json
           Copy-Item "$evidenceRoot/validation/results/playwright.json" release/PLAYWRIGHT_RESULTS.json
           Copy-Item "$evidenceRoot/release/videofactory-sbom.cdx.json" release/videofactory-sbom.cdx.json
-          npm.cmd run release:manifest -- --require-validation
+          npm.cmd run release:manifest -- --require-validation --require-package-smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm.cmd run release:verify
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

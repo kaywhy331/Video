@@ -91,11 +91,12 @@ npm run benchmark:catalog:responsiveness
 npm run security:audit
 npm run security:sbom
 npm run package:win
-npm run release:manifest -- --require-validation
+.\scripts\windows\test-packaged-app.ps1
+npm run release:manifest -- --require-validation --require-package-smoke
 npm run release:verify
 ```
 
-`npm run validate` performs TypeScript checking, the automated test suite, the production Electron/Vite build, built-application Playwright/Axe accessibility and keyboard journeys, the zero-advisory dependency audit, CycloneDX SBOM generation, and acceptance-receipt generation. Windows artifacts are written to `release/` with canonical upload-safe names in the form `VideoFactory-Desktop-<version>-<arch>.<ext>`. GitHub Actions packages Windows only after the exact commit passes validation, attaches the receipt/status/test reports/SBOM, and writes an exact artifact manifest plus `SHA256SUMS.txt`. Branch builds record their ref without claiming a release tag; tag builds must exactly match the package version. These are integrity and provenance receipts, not code signing or a clean-machine installation test.
+`npm run validate` performs TypeScript checking, the automated test suite, the production Electron/Vite build, built-application Playwright/Axe accessibility and keyboard journeys, the zero-advisory dependency audit, CycloneDX SBOM generation, and acceptance-receipt generation. Windows artifacts are written to `release/` with canonical upload-safe names in the form `VideoFactory-Desktop-<version>-<arch>.<ext>`. GitHub Actions packages Windows only after the exact commit passes validation, expands and launches the ZIP, silently installs/launches/uninstalls the NSIS package with isolated data, attaches the receipt/status/test reports/SBOM, and writes an exact artifact manifest plus `SHA256SUMS.txt`. The manifest rejects a missing, failed, stale, or artifact-mismatched package-smoke receipt. Branch builds record their ref without claiming a release tag; tag builds must exactly match the package version. This hosted-runner smoke is supporting package evidence, not code signing or a clean-machine installation qualification.
 
 `npm run benchmark:catalog` generates a real 26,000-row XLSX, runs production catalog preview/commit, reopens the database, executes 25 rounds of five common paginated searches, checks integrity and row counts, and writes `VALIDATION_CATALOG_PERFORMANCE.json`. The current receipt is a service-level benchmark, not an Electron UI responsiveness qualification, and takes roughly ten minutes on the recorded i5-6300U environment.
 

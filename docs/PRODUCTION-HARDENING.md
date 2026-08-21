@@ -1,12 +1,12 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-21 after adding exact-head validation provenance, release-artifact checksums, migration-parity preflight, and pinned CI toolchain evidence.
+Updated 2026-08-21 after adding exact-head validation provenance, release-artifact checksums, migration-parity preflight, pinned CI toolchain evidence, and a hosted packaged-Windows smoke gate.
 
 Alpha.4 preserves the Alpha.3 durability, security, rendering, backup, and publishing work while closing the local release-evidence gaps. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
 ## P0 before production qualification
 
-- Run a clean Windows 10/11 install and first-run diagnostic on a machine without Node, Python, or developer tools.
+- Run a clean Windows 10/11 install and first-run diagnostic on a machine without Node, Python, or developer tools. Hosted CI now exercises ZIP launch and silent NSIS install/launch/uninstall, but its preinstalled developer tooling means it is supporting evidence rather than this qualification.
 - Run the five-video representative pilot with real licensed footage and preserve receipts for location grounding, rights, render QC, and human approval.
 - Rehearse live Envato account handoff, license naming, download watcher mapping, ambiguity handling, and certificate attachment.
 - Rehearse live YouTube OAuth, resumable interruption/restart, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish.
@@ -21,7 +21,7 @@ Alpha.4 preserves the Alpha.3 durability, security, rendering, backup, and publi
 - Add crash reporting only with an explicit privacy/redaction policy.
 - Validate Windows fixtures covering ProRes, H.264, H.265, alpha, variable frame rate, interlaced sources, rotation, and unusual color spaces.
 - Benchmark dashboard startup and project operations against the PRD data-size targets; production catalog search and worker/main-loop import now have checked-in 26K receipts.
-- Preserve the implemented acceptance receipt, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`.
+- Preserve the implemented acceptance receipt, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, commit- and artifact-bound packaged-Windows smoke receipt, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`.
 
 ## P1 after qualification
 
@@ -43,4 +43,4 @@ Alpha.4 preserves the Alpha.3 durability, security, rendering, backup, and publi
 
 ## Truthful release rule
 
-CI success, a generated Windows installer, and local automated tests are necessary but do not set `production_ready` to `true`. That flag changes only after the external qualification gates above have evidence attached to a release.
+CI success, a generated Windows installer, the hosted packaged-app smoke, and local automated tests are necessary but do not set `production_ready` to `true`. That flag changes only after the external qualification gates above have evidence attached to a release.
