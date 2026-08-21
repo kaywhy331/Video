@@ -16,6 +16,7 @@ export interface VisionSceneContract {
   assetId: string;
   assetFileId: string;
   assetSha256: string;
+  mediaPipelineVersion?: string;
   contactSheetPath: string;
   narration: string;
   requiredCountry: string | null;
@@ -72,6 +73,7 @@ export class VisionService {
       provider: settings.visionProvider,
       model: settings.visionModel,
       assetSha256: input.assetSha256,
+      mediaPipelineVersion: input.mediaPipelineVersion ?? 'legacy',
       prompt
     })).digest('hex');
     const cached = this.db.raw.prepare(`

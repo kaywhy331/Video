@@ -1,13 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import type { AppDatabase } from '../database/database';
-import type { ProjectState, RepairAttempt, RepairAttemptStatus, RepairClass } from '@shared/types';
+import type {
+  ProjectState,
+  RepairAttempt,
+  RepairAttemptStatus,
+  RepairClass,
+  StoryboardCandidate
+} from '@shared/types';
 import {
   earliestSafeRepairState,
   repairPolicyFor,
   type RepairPolicy
 } from '@shared/repair-policy';
 import { geographySatisfies, type Granularity } from '@shared/geography';
+import { qualifiesOutputPixels } from '@shared/output-profile';
 
 const ACCEPTED_LICENSE_STATES = new Set([
   'OPERATOR_ATTESTED',
@@ -110,6 +117,86 @@ export class RepairService {
       WHERE project_id = ?
       ORDER BY created_at DESC, id DESC
     `).all(projectId) as Array<Record<string, unknown>>).map(toRepairAttempt);
+  }
+
+  listStoryboardCandidates(projectId: string, sceneId: string): StoryboardCandidate[] {
+    const scene = this.db.raw.prepare(`
+      SELECT id, selected_asset_id, required_country, required_city,
+        required_location, required_granularity
+      FROM project_scenes WHERE id = ? AND project_id = ?
+    `).get(sceneId, projectId) as Record<string, unknown> | undefined;
+    if (!scene) throw new Error('Storyboard scene not found.');
+    const candidates = this.db.raw.prepare(`
+      SELECT id, asset_id FROM shot_candidates
+      WHERE project_id = ? AND scene_id = ?
+      ORDER BY candidate_rank, candidate_score DESC, id
+      LIMIT 50
+    `).all(projectId, sceneId) as Array<{ id: string; asset_id: string }>;
+    return candidates.flatMap(candidate => {
+      const readiness = this.candidateReadiness(projectId, sceneId, candidate.asset_id);
+      if (!readiness) return [];
+      return [this.storyboardCandidate(scene, readiness)];
+    });
+  }
+
+  selectStoryboardCandidate(
+    projectId: string,
+    sceneId: string,
+    candidateId: string,
+    reason: string
+  ): StoryboardCandidate {
+    const scene = this.db.raw.prepare(`
+      SELECT id, ordinal, selected_asset_id, required_country, required_city,
+        required_location, required_granularity
+      FROM project_scenes WHERE id = ? AND project_id = ?
+    `).get(sceneId, projectId) as Record<string, unknown> | undefined;
+    if (!scene) throw new Error('Storyboard scene not found.');
+    const candidate = this.db.raw.prepare(`
+      SELECT asset_id, status FROM shot_candidates
+      WHERE id = ? AND project_id = ? AND scene_id = ?
+    `).get(candidateId, projectId, sceneId) as { asset_id: string; status: string } | undefined;
+    if (!candidate) throw new Error('The selected storyboard candidate does not belong to this scene.');
+    if (candidate.status === 'rejected') {
+      throw new Error('A rejected storyboard candidate cannot be selected without new verification evidence.');
+    }
+    if (String(scene.selected_asset_id ?? '') === candidate.asset_id) {
+      throw new Error('The selected storyboard candidate is already active.');
+    }
+    const readiness = this.candidateReadiness(projectId, sceneId, candidate.asset_id);
+    if (!readiness) throw new Error('The selected storyboard candidate is unavailable.');
+    if (!readiness.ready || !this.candidateGeographySatisfies(scene, readiness.candidate)) {
+      const blocked = this.storyboardCandidate(scene, readiness).blockedReasons;
+      throw new Error(`Only a fully verified, licensed, crop-safe alternate can be selected${blocked.length ? `: ${blocked.join('; ')}` : '.'}`);
+    }
+
+    const policy: RepairPolicy = {
+      repairClass: 'alternate',
+      action: 'Operator selected a specific verified storyboard candidate.',
+      targetState: 'BUILDING_TIMELINE',
+      maximumAttempts: 1
+    };
+    const attemptId = this.insertAttempt({
+      projectId,
+      sceneId,
+      failureCode: 'OPERATOR_STORYBOARD_REPLACEMENT',
+      policy,
+      status: 'verified',
+      attemptNumber: 1,
+      sourceAssetId: scene.selected_asset_id ? String(scene.selected_asset_id) : null,
+      replacementAssetId: String(readiness.candidate.asset_id),
+      replacementFileId: readiness.fileId,
+      replacementSegmentId: readiness.segmentId,
+      evidence: { candidateId, reason, selectedBy: 'operator' }
+    });
+    const attempt = this.db.raw.prepare('SELECT * FROM repair_attempts WHERE id = ?')
+      .get(attemptId) as Record<string, unknown>;
+    this.promoteCandidate(scene, readiness, attempt, {
+      actor: 'human',
+      priorSelectedStatus: 'eligible',
+      explanation: `Selected by operator: ${reason}`
+    });
+    return this.listStoryboardCandidates(projectId, sceneId)
+      .find(item => item.id === candidateId)!;
   }
 
   routeQcFailures(projectId: string, renderId: string, failures: QcFailure[]): QcRepairRoute {
@@ -574,7 +661,8 @@ export class RepairService {
     assetId: string
   ): CandidateReadiness | null {
     const candidate = this.db.raw.prepare(`
-      SELECT c.*, a.local_file_id, a.availability_status, a.excluded,
+      SELECT c.*, a.title AS asset_title, a.thumbnail_url, a.local_file_id,
+        a.availability_status, a.excluded,
         a.country, a.city, a.location_name, a.location_granularity,
         q.state AS acquisition_state, q.mapped_file_id, l.license_state,
         (SELECT v.status FROM footage_verifications v
@@ -590,13 +678,19 @@ export class RepairService {
     const fileId = candidate.mapped_file_id
       ? String(candidate.mapped_file_id)
       : candidate.local_file_id ? String(candidate.local_file_id) : null;
-    const segment = fileId ? this.db.raw.prepare(`
-      SELECT g.id, f.original_path FROM media_segments g
+    const profile = this.projectOutputDimensions(projectId);
+    const segmentRows = fileId ? this.db.raw.prepare(`
+      SELECT g.id, g.effective_width, g.effective_height, f.original_path FROM media_segments g
       JOIN asset_files f ON f.id = g.asset_file_id
-      WHERE g.asset_file_id = ? AND g.eligible_1080p = 1
+      WHERE g.asset_file_id = ?
         AND g.black_frame_risk < 0.35 AND g.freeze_risk < 0.5
-      ORDER BY g.quality_score DESC, g.start_ms, g.id LIMIT 1
-    `).get(fileId) as { id: string; original_path: string } | undefined : undefined;
+      ORDER BY g.quality_score DESC, g.start_ms, g.id
+    `).all(fileId) as Array<{ id: string; effective_width: number; effective_height: number; original_path: string }> : [];
+    const segment = segmentRows.find(row => {
+      return qualifiesOutputPixels(
+        Number(row.effective_width), Number(row.effective_height), profile.width, profile.height
+      );
+    });
     const acquisitionState = candidate.acquisition_state ? String(candidate.acquisition_state) : null;
     const licenseState = candidate.license_state ? String(candidate.license_state) : null;
     const originalExists = Boolean(segment?.original_path && existsSync(segment.original_path));
@@ -631,10 +725,75 @@ export class RepairService {
     };
   }
 
+  private projectOutputDimensions(projectId: string): { width: number; height: number } {
+    const row = this.db.raw.prepare(`SELECT output_profile_snapshot_json FROM projects WHERE id = ?`).get(projectId) as {
+      output_profile_snapshot_json: string | null;
+    } | undefined;
+    try {
+      const snapshot = row?.output_profile_snapshot_json
+        ? JSON.parse(row.output_profile_snapshot_json) as { width?: number; height?: number }
+        : null;
+      if (snapshot && Number(snapshot.width) > 0 && Number(snapshot.height) > 0) {
+        return { width: Number(snapshot.width), height: Number(snapshot.height) };
+      }
+    } catch {
+      // Legacy projects use the safe landscape 1080p default.
+    }
+    return { width: 1920, height: 1080 };
+  }
+
+  private storyboardCandidate(
+    scene: Record<string, unknown>,
+    readiness: CandidateReadiness
+  ): StoryboardCandidate {
+    const row = readiness.candidate;
+    const geographySafe = this.candidateGeographySatisfies(scene, row);
+    const blockedReasons: string[] = [];
+    if (row.excluded) blockedReasons.push('Asset is excluded from production.');
+    if (row.status === 'rejected') blockedReasons.push('Candidate was rejected by the operator.');
+    if (row.availability_status === 'unavailable') blockedReasons.push('Asset is unavailable.');
+    if (!readiness.fileId) blockedReasons.push('Downloaded media is missing.');
+    if (readiness.fileId && !readiness.segmentId) blockedReasons.push('No crop-safe analyzed segment qualifies for this output.');
+    if (!readiness.licenseState || !ACCEPTED_LICENSE_STATES.has(readiness.licenseState)) {
+      blockedReasons.push('Project license is not verified.');
+    }
+    if (readiness.semanticStatus !== 'verified') blockedReasons.push('Scene-specific footage verification has not passed.');
+    if (!geographySafe) blockedReasons.push('Candidate geography no longer satisfies the scene contract.');
+    return {
+      id: String(row.id),
+      sceneId: String(row.scene_id),
+      assetId: String(row.asset_id),
+      assetTitle: String(row.asset_title),
+      thumbnailUrl: row.thumbnail_url ? String(row.thumbnail_url) : null,
+      rank: Number(row.candidate_rank),
+      score: Number(row.candidate_score),
+      status: row.status as StoryboardCandidate['status'],
+      country: row.country ? String(row.country) : null,
+      city: row.city ? String(row.city) : null,
+      locationName: row.location_name ? String(row.location_name) : null,
+      locationGranularity: row.location_granularity as StoryboardCandidate['locationGranularity'],
+      explanations: parseArray(row.explanation_json).map(String),
+      fileId: readiness.fileId,
+      segmentId: readiness.segmentId,
+      acquisitionState: readiness.acquisitionState as StoryboardCandidate['acquisitionState'],
+      licenseState: readiness.licenseState as StoryboardCandidate['licenseState'],
+      semanticStatus: readiness.semanticStatus as StoryboardCandidate['semanticStatus'],
+      selected: String(scene.selected_asset_id ?? '') === String(row.asset_id),
+      ready: readiness.ready && geographySafe && row.status !== 'rejected',
+      blockedReasons
+    };
+  }
+
+
   private promoteCandidate(
     scene: Record<string, unknown>,
     readiness: CandidateReadiness,
-    attempt: Record<string, unknown>
+    attempt: Record<string, unknown>,
+    options: {
+      actor?: 'system' | 'human';
+      priorSelectedStatus?: 'eligible' | 'rejected';
+      explanation?: string;
+    } = {}
   ): void {
     if (
       !readiness.fileId
@@ -650,10 +809,10 @@ export class RepairService {
       this.db.raw.prepare(`
         UPDATE shot_candidates SET status = CASE
           WHEN asset_id = ? THEN 'selected'
-          WHEN status = 'selected' THEN 'rejected'
+          WHEN status = 'selected' THEN ?
           ELSE status END, updated_at = ?
         WHERE scene_id = ?
-      `).run(replacementAssetId, now, sceneId);
+      `).run(replacementAssetId, options.priorSelectedStatus ?? 'rejected', now, sceneId);
       this.db.raw.prepare(`
         UPDATE project_scenes SET selected_asset_id = ?, selected_file_id = ?,
           selected_segment_id = ?, score = ?, score_explanation_json = ?,
@@ -666,7 +825,7 @@ export class RepairService {
         Number(readiness.candidate.candidate_score),
         JSON.stringify([
           ...parseArray(readiness.candidate.explanation_json),
-          `Automatically selected after ${String(attempt.failure_code)} failed`,
+          options.explanation ?? `Automatically selected after ${String(attempt.failure_code)} failed`,
           `Repair attempt ${Number(attempt.attempt_number)} of ${Number(attempt.maximum_attempts)}`
         ]),
         now,
@@ -703,7 +862,7 @@ export class RepairService {
       replacementSegmentId: readiness.segmentId,
       licenseState: readiness.licenseState,
       semanticVerificationStatus: readiness.semanticStatus
-    });
+    }, options.actor ?? 'system');
   }
 
   private ensureAlternateAcquisition(
@@ -864,13 +1023,14 @@ export class RepairService {
     action: string,
     entityType: string,
     entityId: string,
-    metadata: Record<string, unknown>
+    metadata: Record<string, unknown>,
+    actor = 'system'
   ): void {
     this.db.raw.prepare(`
       INSERT INTO audit_log(
         project_id, action, actor, entity_type, entity_id,
         before_json, after_json, metadata_json, created_at
-      ) VALUES(?, ?, 'system', ?, ?, '{}', '{}', ?, ?)
-    `).run(projectId, action, entityType, entityId, JSON.stringify(metadata), new Date().toISOString());
+      ) VALUES(?, ?, ?, ?, ?, '{}', '{}', ?, ?)
+    `).run(projectId, action, actor, entityType, entityId, JSON.stringify(metadata), new Date().toISOString());
   }
 }

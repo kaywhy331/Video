@@ -6,6 +6,11 @@ import { StructuredScriptSchema, type StructuredScript } from '@shared/contracts
 import { FinalScriptRewriteSchema, type FinalScriptRewrite } from '@shared/contracts';
 import { ExtractedClaimPackSchema, type ExtractedClaim } from '@shared/research';
 import type { ProviderPolicyService } from './provider-policy';
+import {
+  assertNoUnsupportedEditorialFacts,
+  createSafeEditorialGuidance,
+  type SafeEditorialGuidance
+} from '@shared/editorial-guidance';
 
 interface GenerateScriptInput {
   projectId: string;
@@ -15,6 +20,7 @@ interface GenerateScriptInput {
   coverage: CoverageCluster;
   assets: CatalogAsset[];
   acceptedClaims?: Array<{ id: string; text: string; category: string; sourceIds: string[] }>;
+  startingScript?: string;
 }
 
 interface ExtractClaimsInput {
@@ -48,6 +54,8 @@ export interface FinalizeScriptInput {
   }>;
   acceptedClaims: Array<{ id: string; text: string }>;
   pronunciationDictionary: Record<string, string>;
+  revisionInstruction?: string;
+  startingScript?: string;
 }
 
 function stripCodeFence(value: string): string {
@@ -69,6 +77,22 @@ function shortDescription(asset: CatalogAsset): string {
     asset.timeOfDay,
     asset.style
   ].filter(Boolean).join(' | ');
+}
+
+function assetEvidence(asset: CatalogAsset): string[] {
+  return [
+    asset.title,
+    asset.description,
+    asset.country,
+    asset.city,
+    asset.locationName,
+    asset.activity,
+    asset.shotType,
+    asset.sceneDescription,
+    asset.objects,
+    asset.timeOfDay,
+    asset.style
+  ].filter((value): value is string => Boolean(value));
 }
 
 export class AiService {
@@ -149,8 +173,24 @@ export class AiService {
   async generateScript(input: GenerateScriptInput): Promise<StructuredScript> {
     const settings = this.settings();
     const secrets = this.secretStore.getAll();
+    const independentEvidence = [
+      ...(input.acceptedClaims ?? []).map(claim => claim.text),
+      ...input.assets.flatMap(assetEvidence)
+    ];
+    const seedSha256 = createHash('sha256').update(input.startingScript ?? '').digest('hex');
+    const editorialGuidance = createSafeEditorialGuidance(
+      input.startingScript,
+      independentEvidence,
+      seedSha256
+    );
     if (settings.llmProvider !== 'openai_compatible') {
-      return this.generateLocalVisualScript(input);
+      const script = this.generateLocalVisualScript(input, editorialGuidance);
+      assertNoUnsupportedEditorialFacts({
+        startingScript: input.startingScript,
+        generatedText: [script.title, script.topic, script.summary, ...script.scenes.map(scene => scene.narration)],
+        independentEvidence
+      });
+      return script;
     }
     if (!secrets.llmApiKey) {
       throw new Error('The configured language provider API key is missing; local fallback was not used.');
@@ -193,6 +233,7 @@ export class AiService {
       coverage: input.coverage,
       availableAssets: eligible,
       acceptedClaims: (input.acceptedClaims ?? []).slice(0, 40),
+      editorialGuidance,
       requiredSchema: {
         title: 'string',
         topic: 'string',
@@ -232,6 +273,11 @@ export class AiService {
           }
         }
       }
+      assertNoUnsupportedEditorialFacts({
+        startingScript: input.startingScript,
+        generatedText: [script.title, script.topic, script.summary, ...script.scenes.map(scene => scene.narration)],
+        independentEvidence
+      });
       return script;
     };
     const cached = this.db.raw.prepare(`
@@ -331,6 +377,14 @@ export class AiService {
         const invented = Object.keys(scene.pronunciation).filter(term => !allowedPronunciations.has(term.toLocaleLowerCase()));
         if (invented.length) throw new Error(`Final script contains pronunciation entries not issued by the application: ${invented.join(', ')}`);
       }
+      assertNoUnsupportedEditorialFacts({
+        startingScript: input.startingScript,
+        generatedText: rewrite.scenes.map(scene => scene.narration),
+        independentEvidence: [
+          ...input.acceptedClaims.map(claim => claim.text),
+          ...input.scenes.map(scene => scene.narration)
+        ]
+      });
       return rewrite;
     };
 
@@ -354,7 +408,8 @@ export class AiService {
       'Return JSON only. Use every supplied scene ID exactly once and never invent a scene, fact, claim, visual, or pronunciation.',
       'Rewrite only as needed to fit the supplied verified visual and source duration; remove unsupported specificity.',
       'Preserve every accepted claim verbatim when its app-issued claim ID is attached to the scene.',
-      'Pronunciation values may be selected only from the supplied dictionary.'
+      'Pronunciation values may be selected only from the supplied dictionary.',
+      'When a human revision instruction is supplied, address it only with accepted claims and verified visuals; remove unsupported wording instead of inventing a correction.'
     ].join(' ');
     const prompt = {
       task: 'Finalize narration against verified footage.',
@@ -362,6 +417,13 @@ export class AiService {
       scenes: input.scenes,
       acceptedClaims: input.acceptedClaims,
       pronunciationDictionary: input.pronunciationDictionary,
+      revisionInstruction: input.revisionInstruction,
+      editorialSeedPolicy: input.startingScript ? {
+        role: 'editorial_guidance_only',
+        evidenceEligible: false,
+        rawTextSharedWithProvider: false,
+        seedSha256: createHash('sha256').update(input.startingScript).digest('hex')
+      } : null,
       requiredSchema: { scenes: [{ sceneId: 'supplied scene ID', narration: 'string', pronunciation: { suppliedTerm: 'supplied pronunciation' } }] }
     };
     const inputHash = createHash('sha256').update(JSON.stringify({ system, prompt, model: settings.llmModel })).digest('hex');
@@ -417,9 +479,22 @@ export class AiService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
-  private generateLocalVisualScript(input: GenerateScriptInput): StructuredScript {
+  private generateLocalVisualScript(
+    input: GenerateScriptInput,
+    editorialGuidance: SafeEditorialGuidance | null
+  ): StructuredScript {
     const targetScenes = Math.max(12, Math.min(48, Math.round(input.targetMinutes * 7)));
-    const assets = input.assets.slice(0, targetScenes);
+    const emphasis = new Set(editorialGuidance?.catalogGroundedEmphasis ?? []);
+    const assets = input.assets
+      .map((asset, index) => ({
+        asset,
+        index,
+        score: assetEvidence(asset).flatMap(value => value.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+          .filter(token => emphasis.has(token)).length
+      }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)
+      .slice(0, targetScenes)
+      .map(item => item.asset);
     const destination = input.destination;
     const scenes = assets.map((asset, index) => {
       const subject = asset.locationName
@@ -479,6 +554,7 @@ export class AiService {
       || error.message.includes('unknown source IDs')
       || error.message.includes('unknown or unaccepted claim IDs')
       || error.message.includes('wording exceeds or changes accepted claim')
+      || error.message.includes('operator guidance')
       || error.message.includes('app-issued scene ID')
       || error.message.includes('pronunciation entries')
       || error.message.includes('accepted material claim');

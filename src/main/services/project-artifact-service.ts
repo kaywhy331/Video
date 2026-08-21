@@ -202,6 +202,7 @@ export class ProjectArtifactService {
         schemaVersion: 'project-export-v1',
         exportedAt: createdAt,
         project: rows.project,
+        projectGuidance: rows.projectGuidance,
         schemaMigrations: rows.schemaMigrations,
         options
       });
@@ -543,6 +544,9 @@ export class ProjectArtifactService {
       UNION SELECT mapped_file_id FROM acquisition_items WHERE project_id = ? AND mapped_file_id IS NOT NULL`;
     return {
       project,
+      projectGuidance: this.db.raw.prepare(`
+        SELECT * FROM project_guidance WHERE project_id = ?
+      `).get(projectId) as Record<string, unknown> | undefined ?? null,
       schemaMigrations: all('SELECT version, name FROM schema_migrations ORDER BY version'),
       scriptVersions: all('SELECT * FROM script_versions WHERE project_id = ? ORDER BY version_number', projectId),
       researchSources: all('SELECT * FROM research_sources WHERE project_id = ? ORDER BY id', projectId),

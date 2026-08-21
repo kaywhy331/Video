@@ -1,23 +1,46 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Database,
   Download,
   Film,
   Gauge,
+  HardDrive,
+  LoaderCircle,
+  Pause,
   Play,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  UploadCloud,
+  WalletCards
 } from 'lucide-react';
-import type { AppBootstrap, ProjectSummary } from '@shared/types';
+import type {
+  AppBootstrap,
+  CoverageCluster,
+  OpportunityAssessment,
+  OutputProfileKey,
+  ProjectSummary
+} from '@shared/types';
 import { Button, EmptyState, MetricCard, Panel, ProgressBar, StatusPill } from '../components/ui';
 
 interface NextAction {
   label: string;
   view?: string;
-  advance?: boolean;
   inspect?: boolean;
+  automatic?: boolean;
 }
+
+const AUTOMATIC_CONTINUATION_STATES = new Set<ProjectSummary['state']>([
+  'FINALIZING_SCRIPT',
+  'GENERATING_VOICE',
+  'BUILDING_TIMELINE',
+  'RENDERING_DRAFT',
+  'QC_DRAFT',
+  'RENDERING_FINAL',
+  'QC_FINAL',
+  'UPLOADING_PRIVATE',
+  'WAITING_YOUTUBE_PROCESSING'
+]);
 
 export function AutopilotView({
   bootstrap,
@@ -33,19 +56,57 @@ export function AutopilotView({
   setError: (message: string | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const defaultChannel = bootstrap.expansion.channels.find(item => item.isDefault) ?? bootstrap.expansion.channels[0];
+  const defaultLanguage = bootstrap.expansion.languages.find(item => item.isDefault) ?? bootstrap.expansion.languages[0];
+  const [channelId, setChannelId] = useState(defaultChannel?.id ?? '');
+  const [languageVoiceProfileId, setLanguageVoiceProfileId] = useState(defaultLanguage?.id ?? '');
+  const [outputProfileKey, setOutputProfileKey] = useState<OutputProfileKey>(
+    bootstrap.settings.defaultOutput === 'qualified_4k' ? 'landscape_4k' : 'landscape_1080p'
+  );
+  const [creationMode, setCreationMode] = useState<'automatic' | 'guided'>('automatic');
+  const [coverage, setCoverage] = useState<CoverageCluster[]>([]);
+  const [opportunities, setOpportunities] = useState<OpportunityAssessment[]>([]);
+  const [destinationKey, setDestinationKey] = useState('');
+  const [topicId, setTopicId] = useState('');
+  const [targetMinutes, setTargetMinutes] = useState(bootstrap.settings.targetVideoMinutes);
+  const [startingScript, setStartingScript] = useState('');
   const current = bootstrap.projects.find(project =>
-    !['PUBLISHED', 'ANALYTICS_ACTIVE', 'FAILED', 'CANCELLED', 'ARCHIVED', 'PAUSED'].includes(project.state)
-  ) ?? bootstrap.projects[0];
+    !['PUBLISHED', 'ANALYTICS_ACTIVE', 'FAILED', 'CANCELLED', 'ARCHIVED'].includes(project.state)
+  ) ?? null;
+  const qualifiedOpportunities = opportunities.filter(item =>
+    item.feasibility === 'qualified' && (!destinationKey || item.destinationKey === destinationKey)
+  );
+  const canStart = creationMode === 'automatic'
+    || (Boolean(destinationKey) && Number.isFinite(targetMinutes) && targetMinutes >= 1 && targetMinutes <= 30);
+  const diskGb = bootstrap.operationsHealth.disk.freeBytes === null
+    ? null
+    : bootstrap.operationsHealth.disk.freeBytes / 1024 ** 3;
+  const unhealthyProviders = bootstrap.operationsHealth.providers.filter(provider => provider.status !== 'healthy');
+
+  useEffect(() => {
+    if (current) return;
+    void Promise.all([
+      window.videoFactory.catalog.coverage(250),
+      window.videoFactory.expansion.opportunities()
+    ]).then(([nextCoverage, nextOpportunities]) => {
+      setCoverage(nextCoverage);
+      setOpportunities(nextOpportunities);
+      setDestinationKey(value => value || nextCoverage[0]?.key || '');
+    }).catch(error => setError(error instanceof Error ? error.message : String(error)));
+  }, [current?.id, bootstrap.catalog.totalAssets]);
+
+  useEffect(() => {
+    if (topicId && !qualifiedOpportunities.some(item => item.topicCandidateId === topicId)) setTopicId('');
+  }, [destinationKey, topicId, opportunities]);
 
   const nextAction = useMemo<NextAction | null>(() => {
     if (!current) return null;
     if (current.state === 'WAITING_FOR_DOWNLOADS') return { label: 'Open download queue', view: 'downloads' };
     if (current.state === 'WAITING_FINAL_APPROVAL') return { label: 'Review finished video', view: 'final-review' };
-    if (current.state === 'FINALIZING_SCRIPT') return { label: 'Finalize verified script', advance: true };
-    if (current.state === 'GENERATING_VOICE') return { label: 'Generate aligned narration', advance: true };
-    if (current.state === 'BUILDING_TIMELINE') return { label: 'Render draft automatically', advance: true };
-    if (current.state === 'QC_DRAFT') return { label: 'Render final video', advance: true };
     if (current.state === 'BLOCKED_EXCEPTION') return { label: 'Review exceptions', view: 'exceptions' };
+    if (AUTOMATIC_CONTINUATION_STATES.has(current.state)) {
+      return { label: 'Continuing automatically', inspect: true, automatic: true };
+    }
     return { label: 'Inspect current project', inspect: true };
   }, [current]);
 
@@ -53,7 +114,15 @@ export function AutopilotView({
     setBusy(true);
     setError(null);
     try {
-      const project = await window.videoFactory.projects.createAutopilot({});
+      const project = await window.videoFactory.projects.createAutopilot({
+        destinationKey: creationMode === 'guided' ? destinationKey || undefined : undefined,
+        targetMinutes: creationMode === 'guided' ? targetMinutes : undefined,
+        topicId: creationMode === 'guided' ? topicId || undefined : undefined,
+        startingScript: creationMode === 'guided' ? startingScript || undefined : undefined,
+        channelId: channelId || undefined,
+        languageVoiceProfileId: languageVoiceProfileId || undefined,
+        outputProfileKey
+      });
       onOpenProject(project.id);
       await onRefresh();
     } catch (error) {
@@ -71,19 +140,35 @@ export function AutopilotView({
     }
     if (nextAction.inspect) {
       onOpenProject(current.id);
-      return;
     }
-    if (nextAction.advance) {
-      setBusy(true);
-      setError(null);
-      try {
-        await window.videoFactory.projects.advance(current.id);
-        await onRefresh();
-      } catch (error) {
-        setError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setBusy(false);
-      }
+  }
+
+  async function runScheduler(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await window.videoFactory.scheduler.evaluate();
+      await onRefresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleAutopilot(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await window.videoFactory.settings.update({
+        autopilotSchedulerEnabled: !bootstrap.settings.autopilotSchedulerEnabled
+      });
+      await window.videoFactory.scheduler.evaluate();
+      await onRefresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -95,10 +180,38 @@ export function AutopilotView({
           <h1>Produce the next accurate video with minimal intervention.</h1>
           <p>The catalog constrains the topic, footage is exact-location gated, and clean projects stop only for acquisition and final approval.</p>
         </div>
-        <Button busy={busy} onClick={current ? executeNext : startNext}>
-          {current ? nextAction?.label : 'Start first video'} <ArrowRight size={16} />
-        </Button>
+        <div className="hero-actions">
+          <Button
+            variant="secondary"
+            busy={busy}
+            onClick={() => void toggleAutopilot()}
+            aria-label={bootstrap.settings.autopilotSchedulerEnabled
+              ? 'Pause new Autopilot projects; current projects continue'
+              : 'Resume new Autopilot projects'}
+          >
+            {bootstrap.settings.autopilotSchedulerEnabled ? <Pause size={16} /> : <Play size={16} />}
+            {bootstrap.settings.autopilotSchedulerEnabled ? 'Pause new projects' : 'Resume new projects'}
+          </Button>
+          <Button busy={busy} disabled={!current && !canStart} onClick={current ? executeNext : startNext}>
+            {current ? (nextAction?.automatic ? 'Inspect project' : nextAction?.label) : 'Start first video'} <ArrowRight size={16} />
+          </Button>
+        </div>
       </div>
+
+      <Panel
+        title="Operations health"
+        subtitle="Live worker activity and the hard gates checked before provider calls or new projects"
+        action={<StatusPill value={bootstrap.diagnostics?.status ?? 'checking'} />}
+      >
+        <div className="operations-health-grid">
+          <div><div><Gauge size={17} /><span>Media worker</span></div><strong>{bootstrap.operationsHealth.workers.media}</strong><small>{bootstrap.queue.runningJobs} running · {bootstrap.queue.queuedJobs} queued</small></div>
+          <div><div><Film size={17} /><span>Render</span></div><strong>{bootstrap.operationsHealth.workers.render}</strong><small>{bootstrap.operationsHealth.workers.runningTypes.filter(type => type.startsWith('render_')).join(', ') || 'No render job running'}</small></div>
+          <div><div><UploadCloud size={17} /><span>Upload</span></div><strong>{bootstrap.operationsHealth.workers.upload}</strong><small>{current && ['UPLOADING_PRIVATE', 'WAITING_YOUTUBE_PROCESSING'].includes(current.state) ? current.state.replaceAll('_', ' ') : 'No upload job running'}</small></div>
+          <div className={`health-${bootstrap.operationsHealth.disk.status}`}><div><HardDrive size={17} /><span>Disk</span></div><strong>{diskGb === null ? 'Unavailable' : `${diskGb.toFixed(1)} GB free`}</strong><small>{(bootstrap.operationsHealth.disk.minimumBytes / 1024 ** 3).toFixed(1)} GB minimum · {bootstrap.operationsHealth.disk.status}</small></div>
+          <div className={`health-${bootstrap.operationsHealth.budget.status}`}><div><WalletCards size={17} /><span>API budget</span></div><strong>${bootstrap.operationsHealth.budget.remainingUsd.toFixed(2)} remaining</strong><small>${bootstrap.operationsHealth.budget.spentUsd.toFixed(2)} of ${bootstrap.operationsHealth.budget.limitUsd.toFixed(2)} this month · {bootstrap.operationsHealth.budget.status}</small></div>
+          <div className={unhealthyProviders.length ? 'health-blocked' : 'health-healthy'}><div><ShieldAlert size={17} /><span>Providers</span></div><strong>{unhealthyProviders.length ? `${unhealthyProviders.length} unhealthy` : 'No hard health gate'}</strong><small>{unhealthyProviders.map(provider => `${provider.provider}: ${provider.status}`).join(' · ') || `${bootstrap.operationsHealth.providers.length} provider health receipt(s)`}</small></div>
+        </div>
+      </Panel>
 
       <div className="metric-grid">
         <MetricCard
@@ -127,6 +240,96 @@ export function AutopilotView({
         />
       </div>
 
+      <Panel
+        title="Publication cadence"
+        subtitle="Queue, provider budget, authentication, and disk gates are re-evaluated before project creation"
+        action={<StatusPill value={bootstrap.scheduler.state} />}
+      >
+        <div className="production-stats">
+          <span><strong>{bootstrap.scheduler.enabled ? 'Enabled' : 'Disabled'}</strong> scheduler</span>
+          <span><strong>{bootstrap.scheduler.nextRunAt ? new Date(bootstrap.scheduler.nextRunAt).toLocaleString() : 'Not scheduled'}</strong> next cadence</span>
+          <span>{bootstrap.scheduler.reason ?? 'All automatic-start gates are currently clear.'}</span>
+          <span>Pausing prevents new project creation; work already in progress continues to its next safe operator gate.</span>
+          <Button variant="secondary" busy={busy} onClick={() => void runScheduler()}>Evaluate now</Button>
+          <Button variant="secondary" busy={busy} onClick={() => void toggleAutopilot()}>
+            {bootstrap.settings.autopilotSchedulerEnabled ? <Pause size={14} /> : <Play size={14} />}
+            {bootstrap.settings.autopilotSchedulerEnabled ? 'Pause new projects' : 'Resume new projects'}
+          </Button>
+        </div>
+      </Panel>
+
+      {!current ? (
+        <Panel title="Next project" subtitle="Choose full Autopilot or guide only the bounded, catalog-qualified inputs">
+          <div className="creation-mode-tabs">
+            <button className={creationMode === 'automatic' ? 'active' : ''} onClick={() => setCreationMode('automatic')}>
+              Full Autopilot
+            </button>
+            <button className={creationMode === 'guided' ? 'active' : ''} onClick={() => setCreationMode('guided')}>
+              Guided
+            </button>
+          </div>
+          <div className="project-profile-picker">
+            <label><span>Channel</span><select value={channelId} onChange={event => setChannelId(event.target.value)}>{bootstrap.expansion.channels.filter(item => item.active).map(channel => <option key={channel.id} value={channel.id}>{channel.name} · {channel.shortCode}</option>)}</select></label>
+            <label><span>Language / voice</span><select value={languageVoiceProfileId} onChange={event => setLanguageVoiceProfileId(event.target.value)}>{bootstrap.expansion.languages.filter(item => item.active).map(language => <option key={language.id} value={language.id}>{language.displayName}</option>)}</select></label>
+            <label><span>Output</span><select value={outputProfileKey} onChange={event => setOutputProfileKey(event.target.value as OutputProfileKey)}>{bootstrap.expansion.outputProfiles.filter(item => item.active).map(profile => <option key={profile.id} value={profile.profileKey}>{profile.displayName} · {profile.width}×{profile.height}</option>)}</select></label>
+            {creationMode === 'guided' ? (
+              <>
+                <label>
+                  <span>Destination</span>
+                  <select value={destinationKey} onChange={event => setDestinationKey(event.target.value)}>
+                    {coverage.map(cluster => (
+                      <option key={cluster.key} value={cluster.key}>
+                        {cluster.locationName ?? cluster.city ?? cluster.country ?? cluster.key} · {cluster.assetCount} assets
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Qualified topic</span>
+                  <select value={topicId} onChange={event => setTopicId(event.target.value)}>
+                    <option value="">Generate a coverage-qualified visual guide</option>
+                    {qualifiedOpportunities.map(topic => (
+                      <option key={topic.topicCandidateId} value={topic.topicCandidateId}>
+                        {topic.title} · score {Math.round(topic.opportunityScore)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Target duration</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    step={0.5}
+                    value={targetMinutes}
+                    onChange={event => setTargetMinutes(Number(event.target.value))}
+                  />
+                </label>
+                <label className="project-guidance-script">
+                  <span>Starting script (optional)</span>
+                  <textarea
+                    maxLength={20_000}
+                    rows={7}
+                    value={startingScript}
+                    placeholder="Paste an outline or draft to guide tone, pacing, structure, and catalog-grounded emphasis."
+                    onChange={event => setStartingScript(event.target.value)}
+                  />
+                  <small>
+                    Guidance only, not evidence. Factual wording is omitted unless independently supported by accepted research or catalog metadata. {startingScript.length.toLocaleString()}/20,000
+                  </small>
+                </label>
+              </>
+            ) : null}
+            <p>
+              {creationMode === 'guided'
+                ? 'Destination, topic, duration, and safe editorial guidance are snapshotted immutably. Coverage is revalidated before any project or provider call begins.'
+                : 'Autopilot selects the strongest current destination and topic. Channel, voice, output, and all qualification evidence are snapshotted immutably.'}
+            </p>
+          </div>
+        </Panel>
+      ) : null}
+
       {current ? (
         <Panel
           title="Current production"
@@ -145,11 +348,13 @@ export function AutopilotView({
                 <span><strong>{Math.round(current.targetDurationMs / 60_000)}</strong> min target</span>
               </div>
             </div>
-            <div className="next-action-card">
-              <Gauge size={22} />
-              <span>Next action</span>
+            <div className="next-action-card" aria-live="polite">
+              {nextAction?.automatic ? <LoaderCircle size={22} className="spin" /> : <Gauge size={22} />}
+              <span>{nextAction?.automatic ? 'Pipeline status' : 'Next action'}</span>
               <strong>{nextAction?.label}</strong>
-              <Button variant="secondary" busy={busy} onClick={executeNext}>Continue <ArrowRight size={15} /></Button>
+              <Button variant="secondary" busy={busy} onClick={executeNext}>
+                {nextAction?.automatic ? 'Inspect project' : 'Continue'} <ArrowRight size={15} />
+              </Button>
             </div>
           </div>
         </Panel>
@@ -157,7 +362,7 @@ export function AutopilotView({
         <EmptyState
           title="No production is active"
           body="Import the footage catalog, then let Autopilot select the strongest visually supportable destination."
-          action={<Button busy={busy} onClick={startNext}><Play size={16} /> Start first video</Button>}
+          action={<Button busy={busy} disabled={!canStart} onClick={startNext}><Play size={16} /> Start first video</Button>}
         />
       )}
 

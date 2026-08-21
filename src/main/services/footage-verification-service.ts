@@ -59,7 +59,7 @@ export class FootageVerificationService {
       SELECT s.*, a.country AS asset_country, a.city AS asset_city,
         a.location_name AS asset_location, a.location_granularity AS asset_granularity,
         a.verification_status AS asset_verification_status,
-        f.sha256, f.contact_sheet_path
+        f.sha256, f.contact_sheet_path, f.pipeline_version
       FROM project_scenes s
       JOIN assets a ON a.id = ?
       JOIN asset_files f ON f.id = ? AND f.asset_id = a.id
@@ -127,6 +127,7 @@ export class FootageVerificationService {
       assetId,
       assetFileId,
       assetSha256: String(row.sha256),
+      mediaPipelineVersion: String(row.pipeline_version ?? 'legacy'),
       narration: String(row.narration),
       requiredCountry: row.required_country ? String(row.required_country) : null,
       requiredCity: row.required_city ? String(row.required_city) : null,

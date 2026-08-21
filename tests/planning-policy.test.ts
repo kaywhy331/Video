@@ -9,7 +9,12 @@ import { join } from 'node:path';
 const qualified: CoverageCluster = {
   key: 'Vietnam|Da Nang|My Son', country: 'Vietnam', city: 'Da Nang', locationName: 'My Son',
   assetCount: 120, uniqueShotTypes: 8, uniqueActivities: 10, uniqueTimes: 4,
-  landscapeCount: 110, fourKCount: 60, downloadedCount: 20, verifiedCount: 90, coverageScore: 90
+  landscapeCount: 110, portraitCount: 10, fullHdEligibleCount: 110, fourKCount: 60,
+  downloadedCount: 20, verifiedCount: 90, estimatedUniqueShots: 252, repetitionRisk: 0.05,
+  exactConfidenceDistribution: { verified: 90, strong: 20, contextual: 8, weak: 2 },
+  shotBalance: { aerial: 20, wide: 35, medium: 35, detail: 25, other: 5 },
+  variety: { day: 80, night: 25, weather: 15 }, representedActivities: ['walking'],
+  representedObjects: ['temple'], missingVisualCategories: [], coverageScore: 90
 };
 
 describe('coverage-first planning policy', () => {
@@ -27,6 +32,17 @@ describe('coverage-first planning policy', () => {
     expect(result.qualified).toBe(false);
     expect(result.reasons).toContain('Fewer than 12 unique source assets');
     expect(result.reasons).toContain('Fewer than four shot categories');
+  });
+
+  it('evaluates orientation coverage against the selected output profile', () => {
+    const portraitCluster = {
+      ...qualified,
+      landscapeCount: 5,
+      portraitCount: 110
+    };
+    expect(evaluateCoverage(portraitCluster, 5, { orientation: 'portrait' }).qualified).toBe(true);
+    expect(evaluateCoverage(portraitCluster, 5, { orientation: 'landscape' }).reasons)
+      .toContain('Landscape/full-screen coverage is insufficient');
   });
 
   it('detects materially duplicate topic signatures', () => {

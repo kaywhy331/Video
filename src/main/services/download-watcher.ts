@@ -36,36 +36,55 @@ export async function waitForStableFile(
 export class DownloadWatcher {
   private watcher: FSWatcher | null = null;
   private processing = new Set<string>();
+  private readonly tasks = new Set<Promise<void>>();
+  private acceptingEvents = false;
 
   constructor(
     private readonly db: AppDatabase,
     private readonly media: MediaService,
     private readonly settings: () => AppSettings,
-    private readonly notify: (message: string) => void
+    private readonly notify: (message: string) => void,
+    private readonly stableFile: (filePath: string) => Promise<boolean> = waitForStableFile
   ) {}
 
   async start(): Promise<void> {
     await this.stop();
     const folder = this.settings().ingestFolder;
+    this.acceptingEvents = true;
     this.watcher = chokidar.watch(folder, {
       ignoreInitial: true,
       awaitWriteFinish: false,
       depth: 0,
       ignored: path => fileLooksTemporary(String(path))
     });
-    this.watcher.on('add', path => void this.handle(path));
+    this.watcher.on('add', path => {
+      if (this.acceptingEvents) this.processAddedFile(path);
+    });
   }
 
   async stop(): Promise<void> {
+    this.acceptingEvents = false;
     if (this.watcher) await this.watcher.close();
     this.watcher = null;
+    while (this.tasks.size > 0) {
+      await Promise.allSettled([...this.tasks]);
+    }
+  }
+
+  processAddedFile(filePath: string): void {
+    const task = this.handle(filePath);
+    this.tasks.add(task);
+    task.then(
+      () => this.tasks.delete(task),
+      () => this.tasks.delete(task)
+    );
   }
 
   private async handle(filePath: string): Promise<void> {
     if (this.processing.has(filePath) || fileLooksTemporary(filePath)) return;
     this.processing.add(filePath);
     try {
-      const stable = await waitForStableFile(filePath);
+      const stable = await this.stableFile(filePath);
       if (!stable) return;
 
       const active = this.db.raw.prepare(`
@@ -97,9 +116,19 @@ export class DownloadWatcher {
       const item = active[0];
       if (!item) return;
       this.db.raw.prepare(`
-        UPDATE acquisition_items SET state = 'FILE_STABLE', detected_path = ?, updated_at = ?
+        UPDATE acquisition_items SET state = 'FILE_STABLE', detected_path = ?,
+          mapping_confidence = 1, mapping_evidence_json = ?, updated_at = ?
         WHERE id = ?
-      `).run(filePath, new Date().toISOString(), item.id);
+      `).run(
+        filePath,
+        JSON.stringify({
+          method: 'single_active_item',
+          fileName: basename(filePath),
+          activeIds: [String(item.id)]
+        }),
+        new Date().toISOString(),
+        item.id
+      );
       await this.media.ingestAcquisition(String(item.id), filePath);
       this.notify(`${basename(filePath)} was ingested successfully.`);
     } catch (error) {
@@ -119,7 +148,7 @@ export class DownloadWatcher {
         randomUUID(),
         active?.project_id ?? null,
         error instanceof Error ? error.message : String(error),
-        JSON.stringify({ filePath }),
+        JSON.stringify({ filePath, acquisitionId: active?.id ?? null }),
         new Date().toISOString()
       );
       if (active?.id) {

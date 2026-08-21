@@ -101,6 +101,18 @@ export interface AppSettings {
   backupDailyRetention: number;
   backupWeeklyRetention: number;
   backupMonthlyRetention: number;
+  catalogImportFile: string;
+  catalogRefreshEnabled: boolean;
+  catalogRefreshIntervalHours: number;
+  catalogValidationTemplateId: string;
+  autopilotSchedulerEnabled: boolean;
+  autopilotCadenceDays: number;
+  autopilotPublicationHourUtc: number;
+  musicEnabled: boolean;
+  musicTargetGainDb: number;
+  musicDuckingDb: number;
+  automaticDerivativeCleanup: boolean;
+  derivativeCleanupTargetGb: number;
   ffmpegPath: string;
   ffprobePath: string;
   monthlyBudgetUsd: number;
@@ -111,9 +123,15 @@ export interface AppSettings {
   maxPrivateApproval: number;
   targetVideoMinutes: number;
   defaultOutput: '1080p' | 'qualified_4k';
+  updateChannel: 'stable' | 'prerelease';
+  updateCheckEnabled: boolean;
   preferredShotMinSeconds: number;
   preferredShotMaxSeconds: number;
   hardShotMaxSeconds: number;
+  matchingMaxSourceUses: number;
+  matchingMaxConsecutiveShotMotion: number;
+  matchingPerceptualDistance: number;
+  matchingHeroStrategy: 'opening' | 'first_major_transition' | 'disabled';
   narratorProvider: 'windows_sapi' | 'http_tts';
   narratorBaseUrl: string;
   narratorModel: string;
@@ -169,6 +187,13 @@ export interface DiagnosticsReport {
     path?: string;
     version?: string;
     encoders: string[];
+    encoderTests: Array<{
+      id: 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'libx264';
+      label: string;
+      advertised: boolean;
+      usable: boolean;
+      error?: string;
+    }>;
     error?: string;
   };
   ffprobe: {
@@ -183,6 +208,14 @@ export interface DiagnosticsReport {
     integrity: string;
     walMode: boolean;
   };
+  mediaSmokeTest: {
+    encoded: boolean;
+    probed: boolean;
+    error?: string;
+  };
+  issues: string[];
+  status: 'pass' | 'warning' | 'fail';
+  savedRunId: string;
 }
 
 export interface BackupRecord {
@@ -251,14 +284,374 @@ export interface QueueSummary {
   runningJobs: number;
 }
 
+export interface OperationsHealth {
+  budget: {
+    spentUsd: number;
+    limitUsd: number;
+    remainingUsd: number;
+    status: 'healthy' | 'warning' | 'blocked';
+  };
+  disk: {
+    freeBytes: number | null;
+    minimumBytes: number;
+    status: 'healthy' | 'warning' | 'blocked' | 'unknown';
+  };
+  providers: Array<{
+    provider: string;
+    status: 'healthy' | 'auth_invalid' | 'quota_exhausted' | 'unavailable';
+    message: string | null;
+    checkedAt: string;
+  }>;
+  workers: {
+    media: 'active' | 'idle';
+    render: 'active' | 'idle';
+    upload: 'active' | 'idle';
+    runningTypes: string[];
+  };
+}
+
 export interface AppBootstrap {
   settings: AppSettings;
   secrets: SecretStatus;
-  diagnostics: DiagnosticsReport;
+  diagnostics: DiagnosticsReport | null;
   queue: QueueSummary;
   catalog: CatalogStats;
   projects: ProjectSummary[];
   exceptions: ExceptionRecord[];
+  latestCatalogRefresh: CatalogRefreshRun | null;
+  latestUpdateCheck: UpdateCheckResult | null;
+  scheduler: SchedulerStatus;
+  operationsHealth: OperationsHealth;
+  learningRecommendations: LearningRecommendation[];
+  musicTracks: MusicTrack[];
+  latestStorageCleanup: StorageCleanupReport | null;
+  expansion: ExpansionRegistrySnapshot;
+}
+
+export type AppStateSnapshot = Pick<AppBootstrap,
+  | 'diagnostics'
+  | 'queue'
+  | 'catalog'
+  | 'projects'
+  | 'exceptions'
+  | 'latestCatalogRefresh'
+  | 'latestUpdateCheck'
+  | 'scheduler'
+  | 'operationsHealth'
+  | 'learningRecommendations'
+  | 'musicTracks'
+  | 'latestStorageCleanup'
+  | 'expansion'
+>;
+
+export type ExternalQualification = 'unverified' | 'qualified' | 'blocked' | 'not_required';
+export type OutputProfileKey = 'landscape_1080p' | 'landscape_4k' | 'vertical_1080p';
+
+export interface ChannelProfile {
+  id: string;
+  name: string;
+  shortCode: string;
+  defaultLanguageCode: string;
+  defaultVoiceId: string | null;
+  youtubeChannelId: string | null;
+  youtubeChannelTitle: string | null;
+  active: boolean;
+  isDefault: boolean;
+  policy: Record<string, unknown>;
+  externalQualification: Exclude<ExternalQualification, 'not_required'>;
+}
+
+export interface LanguageVoiceProfile {
+  id: string;
+  languageCode: string;
+  languageName: string;
+  voiceProvider: string;
+  voiceId: string;
+  displayName: string;
+  active: boolean;
+  isDefault: boolean;
+  settings: Record<string, unknown>;
+  externalQualification: Exclude<ExternalQualification, 'not_required'>;
+}
+
+export interface ProviderCapabilityRecord {
+  id: string;
+  providerKey: string;
+  displayName: string;
+  capability: 'stock' | 'llm' | 'vision' | 'tts' | 'keyword_metrics' | 'research' | 'uploader' | 'analytics' | 'local_ai' | 'render_worker';
+  implementation: string;
+  configured: boolean;
+  available: boolean;
+  externalQualification: ExternalQualification;
+  capabilities: Record<string, unknown>;
+  lastCheckedAt: string | null;
+  statusMessage: string | null;
+}
+
+export interface OutputProfile {
+  id: string;
+  profileKey: OutputProfileKey;
+  displayName: string;
+  width: number;
+  height: number;
+  orientation: 'landscape' | 'portrait' | 'square';
+  frameRate: number;
+  videoCodec: string;
+  audioCodec: string;
+  qualificationPolicy: Record<string, unknown>;
+  active: boolean;
+  isDefault: boolean;
+}
+
+export interface ExpansionRegistrySnapshot {
+  channels: ChannelProfile[];
+  languages: LanguageVoiceProfile[];
+  providers: ProviderCapabilityRecord[];
+  outputProfiles: OutputProfile[];
+}
+
+export interface KeywordMetricObservation {
+  id: string;
+  topicCandidateId: string | null;
+  keyword: string;
+  provider: string;
+  metricType: string;
+  value: number | null;
+  geographyCode: string | null;
+  languageCode: string;
+  collectedAt: string;
+  confidence: number;
+  youtubeNative: boolean;
+  rawMetadata: Record<string, unknown>;
+  truthfulLabel: string;
+}
+
+export interface OpportunityAssessment {
+  topicCandidateId: string;
+  destinationKey: string;
+  title: string;
+  destination: string;
+  feasibility: 'qualified' | 'weak' | 'rejected';
+  demandScore: number | null;
+  competitionScore: number | null;
+  opportunityScore: number;
+  components: Record<string, number>;
+  observations: KeywordMetricObservation[];
+  labels: string[];
+}
+
+export interface GoogleSheetsSyncRun {
+  id: string;
+  configId: string | null;
+  spreadsheetId: string;
+  sheetRange: string;
+  sourceSha256: string | null;
+  materializedPath: string | null;
+  previewId: string | null;
+  rowCount: number;
+  status: 'staged' | 'up_to_date' | 'blocked' | 'failed';
+  diff: CatalogImportDiff;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AnalyticsCollectionRun {
+  id: string;
+  projectId: string;
+  videoId: string;
+  snapshotDay: 1 | 3 | 7 | 28 | 90;
+  provider: string;
+  status: 'running' | 'complete' | 'failed';
+  analyticsSnapshotId: string | null;
+  responseHash: string | null;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AnalyticsCollectionRequest {
+  projectId: string;
+  videoId: string;
+  snapshotDay: 1 | 3 | 7 | 28 | 90;
+  capturedAt: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface AnalyticsProviderResult {
+  metrics: AnalyticsMetrics;
+  retention: RetentionPointInput[];
+  rawMetadata?: Record<string, unknown>;
+}
+
+export interface MusicTrack {
+  id: string;
+  sha256: string;
+  originalPath: string;
+  originalFileName: string;
+  title: string;
+  provider: string;
+  licenseType: string;
+  licenseReference: string;
+  licenseDocumentPath: string | null;
+  licenseVerifiedAt: string;
+  moods: string[];
+  tempoBpm: number | null;
+  durationMs: number;
+  loopable: boolean;
+  enabled: boolean;
+  importedAt: string;
+}
+
+export interface ProjectMusicSelection {
+  id: string;
+  projectId: string;
+  musicTrackId: string;
+  selectedBy: 'automatic' | 'human';
+  targetGainDb: number;
+  duckingDb: number;
+  fadeInMs: number;
+  fadeOutMs: number;
+  licenseSnapshot: Record<string, unknown>;
+}
+
+export interface StorageCleanupReport {
+  id: string;
+  trigger: 'manual' | 'disk_pressure' | 'startup';
+  status: 'planned' | 'not_needed' | 'complete' | 'partial' | 'failed';
+  freeBytesBefore: number | null;
+  freeBytesAfter: number | null;
+  targetFreeBytes: number;
+  candidateBytes: number;
+  removedBytes: number;
+  removedCount: number;
+  skipped: string[];
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SchedulerStatus {
+  enabled: boolean;
+  state: 'running' | 'paused' | 'blocked';
+  reasonCode: string | null;
+  reason: string | null;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastProjectId: string | null;
+  evaluatedAt: string;
+}
+
+export interface AnalyticsMetrics {
+  views: number;
+  impressions: number | null;
+  clickThroughRate: number | null;
+  watchTimeMinutes: number | null;
+  averageViewDurationSeconds: number | null;
+  averagePercentageViewed: number | null;
+  subscribersGained: number | null;
+  trafficSources: Record<string, number>;
+  searchTerms: Record<string, number>;
+  playlistStarts: number | null;
+  endScreenClicks: number | null;
+}
+
+export interface RetentionPointInput {
+  elapsedRatio: number;
+  audienceWatchRatio: number | null;
+  relativeRetention: number | null;
+}
+
+export interface AnalyticsSnapshot {
+  id: string;
+  projectId: string;
+  videoId: string;
+  snapshotDay: 1 | 3 | 7 | 28 | 90;
+  metrics: AnalyticsMetrics;
+  retention: RetentionPointInput[];
+  capturedAt: string;
+  source: 'youtube_api' | 'manual_import';
+  sourceHash: string;
+  mappings: RetentionMapping[];
+}
+
+export interface RetentionMapping {
+  positionMs: number;
+  elapsedRatio: number;
+  audienceWatchRatio: number | null;
+  relativeRetention: number | null;
+  sceneId: string | null;
+  sceneOrdinal: number | null;
+  chapter: string | null;
+  visualTreatment: string | null;
+  shotLengthMs: number | null;
+  sourceKind: string | null;
+  locationName: string | null;
+  voiceWordsPerMinute: number | null;
+}
+
+export interface LearningRecommendation {
+  id: string;
+  metricKey: string;
+  scope: Record<string, unknown>;
+  beforeValue: unknown;
+  proposedValue: unknown;
+  currentValue: unknown;
+  rationale: string;
+  evidenceSnapshotIds: string[];
+  evidenceVideoCount: number;
+  evidenceTotalViews: number;
+  status: 'proposed' | 'applied' | 'rejected' | 'rolled_back';
+  appliedAt: string | null;
+  rolledBackAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SettingsProfileReport {
+  operation: 'export' | 'import';
+  path: string;
+  sha256: string;
+  appliedKeys: string[];
+  warnings: string[];
+  settings: AppSettings;
+}
+
+export interface UpdateCheckResult {
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+  available: boolean;
+  status: 'current' | 'available' | 'unpublished' | 'error';
+  channel: 'stable' | 'prerelease';
+  checkedAt: string;
+  error: string | null;
+}
+
+export interface CatalogValidationTemplate {
+  id: string;
+  name: string;
+  description: string;
+  sourcePattern: string;
+  requiredFields: string[];
+  identityFields: string[];
+  minimumRows: number;
+  maximumInvalidRatio: number;
+  builtIn: boolean;
+}
+
+export interface CatalogRefreshRun {
+  id: string;
+  sourcePath: string;
+  sourceSha256: string | null;
+  templateId: string | null;
+  previewId: string | null;
+  status: 'staged' | 'up_to_date' | 'blocked' | 'failed';
+  diff: CatalogImportDiff;
+  validation: { valid: boolean; issues: string[] };
+  error: string | null;
+  createdAt: string;
 }
 
 export interface CatalogStats {
@@ -306,6 +699,10 @@ export interface CatalogAsset {
   verificationStatus: 'unverified' | 'metadata' | 'ai_suggested' | 'human_verified' | 'conflict';
   availabilityStatus: 'unknown' | 'available' | 'unavailable';
   localFileId: string | null;
+  usedProjectCount: number;
+  licensedProjectCount: number;
+  mediaStatus: 'metadata_only' | 'downloaded' | 'analyzed' | 'usable_1080p' | 'usable_4k';
+  perceptualHash?: string | null;
   excluded: boolean;
   importedAt: string;
   updatedAt: string;
@@ -328,8 +725,20 @@ export interface CatalogSearchRequest {
   locationName?: string;
   author?: string;
   orientation?: string;
+  verificationStatus?: CatalogAsset['verificationStatus'];
+  availabilityStatus?: CatalogAsset['availabilityStatus'];
+  minimumLocationConfidence?: number;
   downloaded?: boolean;
   verified?: boolean;
+  used?: boolean;
+  licensed?: boolean;
+  mediaStatus?: CatalogAsset['mediaStatus'];
+  metadataField?:
+    | 'providerAssetId' | 'sourceRowId' | 'canonicalPageUrl' | 'authorName'
+    | 'title' | 'description' | 'rawAttributes' | 'rawTags' | 'country' | 'city'
+    | 'locationName' | 'activity' | 'shotType' | 'sceneDescription' | 'objects'
+    | 'timeOfDay' | 'style' | 'declaredCodec';
+  metadataValue?: string;
   page: number;
   pageSize: number;
   sortBy?: 'title' | 'country' | 'city' | 'location' | 'updated';
@@ -350,6 +759,7 @@ export interface CatalogSearchResult {
 }
 
 export interface CatalogImportPreview {
+  previewId: string;
   filePath: string;
   sheetNames: string[];
   selectedSheet: string;
@@ -357,6 +767,21 @@ export interface CatalogImportPreview {
   columns: string[];
   mapping: Record<string, string | null>;
   sampleRows: Record<string, unknown>[];
+  diff: CatalogImportDiff;
+  warnings: string[];
+}
+
+export interface CatalogImportDiff {
+  inserted: number;
+  changed: number;
+  conflicts: number;
+  missing: number;
+  unchanged: number;
+  invalid: number;
+  sampleInserted: string[];
+  sampleChanged: string[];
+  sampleConflicts: string[];
+  sampleMissing: string[];
 }
 
 export interface CatalogImportResult {
@@ -365,9 +790,20 @@ export interface CatalogImportResult {
   updated: number;
   unchanged: number;
   conflicts: number;
+  missing: number;
   invalid: number;
   total: number;
   warnings: string[];
+}
+
+export interface CatalogImportOperationStatus {
+  operationId: string;
+  operation: 'preview' | 'commit' | 'refresh' | 'stage';
+  state: 'running' | 'cancelling';
+  progress: number;
+  phase: string;
+  message: string;
+  startedAt: string;
 }
 
 export interface CoverageCluster {
@@ -383,7 +819,76 @@ export interface CoverageCluster {
   fourKCount: number;
   downloadedCount: number;
   verifiedCount: number;
+  portraitCount: number;
+  fullHdEligibleCount: number;
+  estimatedUniqueShots: number;
+  repetitionRisk: number;
+  exactConfidenceDistribution: {
+    verified: number;
+    strong: number;
+    contextual: number;
+    weak: number;
+  };
+  shotBalance: {
+    aerial: number;
+    wide: number;
+    medium: number;
+    detail: number;
+    other: number;
+  };
+  variety: {
+    day: number;
+    night: number;
+    weather: number;
+  };
+  representedActivities: string[];
+  representedObjects: string[];
+  missingVisualCategories: string[];
   coverageScore: number;
+}
+
+export type MetadataLayer = 'raw' | 'normalized' | 'ai' | 'human';
+export type MetadataAssertionState = 'proposed' | 'accepted' | 'rejected' | 'verified' | 'superseded';
+
+export interface MetadataAssertion {
+  id: string;
+  assetId: string;
+  fieldName: string;
+  layer: MetadataLayer;
+  value: unknown;
+  source: string;
+  provider: string | null;
+  model: string | null;
+  confidence: number | null;
+  verificationState: MetadataAssertionState;
+  actor: string | null;
+  evidenceRef: string | null;
+  evidence: Record<string, unknown>;
+  effective: boolean;
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
+  assetTitle?: string;
+}
+
+export interface CatalogExportReport {
+  id: string;
+  outputPath: string;
+  rowCount: number;
+  sha256: string;
+  createdAt: string;
+}
+
+export interface CanonicalPlace {
+  id: string;
+  name: string;
+  normalizedName: string;
+  type: 'country' | 'region' | 'city' | 'neighborhood' | 'landmark' | 'feature';
+  parentId: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  aliases: string[];
+  assetCount: number;
 }
 
 export interface TopicCandidate {
@@ -405,6 +910,134 @@ export interface CreateAutopilotProjectRequest {
   destinationKey?: string;
   targetMinutes?: number;
   topicId?: string;
+  startingScript?: string;
+  channelId?: string;
+  languageVoiceProfileId?: string;
+  outputProfileKey?: OutputProfileKey;
+}
+
+export interface ProjectGuidance {
+  mode: 'automatic' | 'guided';
+  startingScript: string | null;
+  startingScriptSha256: string | null;
+  requestedDestinationKey: string | null;
+  requestedTopicId: string | null;
+  requestedTargetDurationMs: number | null;
+  resolvedDestinationKey: string;
+  resolvedDestination: string;
+  resolvedTopicTitle: string;
+  resolvedTargetDurationMs: number;
+  constraints: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ProjectResearchSource {
+  id: string;
+  url: string;
+  title: string;
+  publisher: string | null;
+  sourceType: string;
+  summary: string | null;
+  excerpt: string | null;
+  contentHash: string | null;
+  status: 'active' | 'stale' | 'unavailable' | 'rejected';
+  publishedAt: string | null;
+  accessedAt: string;
+  freshnessDays: number | null;
+  expiresAt: string | null;
+}
+
+export interface ProjectFactClaim {
+  id: string;
+  text: string;
+  category: string;
+  confidence: number;
+  stability: string;
+  validAsOf: string | null;
+  status: string;
+  material: boolean;
+  sourceIds: string[];
+  sceneIds: string[];
+  normalizedKey: string | null;
+  freshnessDays: number | null;
+  expiresAt: string | null;
+  conflictGroup: string | null;
+  omissionReason: string | null;
+  evidence: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface ProjectScriptVersion {
+  id: string;
+  parentId: string | null;
+  versionNumber: number;
+  title: string;
+  topic: string;
+  summary: string | null;
+  script: Record<string, unknown>;
+  generationReason: string;
+  provider: string;
+  model: string;
+  inputHash: string;
+  locked: boolean;
+  scriptType: 'provisional' | 'final';
+  lockedAt: string | null;
+  createdAt: string;
+}
+
+export interface ProjectLicenseDetail {
+  id: string;
+  assetId: string;
+  assetTitle: string;
+  licenseState: LicenseState;
+  envatoProjectName: string;
+  certificatePath: string | null;
+  operatorAttestedAt: string | null;
+  verifiedAt: string | null;
+  notes: string | null;
+  file: {
+    id: string;
+    fileName: string;
+    sha256: string;
+    width: number;
+    height: number;
+    durationMs: number;
+    codec: string;
+    pipelineVersion: string;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectPublicationDetail {
+  id: string;
+  videoId: string | null;
+  privacyStatus: string;
+  processingStatus: string | null;
+  selectedPackageId: string | null;
+  captionId: string | null;
+  thumbnailUploaded: boolean;
+  approvedAt: string | null;
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  syntheticMedia: boolean;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  projectId: string | null;
+  action: string;
+  actor: string;
+  entityType: string | null;
+  entityId: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export interface ProjectSummary {
@@ -422,8 +1055,13 @@ export interface ProjectSummary {
   acquiredCount: number;
   acquisitionCount: number;
   openExceptions: number;
+  finalRenderId: string | null;
   finalRenderPath: string | null;
   youtubeVideoId: string | null;
+  channelId: string | null;
+  languageVoiceProfileId: string | null;
+  outputProfileKey: OutputProfileKey;
+  pendingLifecycleAction: 'pause' | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -432,13 +1070,24 @@ export interface ProjectDetail extends ProjectSummary {
   description: string | null;
   opportunityScore: number | null;
   scriptVersionId: string | null;
+  channelSnapshot: Record<string, unknown> | null;
+  languageVoiceSnapshot: Record<string, unknown> | null;
+  outputProfileSnapshot: OutputProfile | null;
+  guidance: ProjectGuidance | null;
+  researchSources: ProjectResearchSource[];
+  factClaims: ProjectFactClaim[];
+  scriptVersions: ProjectScriptVersion[];
   scenes: ProjectScene[];
   acquisitions: AcquisitionItem[];
+  licenses: ProjectLicenseDetail[];
   renders: RenderRecord[];
   packaging: PackagingCandidate[];
   qc: QcResult[];
   repairs: RepairAttempt[];
   narrationSections: NarrationSection[];
+  publicationRecords: ProjectPublicationDetail[];
+  analyticsSnapshots: AnalyticsSnapshot[];
+  auditLog: AuditLogEntry[];
   exports: ProjectExportReport[];
   rebuilds: DerivativeRebuildReport[];
 }
@@ -468,6 +1117,57 @@ export interface ProjectScene {
   pronunciation: Record<string, string>;
   startMs: number | null;
   endMs: number | null;
+}
+
+export interface StoryboardCandidate {
+  id: string;
+  sceneId: string;
+  assetId: string;
+  assetTitle: string;
+  thumbnailUrl: string | null;
+  rank: number;
+  score: number;
+  status: 'selected' | 'eligible' | 'alternate' | 'rejected';
+  country: string | null;
+  city: string | null;
+  locationName: string | null;
+  locationGranularity: CatalogAsset['locationGranularity'];
+  explanations: string[];
+  fileId: string | null;
+  segmentId: string | null;
+  acquisitionState: AcquisitionState | null;
+  licenseState: LicenseState | null;
+  semanticStatus: 'verified' | 'rejected' | 'conflict' | 'provider_required' | 'uncertain' | 'error' | null;
+  selected: boolean;
+  ready: boolean;
+  blockedReasons: string[];
+}
+
+export interface StoryboardRecoveryScene {
+  projectId: string;
+  scene: ProjectScene;
+  candidates: StoryboardCandidate[];
+  previousSceneId: string | null;
+  nextSceneId: string | null;
+  editable: boolean;
+  editBlockedReason: string | null;
+}
+
+export type StoryboardRecoveryAction =
+  | 'replace_shot'
+  | 'rewrite_beat'
+  | 'use_graphic'
+  | 'split_beat'
+  | 'merge_beats'
+  | 'verify_location'
+  | 'reject_candidate';
+
+export interface StoryboardMutationResult {
+  action: StoryboardRecoveryAction;
+  project: ProjectDetail;
+  affectedSceneIds: string[];
+  affectedRange: RenderScope | null;
+  nextAction: 'render_range' | 'continue_workflow' | 'manual_recovery';
 }
 
 export interface NarrationWord {
@@ -537,6 +1237,7 @@ export interface AssetFile {
   codec: string;
   pixelFormat: string | null;
   colorSpace: string | null;
+  perceptualHash: string | null;
   audioPresent: boolean;
   createdAt: string;
 }
@@ -576,6 +1277,7 @@ export interface JobRecord {
 export interface ExceptionRecord {
   id: string;
   projectId: string | null;
+  projectTitle: string | null;
   severity: ExceptionSeverity;
   stage: string;
   code: string;
@@ -583,9 +1285,43 @@ export interface ExceptionRecord {
   message: string;
   evidence: Record<string, unknown>;
   recommendedAction: string | null;
+  safeAlternatives: string[];
+  canAcknowledge: boolean;
+  canOverride: boolean;
+  retryAction: ExceptionRetryAction | null;
   status: 'OPEN' | 'RESOLVED' | 'OVERRIDDEN';
+  resolution: Record<string, unknown> | null;
+  auditTrail: AuditLogEntry[];
   createdAt: string;
   resolvedAt: string | null;
+}
+
+export type ExceptionRetryAction = 'semantic_verification' | 'media_ingest' | 'workflow';
+
+export interface AmbiguousFileMappingCandidate {
+  acquisitionId: string;
+  projectId: string;
+  projectTitle: string;
+  assetId: string;
+  assetTitle: string;
+  thumbnailUrl: string | null;
+  requiredForScenes: number[];
+  state: AcquisitionState;
+}
+
+export interface AmbiguousFileMappingRecovery {
+  exceptionId: string;
+  filePath: string;
+  fileName: string;
+  candidates: AmbiguousFileMappingCandidate[];
+}
+
+export interface AmbiguousFileMappingResolution {
+  exceptionId: string;
+  acquisitionId: string;
+  projectId: string;
+  mappedFileId: string;
+  acquisitionState: 'COMPLETE';
 }
 
 export interface SemanticVerificationRetryResult {
@@ -603,7 +1339,7 @@ export interface RenderRecord {
   id: string;
   projectId: string;
   kind: 'range' | 'draft' | 'final';
-  profile: 'proxy_720p' | 'draft_720p' | 'final_1080p' | 'final_4k';
+  profile: 'proxy_720p' | 'draft_720p' | 'final_1080p' | 'final_4k' | 'final_vertical_1080p';
   state: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
   manifestPath: string | null;
   outputPath: string | null;
@@ -617,6 +1353,13 @@ export interface RenderRecord {
   artifactVersion: number;
   scope: RenderScope | null;
   baseRenderId: string | null;
+}
+
+export interface FourKBlocker {
+  sceneOrdinal: number;
+  reason: string;
+  effectiveWidth: number | null;
+  effectiveHeight: number | null;
 }
 
 export interface PackagingCandidate {
@@ -676,11 +1419,45 @@ export interface RepairAttempt {
   completedAt: string | null;
 }
 
+export type FinalReviewRevisionCategory =
+  | 'packaging'
+  | 'caption_typo'
+  | 'voice_pronunciation'
+  | 'script_factual_issue'
+  | 'wrong_or_weak_shot'
+  | 'new_footage_required'
+  | 'major_story_change';
+
+export interface FinalReviewRevisionRequest {
+  projectId: string;
+  category: FinalReviewRevisionCategory;
+  note: string;
+  affectedSceneId?: string;
+  affectedSectionId?: string;
+  pronunciation?: { term: string; value: string };
+}
+
+export interface RevisionRequestRecord {
+  id: string;
+  projectId: string;
+  category: FinalReviewRevisionCategory;
+  note: string;
+  affectedSceneId: string | null;
+  affectedSectionId: string | null;
+  pronunciation: { term: string; value: string } | null;
+  returnState: ProjectState;
+  status: 'requested' | 'in_progress' | 'completed' | 'cancelled';
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export interface FinalReview {
   project: ProjectDetail;
   selectedPackage: PackagingCandidate | null;
   privateVideoUrl: string | null;
+  keptPrivateAt: string | null;
   localPreviewUrl: string | null;
+  localCaptionsUrl: string | null;
   blockers: QcResult[];
   warnings: QcResult[];
   packageSynced: boolean;
@@ -693,6 +1470,12 @@ export interface YouTubeConnectionStatus {
   authorized: boolean;
   channelTitle: string | null;
   channelId: string | null;
+}
+
+export interface PublicationApprovalResult {
+  outcome: 'kept_private' | 'published' | 'scheduled' | 'studio_fallback';
+  studioUrl?: string;
+  requestedAction?: 'publish' | 'schedule';
 }
 
 export interface OperationResult<T = undefined> {

@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { extname, join } from 'node:path';
 import type { AppDatabase } from '../database/database';
-import type { AppSettings, NarrationWord, RenderRecord, RenderScope, VisualTreatment } from '@shared/types';
+import type { AppSettings, NarrationWord, OutputProfileKey, RenderRecord, RenderScope, VisualTreatment } from '@shared/types';
 import type { SceneEditingPlan } from '@shared/editing';
 import { assertShotDuration, missingSelectedLicenseCount } from '@shared/media-policy';
 import { resolveFfmpeg } from '../tool-paths';
@@ -22,10 +22,20 @@ import { requireSuccess } from './process-utils';
 import { assembleAndNormalizeTimeline, loudnormStats } from './render-pipeline';
 import { captionCuesFromWords, fitNarrationShotDuration, renderFragmentCacheKey, splitAlignedNarration } from '@shared/narration';
 import { resolveFfprobe } from '../tool-paths';
-import type { JobService } from './job-service';
+import { JobResourceBusyError, type JobService } from './job-service';
 import type { ProjectService } from './project-service';
 import { EditingService } from './editing-service';
+import { MusicService } from './music-service';
+import { abruptMusicCut } from '@shared/audio-policy';
+import { cropRetainedPixels, qualifiesOutputPixels } from '@shared/output-profile';
 import { parseBlackIntervals, parseFreezeIntervals, parseSilenceIntervals } from '@shared/media-analysis';
+import { pathIsInside } from '../security-policy';
+import {
+  assertSupportedSourceColor,
+  MEDIA_PIPELINE_VERSION,
+  type SourceColorTreatment
+} from '@shared/color-policy';
+import { buildFootageVideoFilter, buildGeneratedVideoFilter } from '@shared/render-video-policy';
 import {
   captionViolations,
   duplicateShotPairs,
@@ -61,6 +71,9 @@ interface TimelineScene {
   editingLayerHash: string;
   editingLayerPath: string;
   chapter: string | null;
+  sourceColorMode: SourceColorTreatment['mode'];
+  sourceColorIdentity: string;
+  sourceColorReason: string;
 }
 
 interface SourceSceneRow {
@@ -84,12 +97,16 @@ interface SourceSceneRow {
   end_ms: number | null;
   duration_ms: number | null;
   eligible_1080p: number | null;
+  eligible_4k: number | null;
+  raw_ffprobe_json: string | null;
+  pipeline_version: string | null;
 }
 
 export interface RenderRequest {
   kind: 'range' | 'draft' | 'final';
   startSceneOrdinal?: number;
   endSceneOrdinal?: number;
+  outputProfileKey?: OutputProfileKey;
 }
 
 interface OutputProbe {
@@ -145,6 +162,25 @@ function rationalRate(value: string | undefined): number {
   return denominator ? (numerator ?? 0) / denominator : Number(value);
 }
 
+function colorTreatmentForSource(row: SourceSceneRow): SourceColorTreatment {
+  if (!row.raw_ffprobe_json) {
+    throw new Error(`Scene ${row.ordinal} has no preserved FFprobe color metadata.`);
+  }
+  let probe: OutputProbe;
+  try {
+    probe = JSON.parse(row.raw_ffprobe_json) as OutputProbe;
+  } catch {
+    throw new Error(`Scene ${row.ordinal} has malformed preserved FFprobe metadata.`);
+  }
+  const video = probe.streams?.find(stream => stream.codec_type === 'video');
+  if (!video) throw new Error(`Scene ${row.ordinal} has no preserved video-stream metadata.`);
+  return assertSupportedSourceColor({
+    colorSpace: video.color_space,
+    colorTransfer: video.color_transfer,
+    colorPrimaries: video.color_primaries
+  });
+}
+
 async function sha256(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256');
@@ -194,6 +230,7 @@ function renderFromRow(row: Record<string, unknown>): RenderRecord {
 
 export class RenderService {
   private readonly editing: EditingService;
+  private readonly music: MusicService;
 
   constructor(
     private readonly db: AppDatabase,
@@ -205,6 +242,55 @@ export class RenderService {
     editing?: EditingService
   ) {
     this.editing = editing ?? new EditingService(db, settings);
+    this.music = new MusicService(db, settings);
+  }
+
+  recoverInterrupted(): number {
+    const now = new Date().toISOString();
+    const stale = this.db.raw.prepare(`
+      SELECT id, project_id, output_path
+      FROM renders WHERE state = 'RUNNING'
+      ORDER BY created_at, id
+    `).all() as Array<{ id: string; project_id: string; output_path: string | null }>;
+    const settings = this.settings();
+
+    for (const render of stale) {
+      const cleanupWarnings: string[] = [];
+      const outputPath = render.output_path;
+      if (outputPath && existsSync(outputPath)) {
+        const managedOutput = Boolean(settings.outputFolder)
+          && pathIsInside(outputPath, [settings.outputFolder])
+          && outputPath !== settings.outputFolder
+          && extname(outputPath).toLowerCase() === '.mp4';
+        if (managedOutput) {
+          try {
+            rmSync(outputPath, { force: true });
+          } catch (error) {
+            cleanupWarnings.push(`unvalidated output cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        } else {
+          cleanupWarnings.push('unvalidated output was outside managed storage and was left untouched');
+        }
+      }
+
+      if (settings.projectFolder) {
+        const workDirectory = join(settings.projectFolder, render.project_id, 'render-work', render.id);
+        if (pathIsInside(workDirectory, [settings.projectFolder]) && workDirectory !== settings.projectFolder && existsSync(workDirectory)) {
+          try {
+            rmSync(workDirectory, { recursive: true, force: true });
+          } catch (error) {
+            cleanupWarnings.push(`render-work cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+
+      const suffix = cleanupWarnings.length ? ` Cleanup warning: ${cleanupWarnings.join('; ')}.` : '';
+      this.db.raw.prepare(`
+        UPDATE renders SET state = 'FAILED', error = ?, completed_at = ?
+        WHERE id = ? AND state = 'RUNNING'
+      `).run(`Interrupted by a prior desktop process; automatic rerender is safe.${suffix}`, now, render.id);
+    }
+    return stale.length;
   }
 
   async render(
@@ -238,6 +324,20 @@ export class RenderService {
           WHERE project_id = ? AND scene_id IS NULL
         `).get(projectId) as { sequence: number }).sequence ?? 0)
       : 0;
+    const projectProfile = this.db.raw.prepare(`
+      SELECT output_profile_snapshot_json FROM projects WHERE id = ?
+    `).get(projectId) as { output_profile_snapshot_json: string | null } | undefined;
+    const snapshottedProfile = (() => {
+      try {
+        return projectProfile?.output_profile_snapshot_json
+          ? (JSON.parse(projectProfile.output_profile_snapshot_json) as { profileKey?: OutputProfileKey }).profileKey
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+    const requestedProfileKey = options.outputProfileKey ?? snapshottedProfile
+      ?? (this.settings().defaultOutput === 'qualified_4k' ? 'landscape_4k' : 'landscape_1080p');
     const renderInput = this.db.raw.prepare(`
       SELECT s.id, s.script_version_id, s.narration, s.pronunciation_json,
         s.selected_segment_id, s.verification_state, g.start_ms, g.end_ms, f.sha256,
@@ -250,10 +350,23 @@ export class RenderService {
       LEFT JOIN voice_assets v ON v.id = n.voice_asset_id AND v.status = 'ready'
       WHERE s.project_id = ? ORDER BY s.ordinal
     `).all(projectId);
+    const musicSelection = this.settings().musicEnabled ? this.music.selectionForProject(projectId) : null;
     const job = this.jobs.create(
       `render_${kind}`,
       projectId,
-      { projectId, kind, renderInput, repairSequence, startSceneOrdinal: options.startSceneOrdinal, endSceneOrdinal: options.endSceneOrdinal },
+      {
+        projectId, kind, outputProfileKey: requestedProfileKey, renderInput, repairSequence,
+        music: musicSelection ? {
+          trackId: musicSelection.musicTrackId,
+          sha256: musicSelection.track.sha256,
+          licenseReference: musicSelection.track.licenseReference,
+          targetGainDb: musicSelection.targetGainDb,
+          duckingDb: musicSelection.duckingDb,
+          fadeInMs: musicSelection.fadeInMs,
+          fadeOutMs: musicSelection.fadeOutMs
+        } : null,
+        startSceneOrdinal: options.startSceneOrdinal, endSceneOrdinal: options.endSceneOrdinal
+      },
       2
     );
     if (job.state === 'SUCCEEDED') {
@@ -269,11 +382,47 @@ export class RenderService {
       if (completedRender) return renderFromRow(completedRender);
     }
 
-    this.jobs.start(job.id, 'Preparing timeline');
+    if (kind === 'final' && job.state === 'RUNNING') {
+      throw new JobResourceBusyError('render_final', job.leaseUntil ?? new Date().toISOString(), 'This final render is already running.');
+    }
+    if (
+      kind === 'final'
+      && job.state === 'RETRY_SCHEDULED'
+      && job.phase === 'Waiting for render_final capacity'
+      && job.availableAt > new Date().toISOString()
+    ) {
+      throw new JobResourceBusyError('render_final', job.availableAt);
+    }
+
+    const start = this.jobs.start(
+      job.id,
+      'Preparing timeline',
+      kind === 'final' ? { resourceKey: 'render_final' } : undefined
+    );
+    if (start.state === 'deferred') {
+      throw new JobResourceBusyError(start.resourceKey, start.retryAt);
+    }
     const renderId = randomUUID();
     const settings = this.settings();
     const project = this.projects.get(projectId);
-    const profile = kind === 'final' ? 'final_1080p' : 'draft_720p';
+    const allSceneOrdinals = project.scenes.map(scene => scene.ordinal);
+    const firstOrdinal = Math.max(1, options.startSceneOrdinal ?? Math.min(...allSceneOrdinals));
+    const lastOrdinal = options.endSceneOrdinal ?? options.startSceneOrdinal ?? Math.max(...allSceneOrdinals);
+    const sceneOrdinals = allSceneOrdinals.filter(ordinal => ordinal >= firstOrdinal && ordinal <= lastOrdinal);
+    if (kind === 'range' && !sceneOrdinals.length) throw new Error('Requested render range contains no project scenes.');
+    const fourKBlockers = kind === 'final' && requestedProfileKey === 'landscape_4k'
+      ? this.fourKBlockers(projectId, firstOrdinal, lastOrdinal)
+      : [];
+    const effectiveProfileKey: OutputProfileKey = kind === 'final'
+      ? (requestedProfileKey === 'landscape_4k' && fourKBlockers.length ? 'landscape_1080p' : requestedProfileKey)
+      : 'landscape_1080p';
+    const use4k = kind === 'final' && effectiveProfileKey === 'landscape_4k';
+    const vertical = kind === 'final' && effectiveProfileKey === 'vertical_1080p';
+    const profile: RenderRecord['profile'] = kind === 'final'
+      ? (use4k ? 'final_4k' : vertical ? 'final_vertical_1080p' : 'final_1080p')
+      : 'draft_720p';
+    const outputWidth = kind === 'final' ? (use4k ? 3840 : vertical ? 1080 : 1920) : 1280;
+    const outputHeight = kind === 'final' ? (use4k ? 2160 : vertical ? 1920 : 1080) : 720;
     const previousVersion = this.db.raw.prepare(`
       SELECT coalesce(max(artifact_version), 0) AS version
       FROM renders WHERE project_id = ? AND kind = ?
@@ -293,11 +442,6 @@ export class RenderService {
     const manifestPath = join(manifestDirectory, `${kind}-${renderId}.json`);
     const srtPath = join(captionDirectory, `${project.slug}-${kind}.srt`);
     const vttPath = join(captionDirectory, `${project.slug}-${kind}.vtt`);
-    const allSceneOrdinals = project.scenes.map(scene => scene.ordinal);
-    const firstOrdinal = Math.max(1, options.startSceneOrdinal ?? Math.min(...allSceneOrdinals));
-    const lastOrdinal = options.endSceneOrdinal ?? options.startSceneOrdinal ?? Math.max(...allSceneOrdinals);
-    const sceneOrdinals = allSceneOrdinals.filter(ordinal => ordinal >= firstOrdinal && ordinal <= lastOrdinal);
-    if (kind === 'range' && !sceneOrdinals.length) throw new Error('Requested render range contains no project scenes.');
     const scope: RenderScope | null = kind === 'range'
       ? { startSceneOrdinal: sceneOrdinals[0]!, endSceneOrdinal: sceneOrdinals.at(-1)!, sceneOrdinals }
       : null;
@@ -329,9 +473,11 @@ export class RenderService {
     this.projects.states.transition(projectId, kind === 'final' ? 'RENDERING_FINAL' : 'RENDERING_DRAFT', {
       progress: kind === 'final' ? 0.78 : 0.63,
       reason: `${kind === 'final' ? 'Final' : kind === 'range' ? 'Range' : 'Draft'} render job started`,
-      prerequisites: { renderId, profile, scope }
+      prerequisites: { renderId, profile, outputProfileKey: effectiveProfileKey, scope, fourKBlockers }
     });
 
+    const heartbeat = setInterval(() => this.jobs.heartbeat(job.id), 60_000);
+    heartbeat.unref();
     let retryAutomatically = false;
     let currentAttemptCommitted = false;
     try {
@@ -356,7 +502,10 @@ export class RenderService {
           g.start_ms,
           g.end_ms,
           g.duration_ms,
-          g.eligible_1080p
+          g.eligible_1080p,
+          g.eligible_4k,
+          f.raw_ffprobe_json,
+          f.pipeline_version
         FROM project_scenes s
         LEFT JOIN media_segments g ON g.id = s.selected_segment_id
         LEFT JOIN asset_files f ON f.id = s.selected_file_id
@@ -376,11 +525,16 @@ export class RenderService {
           && Boolean(row.height)
           && (Boolean(row.start_ms) || Number(row.start_ms) === 0)
           && Boolean(row.end_ms)
-          && Boolean(row.eligible_1080p);
+          && Boolean(row.eligible_1080p)
+          && qualifiesOutputPixels(Number(row.width), Number(row.height), outputWidth, outputHeight);
         return !generatedGraphic && !verifiedFootage;
       });
       if (invalid.length) {
-        throw new Error(`${invalid.length} scene(s) are not verified for 1080p rendering.`);
+        throw new Error(`${invalid.length} scene(s) are not verified for the ${outputWidth}×${outputHeight} output profile after crop.`);
+      }
+      const staleMedia = sourceRows.filter(row => row.original_path && row.pipeline_version !== MEDIA_PIPELINE_VERSION);
+      if (staleMedia.length) {
+        throw new Error(`Scene${staleMedia.length === 1 ? '' : 's'} ${staleMedia.map(row => row.ordinal).join(', ')} require media derivative regeneration for pipeline ${MEDIA_PIPELINE_VERSION}.`);
       }
 
       const ffmpeg = resolveFfmpeg(settings.ffmpegPath);
@@ -393,6 +547,14 @@ export class RenderService {
         if (!row) continue;
         const editingPlan = this.editing.plan(projectId, row.scene_id);
         const generatedGraphic = editingPlan.sourceKind === 'generated_graphic';
+        const sourceColor = generatedGraphic
+          ? {
+              mode: 'sdr' as const,
+              identity: 'generated:bt709:bt709',
+              reason: 'Generated graphics are authored directly in the BT.709 SDR output profile.',
+              videoFilter: null
+            }
+          : colorTreatmentForSource(row);
         const sourceHash = row.sha256 ?? editingPlan.inputHash;
         const ordinal = Number(row.ordinal);
         const narrationRecord = this.db.raw.prepare(`
@@ -450,13 +612,15 @@ export class RenderService {
           if (audioDurationMs > settings.hardShotMaxSeconds * 1000) {
             throw new Error(`Scene ${ordinal}, part ${partIndex + 1} remains longer than the ${settings.hardShotMaxSeconds}-second visual-shot limit.`);
           }
-          const alternatives = generatedGraphic ? [] : this.db.raw.prepare(`
+          const alternatives = generatedGraphic ? [] : (this.db.raw.prepare(`
               SELECT start_ms, duration_ms FROM media_segments
-              WHERE asset_file_id = ? AND eligible_1080p = 1
+              WHERE asset_file_id = ?
                 AND black_frame_risk < 0.35 AND freeze_risk < 0.5
                 AND duration_ms >= ?
               ORDER BY quality_score DESC, start_ms ASC LIMIT 12
-            `).all(row.selected_file_id, audioDurationMs) as Array<{ start_ms: number; duration_ms: number }>;
+            `).all(row.selected_file_id, audioDurationMs) as Array<{ start_ms: number; duration_ms: number }>).filter(() => {
+              return qualifiesOutputPixels(Number(row.width), Number(row.height), outputWidth, outputHeight);
+            });
           const visual = generatedGraphic
             ? { start_ms: 0, duration_ms: settings.hardShotMaxSeconds * 1000 }
             : alternatives[partIndex % alternatives.length];
@@ -468,10 +632,12 @@ export class RenderService {
             settings.hardShotMaxSeconds * 1000
           );
           assertShotDuration(durationMs, settings.hardShotMaxSeconds * 1000);
-          const width = kind === 'final' ? 1920 : 1280;
-          const height = kind === 'final' ? 1080 : 720;
-          const videoBitrate = kind === 'final' ? '10M' : '5M';
-          const preset = kind === 'final' ? 'medium' : 'veryfast';
+          const width = outputWidth;
+          const height = outputHeight;
+          const videoBitrate = use4k ? '35M' : kind === 'final' ? '10M' : '5M';
+          // Generated cards are predominantly static and already use a high constrained bitrate.
+          // A faster preset avoids repeatedly spending footage-grade motion analysis on 4K graphics.
+          const preset = generatedGraphic ? 'superfast' : kind === 'final' ? 'medium' : 'veryfast';
           const sourceStartMs = Number(visual.start_ms);
           const startSeconds = sourceStartMs / 1000;
           const durationSeconds = durationMs / 1000;
@@ -503,7 +669,7 @@ export class RenderService {
             width,
             height,
             profile,
-            editingInputHash: editingLayer.hash
+            editingInputHash: `${editingLayer.hash}:${MEDIA_PIPELINE_VERSION}:${sourceColor.mode}:${sourceColor.identity}`
           })).digest('hex');
           const cachedFragment = this.db.raw.prepare(`
             SELECT output_path FROM render_fragments
@@ -518,12 +684,12 @@ export class RenderService {
           '-f', 'lavfi', '-i', `color=c=#07111b:s=${width}x${height}:r=30:d=${durationSeconds.toFixed(3)}`,
           '-i', audioPath,
           '-filter_complex',
-          `[0:v]${editingLayer.filter},setsar=1,fps=30,format=yuv420p[v];[1:a]aresample=48000,apad=pad_dur=${durationSeconds.toFixed(3)},atrim=0:${durationSeconds.toFixed(3)},afade=t=in:st=0:d=0.02,afade=t=out:st=${Math.max(0, durationSeconds - 0.02).toFixed(3)}:d=0.02[a]`,
+          `[0:v]${buildGeneratedVideoFilter({ editingFilter: editingLayer.filter })}[v];[1:a]aresample=48000,apad=pad_dur=${durationSeconds.toFixed(3)},atrim=0:${durationSeconds.toFixed(3)},afade=t=in:st=0:d=0.02,afade=t=out:st=${Math.max(0, durationSeconds - 0.02).toFixed(3)}:d=0.02[a]`,
           '-map', '[v]', '-map', '[a]',
           '-t', durationSeconds.toFixed(3),
           '-c:v', 'libx264', '-preset', preset,
           '-b:v', videoBitrate, '-maxrate', videoBitrate,
-          '-bufsize', kind === 'draft' ? '10M' : '20M',
+          '-bufsize', use4k ? '70M' : kind === 'draft' ? '10M' : '20M',
           '-color_range', 'tv', '-colorspace', 'bt709',
           '-color_primaries', 'bt709', '-color_trc', 'bt709',
           '-c:a', 'aac', '-profile:a', 'aac_low',
@@ -535,7 +701,11 @@ export class RenderService {
           '-i', String(row.original_path),
           '-i', audioPath,
           '-filter_complex',
-          `[0:v]yadif=mode=send_frame:parity=auto:deint=interlaced,${footageScale},setsar=1,fps=30,format=yuv420p,${editingLayer.filter}[v];[1:a]aresample=48000,apad=pad_dur=${durationSeconds.toFixed(3)},atrim=0:${durationSeconds.toFixed(3)},afade=t=in:st=0:d=0.02,afade=t=out:st=${Math.max(0, durationSeconds - 0.02).toFixed(3)}:d=0.02[a]`,
+          `[0:v]${buildFootageVideoFilter({
+            sourceColorFilter: sourceColor.videoFilter,
+            scaleFilter: footageScale,
+            editingFilter: editingLayer.filter
+          })}[v];[1:a]aresample=48000,apad=pad_dur=${durationSeconds.toFixed(3)},atrim=0:${durationSeconds.toFixed(3)},afade=t=in:st=0:d=0.02,afade=t=out:st=${Math.max(0, durationSeconds - 0.02).toFixed(3)}:d=0.02[a]`,
           '-map', '[v]',
           '-map', '[a]',
           '-t', durationSeconds.toFixed(3),
@@ -543,7 +713,7 @@ export class RenderService {
           '-preset', preset,
           '-b:v', videoBitrate,
           '-maxrate', videoBitrate,
-          '-bufsize', kind === 'draft' ? '10M' : '20M',
+          '-bufsize', use4k ? '70M' : kind === 'draft' ? '10M' : '20M',
           '-color_range', 'tv',
           '-colorspace', 'bt709',
           '-color_primaries', 'bt709',
@@ -588,7 +758,10 @@ export class RenderService {
             editingPlan,
             editingLayerHash: editingLayer.hash,
             editingLayerPath: editingLayer.path,
-            chapter: row.chapter
+            chapter: row.chapter,
+            sourceColorMode: sourceColor.mode,
+            sourceColorIdentity: sourceColor.identity,
+            sourceColorReason: sourceColor.reason
           });
           elapsed += durationMs;
         }
@@ -620,7 +793,19 @@ export class RenderService {
         concatPath,
         assembledPath,
         outputPath,
-        audioBitrate: kind === 'final' ? '384k' : '192k'
+        audioBitrate: kind === 'final' ? '384k' : '192k',
+        ...(musicSelection ? {
+          music: {
+            path: musicSelection.track.originalPath,
+            durationMs: elapsed,
+            policy: {
+              targetGainDb: musicSelection.targetGainDb,
+              duckingDb: musicSelection.duckingDb,
+              fadeInMs: musicSelection.fadeInMs,
+              fadeOutMs: musicSelection.fadeOutMs
+            }
+          }
+        } : {})
       });
 
       const outputProbe = await this.probeOutput(outputPath);
@@ -640,19 +825,30 @@ export class RenderService {
         projectTitle: project.title,
         scriptVersionId: project.scriptVersionId,
         profile,
+        outputProfileKey: effectiveProfileKey,
         artifactVersion,
         output: {
           container: 'mp4',
           videoCodec: 'h264',
           audioCodec: 'aac',
-          width: kind === 'final' ? 1920 : 1280,
-          height: kind === 'final' ? 1080 : 720,
+          width: outputWidth,
+          height: outputHeight,
           frameRate: 30,
           pixelFormat: 'yuv420p',
           colorSpace: 'bt709',
           fastStart: true
         },
         captions: { srtPath, vttPath },
+        music: musicSelection ? {
+          trackId: musicSelection.musicTrackId,
+          sha256: musicSelection.track.sha256,
+          title: musicSelection.track.title,
+          license: musicSelection.licenseSnapshot,
+          targetGainDb: musicSelection.targetGainDb,
+          duckingDb: musicSelection.duckingDb,
+          fadeInMs: musicSelection.fadeInMs,
+          fadeOutMs: musicSelection.fadeOutMs
+        } : null,
         scope,
         baseRenderId: baseRender?.id ?? null,
         reusedFragmentCount: timeline.filter(scene => scene.reusedFragment).length,
@@ -687,8 +883,8 @@ export class RenderService {
         manifestId,
         outputHash,
         elapsed,
-        kind === 'final' ? 1920 : 1280,
-        kind === 'final' ? 1080 : 720,
+        outputWidth,
+        outputHeight,
         completed,
         renderId
       );
@@ -706,7 +902,7 @@ export class RenderService {
           timelineStartMs: scene.timelineStartMs
         })));
         await this.generateThumbnailCandidates(projectId, outputPath, elapsed);
-        this.runQc(projectId, renderId, kind, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
+        this.runQc(projectId, renderId, kind, profile, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
         const blockers = this.db.raw.prepare(`
           SELECT id, code, category, severity, message, evidence_json FROM qc_results
           WHERE project_id = ? AND render_id = ? AND status = 'fail' AND severity IN ('BLOCKER','HIGH')
@@ -770,21 +966,19 @@ export class RenderService {
           }
         } else {
           this.projects.repairs.completeClearedRenderRepairs(projectId, renderId, new Set());
-          this.projects.states.transition(projectId, 'WAITING_FINAL_APPROVAL', {
-            progress: 0.9,
-            reason: 'Final render and package passed local QC; private upload/final review is ready',
-            prerequisites: { renderId, packageCount: this.projects.get(projectId).packaging.length }
-          });
+          this.resolveSupersededRenderExceptions(projectId, renderId);
+          // Stay in QC_FINAL. WorkflowService owns the automatic private-upload boundary
+          // so WAITING_FINAL_APPROVAL remains an unambiguous human publication gate.
         }
       } else if (kind === 'draft') {
-        this.runQc(projectId, renderId, kind, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
+        this.runQc(projectId, renderId, kind, profile, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
         this.projects.states.transition(projectId, 'QC_DRAFT', {
           progress: 0.72,
           reason: 'Draft render completed and automated QC recorded',
           prerequisites: { renderId }
         });
       } else {
-        this.runQc(projectId, renderId, kind, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
+        this.runQc(projectId, renderId, kind, profile, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
         const rangeBlockers = this.db.raw.prepare(`
           SELECT id, code, category, severity, message, evidence_json FROM qc_results
           WHERE project_id = ? AND render_id = ? AND status = 'fail'
@@ -835,7 +1029,7 @@ export class RenderService {
       currentAttemptCommitted = true;
       if (retryAutomatically) {
         this.emitProgress(job.id, projectId, 1, 'repair', 'QC repair routed; rebuilding final artifact automatically');
-        return this.render(projectId, 'final');
+        return this.render(projectId, { kind: 'final', outputProfileKey: effectiveProfileKey });
       }
       this.emitProgress(job.id, projectId, 1, 'complete', `${kind === 'final' ? 'Final' : kind === 'range' ? 'Range' : 'Draft'} render complete`);
       return result;
@@ -870,6 +1064,8 @@ export class RenderService {
       if (existsSync(outputPath)) unlinkSync(outputPath);
       if (existsSync(workDirectory)) rmSync(workDirectory, { recursive: true, force: true });
       throw error;
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
@@ -880,6 +1076,43 @@ export class RenderService {
       '-v', 'error', '-show_format', '-show_streams', '-of', 'json', outputPath
     ]);
     return JSON.parse(result.stdout) as OutputProbe;
+  }
+
+  fourKBlockers(projectId: string, startOrdinal?: number, endOrdinal?: number): Array<{
+    sceneOrdinal: number;
+    reason: string;
+    effectiveWidth: number | null;
+    effectiveHeight: number | null;
+  }> {
+    const rows = this.db.raw.prepare(`
+      SELECT s.ordinal, s.visual_treatment, s.verification_state,
+        g.effective_width, g.effective_height, g.eligible_4k
+      FROM project_scenes s
+      LEFT JOIN media_segments g ON g.id = s.selected_segment_id
+      WHERE s.project_id = ?
+        AND (? IS NULL OR s.ordinal >= ?)
+        AND (? IS NULL OR s.ordinal <= ?)
+      ORDER BY s.ordinal
+    `).all(
+      projectId, startOrdinal ?? null, startOrdinal ?? null,
+      endOrdinal ?? null, endOrdinal ?? null
+    ) as Array<Record<string, unknown>>;
+    return rows.flatMap(row => {
+      const generated = ['MAP_OR_GRAPHIC', 'TEXT_OR_ARCHIVAL'].includes(String(row.visual_treatment))
+        && row.verification_state === 'graphic';
+      if (generated) return [];
+      if (Boolean(row.eligible_4k)) return [];
+      const width = row.effective_width === null || row.effective_width === undefined ? null : Number(row.effective_width);
+      const height = row.effective_height === null || row.effective_height === undefined ? null : Number(row.effective_height);
+      return [{
+        sceneOrdinal: Number(row.ordinal),
+        reason: width && height
+          ? `Effective crop resolution ${width}×${height} is below 3840×2160.`
+          : 'No verified 4K-eligible media segment is selected.',
+        effectiveWidth: width,
+        effectiveHeight: height
+      }];
+    });
   }
 
   private async analyzeOutput(ffmpeg: string, outputPath: string, durationMs: number): Promise<OutputAnalysis> {
@@ -904,6 +1137,7 @@ export class RenderService {
     projectId: string,
     renderId: string,
     kind: 'range' | 'draft' | 'final',
+    profile: RenderRecord['profile'],
     timeline: TimelineScene[],
     outputPath: string,
     probe: OutputProbe,
@@ -933,8 +1167,12 @@ export class RenderService {
     const audio = probe.streams?.find(stream => stream.codec_type === 'audio');
     const durationMs = Math.round(Number(probe.format?.duration ?? 0) * 1000);
     const expectedDurationMs = timeline.reduce((total, scene) => total + scene.durationMs, 0);
-    const expectedWidth = kind === 'final' ? 1920 : 1280;
-    const expectedHeight = kind === 'final' ? 1080 : 720;
+    const expectedWidth = profile === 'final_4k' ? 3840
+      : profile === 'final_vertical_1080p' ? 1080
+      : kind === 'final' ? 1920 : 1280;
+    const expectedHeight = profile === 'final_4k' ? 2160
+      : profile === 'final_vertical_1080p' ? 1920
+      : kind === 'final' ? 1080 : 720;
     const shots = timeline.map(scene => ({
       sceneId: scene.sceneId,
       ordinal: scene.ordinal,
@@ -995,6 +1233,16 @@ export class RenderService {
       && Math.abs(measuredLufs - -14) <= 1 && measuredTruePeak <= -0.5;
     const clippingValid = Number.isFinite(measuredTruePeak) && measuredTruePeak <= -0.1;
     const silence = silenceViolations(analysis.silenceIntervals, durationMs);
+    const musicConfigured = this.settings().musicEnabled;
+    const selectedMusic = musicConfigured ? this.music.selectionForProject(projectId) : null;
+    const musicLicensed = !musicConfigured || Boolean(
+      selectedMusic?.track.licenseReference
+      && selectedMusic.track.licenseVerifiedAt
+      && selectedMusic.licenseSnapshot.sha256 === selectedMusic.track.sha256
+    );
+    const abruptMusic = selectedMusic
+      ? abruptMusicCut(durationMs, selectedMusic.fadeOutMs)
+      : false;
     add('media', 'SHOT_DURATION', 'BLOCKER', over.length ? 'fail' : 'pass',
       over.length ? `${over.length} shot(s) exceed 7 seconds.` : 'Every visual shot is 7 seconds or shorter.',
       { ordinals: over.map(scene => scene.ordinal) });
@@ -1040,6 +1288,12 @@ export class RenderService {
     add('audio', 'WORD_TIMING', 'BLOCKER', wordTimingValid ? 'pass' : 'fail',
       wordTimingValid ? 'Every final narration word has monotonic timing.' : 'Narration word timing is missing, overlapping, or does not match the final script.',
       { expectedWords, alignedWords: alignedWords.length, timingMethods: [...new Set(alignedWords.map(word => word.timingMethod))] });
+    add('audio', 'MUSIC_DUCKING', 'HIGH', !selectedMusic || selectedMusic.duckingDb <= -6 ? 'pass' : 'fail',
+      selectedMusic ? 'Background music uses narration-sidechain ducking and final loudness normalization.' : 'No background music is selected.',
+      selectedMusic ? { trackId: selectedMusic.musicTrackId, duckingDb: selectedMusic.duckingDb, targetGainDb: selectedMusic.targetGainDb } : {});
+    add('audio', 'ABRUPT_MUSIC_CUT', 'HIGH', abruptMusic ? 'fail' : 'pass',
+      abruptMusic ? 'Background music lacks a sufficient end fade.' : 'Background music ends with a bounded fade or is disabled.',
+      selectedMusic ? { fadeOutMs: selectedMusic.fadeOutMs, durationMs } : {});
     const captionCues = captionCuesFromWords(alignedWords);
     const captionIssues = captionViolations(captionCues, durationMs);
     add('packaging', 'MISSING_CAPTIONS', 'BLOCKER', captionCues.length ? 'pass' : 'fail',
@@ -1074,7 +1328,11 @@ export class RenderService {
       this.missingLicenseCount(projectId) ? 'fail' : 'pass',
       this.missingLicenseCount(projectId) ? 'One or more used assets lacks an attested project license.' : 'Every used asset has an attested project license.',
       { missing: this.missingLicenseCount(projectId) });
+    add('rights', 'MUSIC_LICENSE_STATE', 'BLOCKER', musicLicensed ? 'pass' : 'fail',
+      musicLicensed ? 'Selected music retains a verified license snapshot.' : 'Music is enabled without a license-verified project selection.',
+      selectedMusic ? { trackId: selectedMusic.musicTrackId, license: selectedMusic.licenseSnapshot } : { musicConfigured });
   }
+
 
   private addPackagingQc(
     projectId: string,
@@ -1229,6 +1487,65 @@ export class RenderService {
         now
       );
     }
+  }
+
+  private resolveSupersededRenderExceptions(projectId: string, replacementRenderId: string): number {
+    const replacement = this.db.raw.prepare(`
+      SELECT r.state,
+        (SELECT count(*) FROM qc_results q
+          WHERE q.render_id = r.id AND q.status = 'fail' AND q.severity IN ('BLOCKER','HIGH')) AS blockers
+      FROM renders r WHERE r.id = ? AND r.project_id = ? AND r.kind = 'final'
+    `).get(replacementRenderId, projectId) as { state: string; blockers: number } | undefined;
+    if (!replacement || replacement.state !== 'SUCCEEDED' || Number(replacement.blockers) > 0) return 0;
+
+    const open = this.db.raw.prepare(`
+      SELECT id, evidence_json FROM exceptions
+      WHERE project_id = ? AND status = 'OPEN' AND stage IN ('render', 'render_qc')
+      ORDER BY created_at, id
+    `).all(projectId) as Array<{ id: string; evidence_json: string }>;
+    const now = new Date().toISOString();
+    let resolved = 0;
+    this.db.raw.transaction(() => {
+      for (const item of open) {
+        let supersededRenderId: string | null = null;
+        try {
+          const evidence = JSON.parse(item.evidence_json) as Record<string, unknown>;
+          supersededRenderId = typeof evidence.renderId === 'string' ? evidence.renderId : null;
+        } catch {
+          supersededRenderId = null;
+        }
+        if (!supersededRenderId || supersededRenderId === replacementRenderId) continue;
+        const ownedRender = this.db.raw.prepare(`
+          SELECT 1 FROM renders WHERE id = ? AND project_id = ?
+        `).get(supersededRenderId, projectId);
+        if (!ownedRender) continue;
+        const resolution = {
+          method: 'replacement_final_verified',
+          replacementRenderId,
+          supersededRenderId
+        };
+        const changed = this.db.raw.prepare(`
+          UPDATE exceptions SET status = 'RESOLVED', resolved_at = ?, resolution_json = ?
+          WHERE id = ? AND status = 'OPEN'
+        `).run(now, JSON.stringify(resolution), item.id).changes;
+        if (!changed) continue;
+        resolved += Number(changed);
+        this.db.raw.prepare(`
+          INSERT INTO audit_log(
+            project_id, action, actor, entity_type, entity_id,
+            before_json, after_json, metadata_json, created_at
+          ) VALUES(?, 'exception.auto_resolved', 'system', 'exception', ?, ?, ?, ?, ?)
+        `).run(
+          projectId,
+          item.id,
+          JSON.stringify({ status: 'OPEN' }),
+          JSON.stringify({ status: 'RESOLVED' }),
+          JSON.stringify(resolution),
+          now
+        );
+      }
+    })();
+    return resolved;
   }
 
   private async generateThumbnailCandidates(projectId: string, videoPath: string, durationMs: number): Promise<void> {

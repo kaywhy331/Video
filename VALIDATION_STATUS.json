@@ -1,26 +1,246 @@
 {
-  "generated_at": "2026-08-13T02:20:52Z",
-  "release": "0.1.0-alpha.3",
-  "preflight_source_check": "passed",
-  "full_typescript_typecheck": "passed",
-  "vitest_suite": "passed_39_files_128_tests",
-  "real_ffmpeg_analysis_fixture": "passed",
-  "real_render_pipeline_fixture": "passed",
-  "database_migrations_001_through_007": "passed_recorded_idempotent_integrity_ok",
-  "electron_vite_bundle": "passed",
-  "git_diff_check": "passed",
-  "migration_source_resource_parity": "passed",
-  "editing_graphics_real_ffmpeg": "passed_footage_overlay_and_coordinate_graphic",
-  "final_packaging_qc": "passed_three_packages_thumbnails_and_approval_state",
-  "project_export_rebuild": "passed_checksummed_export_and_six_derivative_rebuild",
-  "github_actions_linux_validate": "pending_exact_head_publication_previous_main_passed_run_31654320673",
-  "windows_ci_packaging": "pending_exact_head_publication_previous_main_passed_unsigned_nsis_zip_run_31654320673",
-  "windows_clean_machine_runtime": "unverified",
-  "five_video_pilot": "unverified",
-  "live_envato_workflow": "unverified",
-  "live_youtube_workflow": "unverified",
-  "live_research_llm_workflow": "unverified",
-  "live_windows_or_http_tts_workflow": "unverified",
-  "forced_interruption_drills": "unverified",
+  "generatedAt": "2026-08-21T16:26:34.653Z",
+  "release": "0.1.0-alpha.4",
+  "databaseSchemaVersion": 18,
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+  "validationInputSha256": "3227c17a7e1078a7b544711d3525b74c60488cd36f5c45e91cc979f20c57f3a3",
+  "source": {
+    "commit": "b1bb0017d30eaf6905b45acaf02631db47716b8a",
+    "ref": "agent/p0-prd-completion",
+    "repository": null,
+    "runId": null,
+    "runAttempt": null,
+    "dirty": true
+  },
+  "environment": {
+    "platform": "linux",
+    "release": "6.17.0-19-generic",
+    "architecture": "x64",
+    "node": "v22.22.0",
+    "npm": "10.9.4"
+  },
+  "evidence": {
+    "pipeline": {
+      "path": "validation/results/pipeline.json",
+      "sha256": "84f57d9cacd1ec8d3194931339122bf432b3eeaa82a904dfadb460dbd03c41fe",
+      "sizeBytes": 1937
+    },
+    "sbom": {
+      "path": "release/videofactory-sbom.cdx.json",
+      "sha256": "79f86ef9b35818662f3ccb3d6bb4b2545afbc2109aabc0802da335d709557a53",
+      "sizeBytes": 718062
+    }
+  },
+  "pipeline": {
+    "status": "passed",
+    "report": "validation/results/pipeline.json",
+    "stages": [
+      {
+        "name": "typecheck",
+        "status": "passed",
+        "exitCode": 0,
+        "completedAt": "2026-08-21T16:23:46.613Z"
+      },
+      {
+        "name": "vitest",
+        "status": "passed",
+        "exitCode": 0,
+        "completedAt": "2026-08-21T16:25:17.233Z"
+      },
+      {
+        "name": "build",
+        "status": "passed",
+        "exitCode": 0,
+        "completedAt": "2026-08-21T16:25:30.560Z"
+      },
+      {
+        "name": "electron_e2e",
+        "status": "passed",
+        "exitCode": 0,
+        "completedAt": "2026-08-21T16:26:28.136Z"
+      },
+      {
+        "name": "security_audit",
+        "status": "passed",
+        "exitCode": 0,
+        "completedAt": "2026-08-21T16:26:30.858Z"
+      },
+      {
+        "name": "sbom",
+        "status": "passed",
+        "exitCode": 0,
+        "completedAt": "2026-08-21T16:26:34.263Z"
+      }
+    ]
+  },
+  "tests": {
+    "vitest": {
+      "path": "validation/results/vitest.json",
+      "sha256": "5112873cba6a8741561a17701d7fda9970ae0ef9a199f0b916212cb65178fedf",
+      "sizeBytes": 107341,
+      "files": 79,
+      "total": 284,
+      "passed": 284,
+      "failed": 0,
+      "pending": 0
+    },
+    "playwright": {
+      "path": "validation/results/playwright.json",
+      "sha256": "5cd55b68025e52a0192708f0b570ea2f85d979e2e5db959700df153b3360dcb1",
+      "sizeBytes": 7081,
+      "total": 4,
+      "passed": 4,
+      "failed": 0
+    }
+  },
+  "acceptance": {
+    "receipt": "VALIDATION_ACCEPTANCE_RECEIPT.json",
+    "total": 151,
+    "passedLocalValidation": 136,
+    "externalPending": 15,
+    "productionQualified": false
+  },
+  "externalQualification": [
+    {
+      "id": "E2E-001",
+      "status": "pending",
+      "reason": "Requires configured live research, generation, acquisition, and YouTube accounts plus licensed production media; local workflow simulations are supporting evidence only.",
+      "artifacts": [
+        "tests/workflow-service.test.ts",
+        "tests/final-review-service.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ]
+    },
+    {
+      "id": "E2E-002",
+      "status": "pending",
+      "reason": "Requires configured live research, generation, acquisition, and YouTube accounts plus licensed production media; local workflow simulations are supporting evidence only.",
+      "artifacts": [
+        "tests/workflow-service.test.ts",
+        "tests/final-review-service.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ]
+    },
+    {
+      "id": "E2E-004",
+      "status": "pending",
+      "reason": "Deterministic crash reconciliation is automated, but forced process termination at every real ingest, render, and upload stage remains a production drill.",
+      "artifacts": [
+        "tests/job-service.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ]
+    },
+    {
+      "id": "E2E-005",
+      "status": "pending",
+      "reason": "Requires the five-video licensed-media pilot and operator activity log review.",
+      "artifacts": [
+        "docs/IMPLEMENTATION-COVERAGE.md",
+        "VALIDATION_REPORT.md"
+      ]
+    },
+    {
+      "id": "SYS-001",
+      "status": "pending",
+      "reason": "Requires install and first-run evidence on a clean supported Windows x64 machine without developer tooling.",
+      "artifacts": [
+        "scripts/windows/build-installer.ps1",
+        "scripts/windows/setup-and-run.ps1"
+      ]
+    },
+    {
+      "id": "SYS-003",
+      "status": "pending",
+      "reason": "Software fallback and discovery logic are automated; the NVENC, Quick Sync, and AMD AMF hardware matrix requires representative Windows hardware.",
+      "artifacts": [
+        "tests/diagnostics-service.integration.test.ts"
+      ]
+    },
+    {
+      "id": "SYS-004",
+      "status": "pending",
+      "reason": "Requires a target-platform matrix with read-only, disconnected NAS, and genuinely low-space volumes.",
+      "artifacts": [
+        "tests/operations-service.test.ts",
+        "tests/storage-service.test.ts"
+      ]
+    },
+    {
+      "id": "SYS-005",
+      "status": "pending",
+      "reason": "Requires packaged Windows tray, close-window, suspend-prevention, and blocker-release observation.",
+      "artifacts": [
+        "tests/shutdown-coordinator.test.ts",
+        "src/main/index.ts"
+      ]
+    },
+    {
+      "id": "SYS-006",
+      "status": "pending",
+      "reason": "Requires packaged Windows tray, close-window, suspend-prevention, and blocker-release observation.",
+      "artifacts": [
+        "tests/shutdown-coordinator.test.ts",
+        "src/main/index.ts"
+      ]
+    },
+    {
+      "id": "CAT-001",
+      "status": "pending",
+      "reason": "The 26k service and main-process receipts pass; renderer interaction, scrolling, and concurrent background-render responsiveness remain an external Electron performance run.",
+      "artifacts": [
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    },
+    {
+      "id": "CAT-009",
+      "status": "pending",
+      "reason": "The 26k service and main-process receipts pass; renderer interaction, scrolling, and concurrent background-render responsiveness remain an external Electron performance run.",
+      "artifacts": [
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    },
+    {
+      "id": "PERF-001",
+      "status": "pending",
+      "reason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware.",
+      "artifacts": [
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    },
+    {
+      "id": "PERF-002",
+      "status": "pending",
+      "reason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware.",
+      "artifacts": [
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    },
+    {
+      "id": "PERF-003",
+      "status": "pending",
+      "reason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware.",
+      "artifacts": [
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    },
+    {
+      "id": "UX-001",
+      "status": "pending",
+      "reason": "Requires the five-video licensed-media pilot and operator activity log review.",
+      "artifacts": [
+        "docs/IMPLEMENTATION-COVERAGE.md",
+        "VALIDATION_REPORT.md"
+      ]
+    }
+  ],
   "production_ready": false
 }

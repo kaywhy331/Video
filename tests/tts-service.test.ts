@@ -12,6 +12,7 @@ import type { AppSettings } from '@shared/types';
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'videofactory-tts-fixture-'));
 const fixtureAudio = join(fixtureRoot, 'voice.wav');
+const shortFixtureAudio = join(fixtureRoot, 'short-voice.wav');
 const roots: string[] = [];
 
 beforeAll(async () => {
@@ -20,6 +21,11 @@ beforeAll(async () => {
     '-y', '-hide_banner', '-f', 'lavfi',
     '-i', 'sine=frequency=330:sample_rate=48000:duration=2',
     '-ac', '2', '-c:a', 'pcm_s16le', fixtureAudio
+  ]);
+  await requireSuccess(ffmpegPath, [
+    '-y', '-hide_banner', '-f', 'lavfi',
+    '-i', 'sine=frequency=330:sample_rate=48000:duration=0.2',
+    '-ac', '2', '-c:a', 'pcm_s16le', shortFixtureAudio
   ]);
 }, 30_000);
 
@@ -63,10 +69,10 @@ function fixture(key = 'secret') {
   return { db, service, outputPath: join(directory, 'section.wav') };
 }
 
-function response(wordTimings: unknown): Response {
+function response(wordTimings: unknown, audioPath = fixtureAudio, durationMs = 2_000): Response {
   return new Response(JSON.stringify({
-    audioBase64: readFileSync(fixtureAudio).toString('base64'),
-    durationMs: 2_000,
+    audioBase64: readFileSync(audioPath).toString('base64'),
+    durationMs,
     wordTimings
   }), {
     status: 200,
@@ -126,6 +132,20 @@ describe('HTTP TTS section adapter', () => {
     `).get() as { error: string; estimated_cost_usd: number };
     expect(receipt.error).toContain('word-level timing');
     expect(receipt.estimated_cost_usd).toBe(0.05);
+    db.close();
+  });
+
+  it('[AUD-004] rejects an implausibly short provider section before timeline use', async () => {
+    const { db, service, outputPath } = fixture();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([
+      { word: 'Too', startMs: 0, endMs: 80, confidence: 0.98 },
+      { word: 'short.', startMs: 80, endMs: 180, confidence: 0.98 }
+    ], shortFixtureAudio, 200)));
+
+    await expect(service.synthesize({ projectId: 'p1', text: 'Too short.', outputPath }))
+      .rejects.toThrow('unexpectedly short');
+    expect(db.raw.prepare(`SELECT status, error FROM voice_assets WHERE project_id = 'p1'`).get())
+      .toMatchObject({ status: 'failed', error: expect.stringContaining('unexpectedly short') });
     db.close();
   });
 

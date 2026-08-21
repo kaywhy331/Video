@@ -1,0 +1,82 @@
+{
+  "generatedAt": "2026-08-16T04:13:39.176Z",
+  "benchmark": "VideoFactory catalog main-process responsiveness qualification",
+  "environment": {
+    "platform": "linux",
+    "release": "6.17.0-14-generic",
+    "architecture": "x64",
+    "node": "v22.22.0",
+    "cpuModel": "Intel(R) Core(TM) i5-6300U CPU @ 2.40GHz",
+    "logicalCpuCount": 4,
+    "totalMemoryBytes": 3990458368
+  },
+  "fixture": {
+    "rows": 26000,
+    "xlsxBytes": 9214242,
+    "generationMs": 7349.586
+  },
+  "heartbeat": {
+    "intervalMs": 20,
+    "acceptedPercentile": 0.99,
+    "maximumAcceptedP99GapMs": 250,
+    "maximumAcceptedP99PingLatencyMs": 50,
+    "endpoint": "catalog:ping"
+  },
+  "sheetsStage": {
+    "elapsedMs": 18399.2,
+    "heartbeatCount": 899,
+    "activePingCount": 899,
+    "eventLoopGapP95Ms": 21.723,
+    "eventLoopGapP99Ms": 26.513,
+    "eventLoopGapMaxMs": 47.355,
+    "pingLatencyP95Ms": 0.018,
+    "pingLatencyP99Ms": 0.056,
+    "pingLatencyMaxMs": 0.187,
+    "stagedRows": 26000,
+    "progressEvents": 516
+  },
+  "preview": {
+    "elapsedMs": 10764.847,
+    "heartbeatCount": 528,
+    "activePingCount": 528,
+    "eventLoopGapP95Ms": 21.129,
+    "eventLoopGapP99Ms": 24.84,
+    "eventLoopGapMaxMs": 40.617,
+    "pingLatencyP95Ms": 0.012,
+    "pingLatencyP99Ms": 0.029,
+    "pingLatencyMaxMs": 0.256
+  },
+  "commit": {
+    "elapsedMs": 649121.919,
+    "heartbeatCount": 30739,
+    "activePingCount": 30739,
+    "eventLoopGapP95Ms": 21.438,
+    "eventLoopGapP99Ms": 32.161,
+    "eventLoopGapMaxMs": 1777.997,
+    "pingLatencyP95Ms": 0.01,
+    "pingLatencyP99Ms": 0.024,
+    "pingLatencyMaxMs": 502.469,
+    "committedRows": 26000,
+    "progressEvents": 1228
+  },
+  "cancellation": {
+    "requested": true,
+    "observed": true,
+    "managedOutputRemoved": true,
+    "elapsedMs": 941.9018229999347,
+    "message": "Catalog import cancelled by the operator."
+  },
+  "database": {
+    "assetCount": 26000,
+    "integrity": "ok"
+  },
+  "acceptance": {
+    "googleSheetsStageMainProcessResponsive": "passed",
+    "previewMainProcessResponsive": "passed",
+    "commitMainProcessResponsive": "passed",
+    "progressReported": "passed",
+    "cancellationAffordance": "passed",
+    "catalogCountAndIntegrity": "passed"
+  },
+  "measuredCriteriaPassed": true
+}

@@ -1,0 +1,281 @@
+{
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+  "automated": [
+    {
+      "ids": ["E2E-003"],
+      "evidence": [
+        "tests/final-review-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/render-service-range.integration.test.ts",
+        "tests/workflow-service.test.ts"
+      ]
+    },
+    {
+      "ids": ["SYS-002"],
+      "evidence": ["tests/diagnostics-service.integration.test.ts"]
+    },
+    {
+      "ids": [
+        "CAT-002", "CAT-003", "CAT-004", "CAT-005", "CAT-006", "CAT-007",
+        "CAT-008", "CAT-010", "CAT-011", "CAT-012", "CAT-013"
+      ],
+      "evidence": [
+        "tests/catalog-mapping.test.ts",
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/normalization.test.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json"
+      ]
+    },
+    {
+      "ids": [
+        "GEO-001", "GEO-002", "GEO-003", "GEO-004", "GEO-005", "GEO-006",
+        "GEO-007", "GEO-008"
+      ],
+      "evidence": [
+        "tests/geography.test.ts",
+        "tests/place-service.test.ts",
+        "tests/footage-verification.test.ts",
+        "tests/footage-verification-service.test.ts",
+        "tests/storyboard-service.test.ts"
+      ]
+    },
+    {
+      "ids": ["TOP-001", "TOP-002", "TOP-003", "TOP-004", "TOP-005", "TOP-006", "TOP-007"],
+      "evidence": [
+        "tests/planning-policy.test.ts",
+        "tests/project-guidance.test.ts",
+        "tests/project-guidance-persistence.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/scheduler-service.test.ts",
+        "tests/expansion-service.test.ts"
+      ]
+    },
+    {
+      "ids": [
+        "SCR-001", "SCR-002", "SCR-003", "SCR-004", "SCR-005", "SCR-006",
+        "SCR-007", "SCR-008", "SCR-009"
+      ],
+      "evidence": [
+        "tests/ai-claims.test.ts",
+        "tests/research-persistence.test.ts",
+        "tests/research-policy.test.ts",
+        "tests/research-service.test.ts",
+        "tests/final-script-narration.test.ts",
+        "tests/storyboard-service.test.ts"
+      ]
+    },
+    {
+      "ids": [
+        "MAT-001", "MAT-002", "MAT-003", "MAT-004", "MAT-005", "MAT-006",
+        "MAT-007", "MAT-008", "MAT-009", "MAT-010"
+      ],
+      "evidence": [
+        "tests/planning-policy.test.ts",
+        "tests/matching-service.test.ts",
+        "tests/perceptual-hash.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/editing.test.ts",
+        "tests/storyboard-service.test.ts",
+        "tests/footage-verification.test.ts"
+      ]
+    },
+    {
+      "ids": [
+        "ACQ-001", "ACQ-002", "ACQ-003", "ACQ-004", "ACQ-005", "ACQ-006",
+        "ACQ-007", "ACQ-008", "ACQ-009", "ACQ-010"
+      ],
+      "evidence": [
+        "tests/acquisition-manifest.test.ts",
+        "tests/acquisition-service.test.ts",
+        "tests/ambiguous-mapping-service.test.ts",
+        "tests/download-watcher.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/media-semantic-retry.test.ts",
+        "tests/security-policy.test.ts"
+      ]
+    },
+    {
+      "ids": [
+        "MED-001", "MED-002", "MED-003", "MED-004", "MED-005", "MED-006",
+        "MED-007", "MED-008", "MED-009", "MED-010", "MED-011"
+      ],
+      "evidence": [
+        "tests/media-analysis.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
+        "tests/media-pipeline-invalidation.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/vision-service.test.ts"
+      ]
+    },
+    {
+      "ids": [
+        "REN-001", "REN-002", "REN-003", "REN-004", "REN-005", "REN-006",
+        "REN-007", "REN-008", "REN-009", "REN-010", "REN-011", "REN-012",
+        "REN-013", "REN-014"
+      ],
+      "evidence": [
+        "tests/color-policy.test.ts",
+        "tests/media-fixture.integration.test.ts",
+        "tests/media-policy.test.ts",
+        "tests/output-profile.test.ts",
+        "tests/render-pipeline.integration.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ]
+    },
+    {
+      "ids": [
+        "AUD-001", "AUD-002", "AUD-003", "AUD-004", "AUD-005", "AUD-006",
+        "AUD-007", "AUD-008", "AUD-009"
+      ],
+      "evidence": [
+        "tests/final-script-narration.test.ts",
+        "tests/music-service.integration.test.ts",
+        "tests/narration.test.ts",
+        "tests/qc.test.ts",
+        "tests/tts-service.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ]
+    },
+    {
+      "ids": ["PKG-001", "PKG-002", "PKG-003", "PKG-004", "PKG-005", "PKG-006"],
+      "evidence": [
+        "tests/approval.test.ts",
+        "tests/qc.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ]
+    },
+    {
+      "ids": ["YT-001", "YT-002", "YT-003", "YT-004", "YT-005", "YT-006", "YT-007", "YT-008"],
+      "evidence": [
+        "tests/final-review-service.test.ts",
+        "tests/google-client-smoke.test.ts",
+        "tests/secret-store.test.ts",
+        "tests/security-policy.test.ts",
+        "tests/workflow-service.test.ts",
+        "tests/youtube-approval.test.ts",
+        "tests/youtube-processing.test.ts",
+        "tests/youtube-upload-policy.test.ts",
+        "tests/youtube-resumable.test.ts"
+      ]
+    },
+    {
+      "ids": ["ANA-001", "ANA-002", "ANA-003", "ANA-004", "ANA-005"],
+      "evidence": ["tests/analytics-service.test.ts"]
+    },
+    {
+      "ids": [
+        "JOB-001", "JOB-002", "JOB-003", "JOB-004", "JOB-005", "JOB-006",
+        "JOB-007", "JOB-008", "JOB-009"
+      ],
+      "evidence": [
+        "tests/job-service.test.ts",
+        "tests/provider-policy.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ]
+    },
+    {
+      "ids": ["SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-005", "SEC-006", "SEC-007", "SEC-008"],
+      "evidence": [
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/media-protocol.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/security-policy.test.ts"
+      ]
+    },
+    {
+      "ids": ["BAK-001", "BAK-002", "BAK-003", "BAK-004", "BAK-005"],
+      "evidence": [
+        "tests/backup-service.test.ts",
+        "tests/project-artifact-service.integration.test.ts",
+        "tests/storage-service.test.ts"
+      ]
+    },
+    {
+      "ids": ["PERF-004"],
+      "evidence": [
+        "tests/catalog-import-worker-service.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    },
+    {
+      "ids": ["UX-002", "UX-003", "UX-004"],
+      "evidence": [
+        "tests/catalog-evidence.integration.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
+        "tests/exception-service.test.ts",
+        "tests/operator-shortcuts.test.ts",
+        "tests/project-detail.test.ts"
+      ]
+    }
+  ],
+  "external": [
+    {
+      "ids": ["E2E-001", "E2E-002"],
+      "reason": "Requires configured live research, generation, acquisition, and YouTube accounts plus licensed production media; local workflow simulations are supporting evidence only.",
+      "evidence": [
+        "tests/workflow-service.test.ts",
+        "tests/final-review-service.test.ts",
+        "tests/render-service-range.integration.test.ts"
+      ]
+    },
+    {
+      "ids": ["E2E-004"],
+      "reason": "Deterministic crash reconciliation is automated, but forced process termination at every real ingest, render, and upload stage remains a production drill.",
+      "evidence": [
+        "tests/job-service.test.ts",
+        "tests/render-recovery.test.ts",
+        "tests/workflow-service.test.ts"
+      ]
+    },
+    {
+      "ids": ["E2E-005", "UX-001"],
+      "reason": "Requires the five-video licensed-media pilot and operator activity log review.",
+      "evidence": ["docs/IMPLEMENTATION-COVERAGE.md", "VALIDATION_REPORT.md"]
+    },
+    {
+      "ids": ["SYS-001"],
+      "reason": "Requires install and first-run evidence on a clean supported Windows x64 machine without developer tooling.",
+      "evidence": ["scripts/windows/build-installer.ps1", "scripts/windows/setup-and-run.ps1"]
+    },
+    {
+      "ids": ["SYS-003"],
+      "reason": "Software fallback and discovery logic are automated; the NVENC, Quick Sync, and AMD AMF hardware matrix requires representative Windows hardware.",
+      "evidence": ["tests/diagnostics-service.integration.test.ts"]
+    },
+    {
+      "ids": ["SYS-004"],
+      "reason": "Requires a target-platform matrix with read-only, disconnected NAS, and genuinely low-space volumes.",
+      "evidence": ["tests/operations-service.test.ts", "tests/storage-service.test.ts"]
+    },
+    {
+      "ids": ["SYS-005", "SYS-006"],
+      "reason": "Requires packaged Windows tray, close-window, suspend-prevention, and blocker-release observation.",
+      "evidence": ["tests/shutdown-coordinator.test.ts", "src/main/index.ts"]
+    },
+    {
+      "ids": ["CAT-001", "CAT-009"],
+      "reason": "The 26k service and main-process receipts pass; renderer interaction, scrolling, and concurrent background-render responsiveness remain an external Electron performance run.",
+      "evidence": [
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    },
+    {
+      "ids": ["PERF-001", "PERF-002", "PERF-003"],
+      "reason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware.",
+      "evidence": [
+        "tests/e2e/electron-accessibility.spec.ts",
+        "VALIDATION_CATALOG_PERFORMANCE.json",
+        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+      ]
+    }
+  ]
+}

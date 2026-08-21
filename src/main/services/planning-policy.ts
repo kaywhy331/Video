@@ -21,21 +21,39 @@ export function topicSimilarity(left: string, right: string): number {
   return intersection / new Set([...a, ...b]).size;
 }
 
-export function evaluateCoverage(cluster: CoverageCluster, targetMinutes: number): PlanningDecision {
+export function evaluateCoverage(
+  cluster: CoverageCluster,
+  targetMinutes: number,
+  output: { orientation: 'landscape' | 'portrait' } = { orientation: 'landscape' }
+): PlanningDecision {
   const requiredShots = Math.max(12, Math.ceil(targetMinutes * 60 / 4.5));
   const estimatedShots = Math.min(cluster.assetCount * 3, Math.floor(cluster.assetCount * 2.1));
   const uniqueAssets = Math.min(100, (cluster.assetCount / 12) * 100);
   const shotDiversity = Math.min(100, (cluster.uniqueShotTypes / 4) * 100);
-  const resolution = cluster.assetCount ? (cluster.landscapeCount / cluster.assetCount) * 100 : 0;
+  const orientationCount = output.orientation === 'portrait' ? cluster.portraitCount : cluster.landscapeCount;
+  const resolution = cluster.assetCount ? (orientationCount / cluster.assetCount) * 100 : 0;
   const confidence = cluster.assetCount ? (cluster.verifiedCount / cluster.assetCount) * 100 : 0;
   const shotCoverage = Math.min(100, (estimatedShots / Math.max(1, requiredShots * 1.35)) * 100);
-  const components = { uniqueAssets, shotDiversity, resolution, confidence, shotCoverage };
-  const opportunityScore = uniqueAssets * 0.25 + shotDiversity * 0.2 + resolution * 0.15 + confidence * 0.15 + shotCoverage * 0.25;
+  const visualCoverage = uniqueAssets * 0.25 + shotDiversity * 0.25 + resolution * 0.2 + shotCoverage * 0.3;
+  const productionEfficiency = cluster.assetCount
+    ? Math.min(100, (cluster.downloadedCount / cluster.assetCount) * 40 + Math.min(cluster.assetCount, 40) / 40 * 60)
+    : 0;
+  const components = {
+    uniqueAssets, shotDiversity, resolution, confidence, shotCoverage,
+    visualCoverage, demand: 0, lowCompetition: 0, exactLocationConfidence: confidence,
+    channelFit: 0, evergreen: 50, freshness: 0, productionEfficiency, strategic: 0
+  };
+  const opportunityScore = visualCoverage * 0.22
+    + confidence * 0.12
+    + components.evergreen * 0.08
+    + productionEfficiency * 0.05;
   const reasons: string[] = [];
   if (cluster.assetCount < 12) reasons.push('Fewer than 12 unique source assets');
   if (cluster.uniqueShotTypes < 4) reasons.push('Fewer than four shot categories');
   if (estimatedShots < requiredShots * 1.35) reasons.push('Estimated candidate-shot coverage is below 1.35x');
-  if (cluster.landscapeCount < Math.max(6, cluster.assetCount * 0.45)) reasons.push('Landscape/full-screen coverage is insufficient');
+  if (orientationCount < Math.max(6, cluster.assetCount * 0.45)) {
+    reasons.push(`${output.orientation === 'portrait' ? 'Portrait/vertical' : 'Landscape/full-screen'} coverage is insufficient`);
+  }
   return { qualified: reasons.length === 0, estimatedShots, requiredShots, reasons, components, opportunityScore };
 }
 
