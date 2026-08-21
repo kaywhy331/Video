@@ -126,6 +126,11 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 - exact Windows artifact inventory, per-file SHA-256 values, attached validation/SBOM evidence, branch-versus-tag identity, and post-generation verification;
 - CI packaging ordered after exact-head validation and pinned by `.nvmrc` on Linux and Windows.
 
+## Release upload safety added in alpha.5
+
+- canonical `VideoFactory-Desktop-<version>-<arch>.<ext>` Windows package names that are independent of the human-facing product name and remain byte-for-byte addressable after hosted upload;
+- fail-closed release-manifest validation for filenames outside the upload-safe ASCII letter, digit, period, underscore, and hyphen set, with regression coverage for normalized-name risk.
+
 ## Measured catalog performance and remaining UI boundary
 
 `npm run benchmark:catalog` generated a 9,284,473-byte XLSX with 26,000 rows and exercised the production catalog service against a fresh database. Preview took 9,273.749 ms; atomic commit took 565,401.291 ms; all 26,000 staged rows, committed rows, and canonical assets were present; and SQLite integrity was `ok`. After reopening the database, 25 rounds across each of five common search/filter/sort scenarios produced an overall warm p95 of 156.034 ms against the 300 ms target. Scenario p95 values were 67.307 ms (recent page), 165.149 ms (FTS location/activity), 46.633 ms (country/city), 99.091 ms (orientation/country), and 64.332 ms (metadata contains). The renderer contract returned only the requested 50 rows rather than the whole catalog. The machine and full receipt are recorded in [`VALIDATION_CATALOG_PERFORMANCE.json`](../VALIDATION_CATALOG_PERFORMANCE.json).

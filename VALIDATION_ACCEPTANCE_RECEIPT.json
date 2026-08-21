@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-21T20:01:04.249Z",
-  "appVersion": "0.1.0-alpha.4",
+  "generatedAt": "2026-08-21T20:28:03.076Z",
+  "appVersion": "0.1.0-alpha.5",
   "databaseSchemaVersion": 18,
   "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
-  "validationInputSha256": "31f02b8af1280c96081738ac0c96d2cfc1cea8e02c0ca2d4b998a9217495ede7",
+  "validationInputSha256": "65b33cf7fc815a9f2ec1c31c1084a676e47e4803b4a097c6ea2042fb424fb2d8",
   "validationInputFileCount": 246,
   "source": {
-    "commit": "d6f7a4510428990f07caa78bbe22c9a54f7e5711",
+    "commit": "8cbffd27306fad761b896a42564c3a9a3802c46e",
     "ref": "fix/upload-safe-windows-artifacts",
     "repository": null,
     "runId": null,
@@ -39,8 +39,8 @@
   "testReports": {
     "vitest": {
       "path": "validation/results/vitest.json",
-      "sha256": "154b08b2d56b96ab237fe88aa9690f59787430ed5f16a80c00e07f2a4f7cc9b0",
-      "sizeBytes": 107890,
+      "sha256": "817217db1073888eb5276d228c9b5a8ff84691b84bb2204db3ae3fdc76de4f47",
+      "sizeBytes": 107901,
       "files": 79,
       "total": 286,
       "passed": 286,
@@ -49,7 +49,7 @@
     },
     "playwright": {
       "path": "validation/results/playwright.json",
-      "sha256": "e5d1e96032ddb39820b84d88da56ab73d183e7d6d20ceef186d555e1b49d3b89",
+      "sha256": "502842d585d81611424a13460a8194eb4c7510adfb86eb96148612435074dd64",
       "sizeBytes": 7087,
       "total": 4,
       "passed": 4,
@@ -59,12 +59,12 @@
   "evidence": {
     "pipeline": {
       "path": "validation/results/pipeline.json",
-      "sha256": "5282b0ad1b1c6657cb121ed3291d9389ed65a57255bd3a927586ef62417af2cd",
+      "sha256": "a1cdbaa5cd56de84734281e8e869ccff84ef5ea9aaa503ab6157bffcd5463697",
       "sizeBytes": 1947
     },
     "sbom": {
       "path": "release/videofactory-sbom.cdx.json",
-      "sha256": "ebf3dc74bd6a0c50c57189bc7763be928a122b42b20ebd55f39c910605fedbe5",
+      "sha256": "c55c66f6a7ebaead69fabc3d8fdb06ee603745d527855317050045cd301b30ee",
       "sizeBytes": 718062
     }
   },
@@ -78,7 +78,7 @@
     {
       "id": "E2E-001",
       "title": "Complete real production",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -93,7 +93,7 @@
     {
       "id": "E2E-002",
       "title": "Final approval and scheduling",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -108,7 +108,7 @@
     {
       "id": "E2E-003",
       "title": "Send-back scoped regeneration",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -149,7 +149,7 @@
     {
       "id": "E2E-004",
       "title": "Crash and resume",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -164,7 +164,7 @@
     {
       "id": "E2E-005",
       "title": "Five-video pilot",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -178,7 +178,7 @@
     {
       "id": "SYS-001",
       "title": "Clean Windows install",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -192,7 +192,7 @@
     {
       "id": "SYS-002",
       "title": "FFmpeg diagnostic",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -212,7 +212,7 @@
     {
       "id": "SYS-003",
       "title": "Hardware encoder discovery",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -225,7 +225,7 @@
     {
       "id": "SYS-004",
       "title": "Invalid path handling",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -239,7 +239,7 @@
     {
       "id": "SYS-005",
       "title": "Tray/background operation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -253,7 +253,7 @@
     {
       "id": "SYS-006",
       "title": "Power management",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -267,7 +267,7 @@
     {
       "id": "CAT-001",
       "title": "Full 26k import",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -281,7 +281,7 @@
     {
       "id": "CAT-002",
       "title": "CSV import",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -305,7 +305,7 @@
     {
       "id": "CAT-003",
       "title": "Stable identity",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -329,7 +329,7 @@
     {
       "id": "CAT-004",
       "title": "Import diff",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -353,7 +353,7 @@
     {
       "id": "CAT-005",
       "title": "Human override preservation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -377,7 +377,7 @@
     {
       "id": "CAT-006",
       "title": "Null normalization",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -401,7 +401,7 @@
     {
       "id": "CAT-007",
       "title": "Duration/size/rate parsing",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -425,7 +425,7 @@
     {
       "id": "CAT-008",
       "title": "Search relevance",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -449,7 +449,7 @@
     {
       "id": "CAT-009",
       "title": "Filter performance",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -463,7 +463,7 @@
     {
       "id": "CAT-010",
       "title": "FTS update",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -487,7 +487,7 @@
     {
       "id": "CAT-011",
       "title": "Duplicate source URL",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -511,7 +511,7 @@
     {
       "id": "CAT-012",
       "title": "Import cancellation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -541,7 +541,7 @@
     {
       "id": "CAT-013",
       "title": "Failed import rollback",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -565,7 +565,7 @@
     {
       "id": "GEO-001",
       "title": "Exact landmark pass",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -589,7 +589,7 @@
     {
       "id": "GEO-002",
       "title": "Same-country rejection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -613,7 +613,7 @@
     {
       "id": "GEO-003",
       "title": "City-level contextual pass",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -637,7 +637,7 @@
     {
       "id": "GEO-004",
       "title": "Insufficient granularity",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -661,7 +661,7 @@
     {
       "id": "GEO-005",
       "title": "Vision conflict",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -685,7 +685,7 @@
     {
       "id": "GEO-006",
       "title": "Human verification precedence",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -709,7 +709,7 @@
     {
       "id": "GEO-007",
       "title": "Parent/child logic",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -733,7 +733,7 @@
     {
       "id": "GEO-008",
       "title": "No silent fallback",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -757,7 +757,7 @@
     {
       "id": "TOP-001",
       "title": "Coverage-first ideation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -782,7 +782,7 @@
     {
       "id": "TOP-002",
       "title": "Insufficient coverage rejection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -807,7 +807,7 @@
     {
       "id": "TOP-003",
       "title": "Demand proxy labeling",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -832,7 +832,7 @@
     {
       "id": "TOP-004",
       "title": "Competition scoring explainability",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -857,7 +857,7 @@
     {
       "id": "TOP-005",
       "title": "Topic duplicate prevention",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -882,7 +882,7 @@
     {
       "id": "TOP-006",
       "title": "Queue limit",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -907,7 +907,7 @@
     {
       "id": "TOP-007",
       "title": "Budget gate",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -932,7 +932,7 @@
     {
       "id": "SCR-001",
       "title": "Sourced material claims",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -957,7 +957,7 @@
     {
       "id": "SCR-002",
       "title": "No invented source",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -982,7 +982,7 @@
     {
       "id": "SCR-003",
       "title": "Time-sensitive freshness",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1007,7 +1007,7 @@
     {
       "id": "SCR-004",
       "title": "Conflicting sources",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1032,7 +1032,7 @@
     {
       "id": "SCR-005",
       "title": "Visual-first constraint",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1057,7 +1057,7 @@
     {
       "id": "SCR-006",
       "title": "Two-pass rewrite",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1089,7 +1089,7 @@
     {
       "id": "SCR-007",
       "title": "Script schema validation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1114,7 +1114,7 @@
     {
       "id": "SCR-008",
       "title": "Claim wording fidelity",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1139,7 +1139,7 @@
     {
       "id": "SCR-009",
       "title": "Versioning",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1164,7 +1164,7 @@
     {
       "id": "MAT-001",
       "title": "Hard filters before scoring",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1191,7 +1191,7 @@
     {
       "id": "MAT-002",
       "title": "Candidate explanation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1218,7 +1218,7 @@
     {
       "id": "MAT-003",
       "title": "Source reuse limit",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1245,7 +1245,7 @@
     {
       "id": "MAT-004",
       "title": "Duplicate cluster avoidance",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1272,7 +1272,7 @@
     {
       "id": "MAT-005",
       "title": "Shot variety",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1299,7 +1299,7 @@
     {
       "id": "MAT-006",
       "title": "Hero reservation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1326,7 +1326,7 @@
     {
       "id": "MAT-007",
       "title": "Severe crop penalty",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1353,7 +1353,7 @@
     {
       "id": "MAT-008",
       "title": "Beat/shot separation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1387,7 +1387,7 @@
     {
       "id": "MAT-009",
       "title": "Graphics fallback",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1414,7 +1414,7 @@
     {
       "id": "MAT-010",
       "title": "Determinism",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1441,7 +1441,7 @@
     {
       "id": "ACQ-001",
       "title": "Ordered manifest",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1468,7 +1468,7 @@
     {
       "id": "ACQ-002",
       "title": "URL allowlist",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1495,7 +1495,7 @@
     {
       "id": "ACQ-003",
       "title": "Temporary file ignored",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1522,7 +1522,7 @@
     {
       "id": "ACQ-004",
       "title": "Stable file detection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1549,7 +1549,7 @@
     {
       "id": "ACQ-005",
       "title": "Active-item auto mapping",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1576,7 +1576,7 @@
     {
       "id": "ACQ-006",
       "title": "Ambiguous mapping",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1609,7 +1609,7 @@
     {
       "id": "ACQ-007",
       "title": "Duplicate physical file",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1636,7 +1636,7 @@
     {
       "id": "ACQ-008",
       "title": "License-only reuse",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1663,7 +1663,7 @@
     {
       "id": "ACQ-009",
       "title": "Missing license blocker",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1690,7 +1690,7 @@
     {
       "id": "ACQ-010",
       "title": "Wrong file quarantine",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1717,7 +1717,7 @@
     {
       "id": "MED-001",
       "title": "Original preservation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1742,7 +1742,7 @@
     {
       "id": "MED-002",
       "title": "Actual metadata override",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1767,7 +1767,7 @@
     {
       "id": "MED-003",
       "title": "720p proxy",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1792,7 +1792,7 @@
     {
       "id": "MED-004",
       "title": "Black-frame detection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1817,7 +1817,7 @@
     {
       "id": "MED-005",
       "title": "Frozen-frame detection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1848,7 +1848,7 @@
     {
       "id": "MED-006",
       "title": "Corrupt file",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1873,7 +1873,7 @@
     {
       "id": "MED-007",
       "title": "Segment limits",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1898,7 +1898,7 @@
     {
       "id": "MED-008",
       "title": "Sliding windows",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1930,7 +1930,7 @@
     {
       "id": "MED-009",
       "title": "Contact-sheet minimization",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1955,7 +1955,7 @@
     {
       "id": "MED-010",
       "title": "Analysis cache",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -1980,7 +1980,7 @@
     {
       "id": "MED-011",
       "title": "Pipeline invalidation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2005,7 +2005,7 @@
     {
       "id": "REN-001",
       "title": "Default 1080p",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2031,7 +2031,7 @@
     {
       "id": "REN-002",
       "title": "4K qualification pass",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2057,7 +2057,7 @@
     {
       "id": "REN-003",
       "title": "4K blocker",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2083,7 +2083,7 @@
     {
       "id": "REN-004",
       "title": "No 1080p upscaling",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2109,7 +2109,7 @@
     {
       "id": "REN-005",
       "title": "Rotation handling",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2136,7 +2136,7 @@
     {
       "id": "REN-006",
       "title": "Shot duration hard gate",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2162,7 +2162,7 @@
     {
       "id": "REN-007",
       "title": "Final media profile",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2188,7 +2188,7 @@
     {
       "id": "REN-008",
       "title": "Fast start",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2214,7 +2214,7 @@
     {
       "id": "REN-009",
       "title": "Mixed frame rates",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2241,7 +2241,7 @@
     {
       "id": "REN-010",
       "title": "Alpha source",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2268,7 +2268,7 @@
     {
       "id": "REN-011",
       "title": "HDR/log normalization",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2300,7 +2300,7 @@
     {
       "id": "REN-012",
       "title": "Range preview",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2326,7 +2326,7 @@
     {
       "id": "REN-013",
       "title": "Render interruption",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2352,7 +2352,7 @@
     {
       "id": "REN-014",
       "title": "Render idempotency",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2378,7 +2378,7 @@
     {
       "id": "AUD-001",
       "title": "Section caching",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2410,7 +2410,7 @@
     {
       "id": "AUD-002",
       "title": "Word timing",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2435,7 +2435,7 @@
     {
       "id": "AUD-003",
       "title": "Pronunciation dictionary",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2467,7 +2467,7 @@
     {
       "id": "AUD-004",
       "title": "Missing section",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2492,7 +2492,7 @@
     {
       "id": "AUD-005",
       "title": "Loudness and peak",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2525,7 +2525,7 @@
     {
       "id": "AUD-006",
       "title": "Silence detection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2550,7 +2550,7 @@
     {
       "id": "AUD-007",
       "title": "Music ducking",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2575,7 +2575,7 @@
     {
       "id": "AUD-008",
       "title": "Caption generation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2600,7 +2600,7 @@
     {
       "id": "AUD-009",
       "title": "Caption upload",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2625,7 +2625,7 @@
     {
       "id": "PKG-001",
       "title": "Three distinct concepts",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2647,7 +2647,7 @@
     {
       "id": "PKG-002",
       "title": "Actual-frame thumbnail",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2669,7 +2669,7 @@
     {
       "id": "PKG-003",
       "title": "No deceptive destination",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2697,7 +2697,7 @@
     {
       "id": "PKG-004",
       "title": "Thumbnail format/size",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2719,7 +2719,7 @@
     {
       "id": "PKG-005",
       "title": "Chapter validation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2741,7 +2741,7 @@
     {
       "id": "PKG-006",
       "title": "Package hash approval",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2763,7 +2763,7 @@
     {
       "id": "YT-001",
       "title": "OAuth token encryption",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2791,7 +2791,7 @@
     {
       "id": "YT-002",
       "title": "Private default",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2819,7 +2819,7 @@
     {
       "id": "YT-003",
       "title": "Resumable network recovery",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2853,7 +2853,7 @@
     {
       "id": "YT-004",
       "title": "Duplicate upload prevention",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2887,7 +2887,7 @@
     {
       "id": "YT-005",
       "title": "Processing polling",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2915,7 +2915,7 @@
     {
       "id": "YT-006",
       "title": "API restriction fallback",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2950,7 +2950,7 @@
     {
       "id": "YT-007",
       "title": "Synthetic-media field",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -2978,7 +2978,7 @@
     {
       "id": "YT-008",
       "title": "Schedule rule",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3006,7 +3006,7 @@
     {
       "id": "ANA-001",
       "title": "Snapshot schedule",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3026,7 +3026,7 @@
     {
       "id": "ANA-002",
       "title": "Retention mapping",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3046,7 +3046,7 @@
     {
       "id": "ANA-003",
       "title": "Search-term storage",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3066,7 +3066,7 @@
     {
       "id": "ANA-004",
       "title": "Learning threshold",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3086,7 +3086,7 @@
     {
       "id": "ANA-005",
       "title": "Reversible recommendation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3106,7 +3106,7 @@
     {
       "id": "JOB-001",
       "title": "Lease recovery",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3129,7 +3129,7 @@
     {
       "id": "JOB-002",
       "title": "Dependency ordering",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3152,7 +3152,7 @@
     {
       "id": "JOB-003",
       "title": "Idempotent provider call",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3176,7 +3176,7 @@
     {
       "id": "JOB-004",
       "title": "Bounded retry",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3199,7 +3199,7 @@
     {
       "id": "JOB-005",
       "title": "Permanent validation error",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3223,7 +3223,7 @@
     {
       "id": "JOB-006",
       "title": "Human wait",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3246,7 +3246,7 @@
     {
       "id": "JOB-007",
       "title": "Project lock",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3269,7 +3269,7 @@
     {
       "id": "JOB-008",
       "title": "Resource concurrency",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3292,7 +3292,7 @@
     {
       "id": "JOB-009",
       "title": "Budget stop",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3315,7 +3315,7 @@
     {
       "id": "SEC-001",
       "title": "Renderer Node isolation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3339,7 +3339,7 @@
     {
       "id": "SEC-002",
       "title": "IPC schema rejection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3363,7 +3363,7 @@
     {
       "id": "SEC-003",
       "title": "Sender validation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3387,7 +3387,7 @@
     {
       "id": "SEC-004",
       "title": "Navigation/new-window block",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3411,7 +3411,7 @@
     {
       "id": "SEC-005",
       "title": "External URL validation",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3435,7 +3435,7 @@
     {
       "id": "SEC-006",
       "title": "Media protocol traversal",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3465,7 +3465,7 @@
     {
       "id": "SEC-007",
       "title": "Secret redaction",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3489,7 +3489,7 @@
     {
       "id": "SEC-008",
       "title": "CSP",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3513,7 +3513,7 @@
     {
       "id": "BAK-001",
       "title": "Online backup",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3535,7 +3535,7 @@
     {
       "id": "BAK-002",
       "title": "Restore",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3557,7 +3557,7 @@
     {
       "id": "BAK-003",
       "title": "Missing derivative rebuild",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3579,7 +3579,7 @@
     {
       "id": "BAK-004",
       "title": "Missing original detection",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3601,7 +3601,7 @@
     {
       "id": "BAK-005",
       "title": "Retention policy",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3623,7 +3623,7 @@
     {
       "id": "PERF-001",
       "title": "Startup",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -3638,7 +3638,7 @@
     {
       "id": "PERF-002",
       "title": "Background responsiveness",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -3653,7 +3653,7 @@
     {
       "id": "PERF-003",
       "title": "Virtualized table",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -3668,7 +3668,7 @@
     {
       "id": "PERF-004",
       "title": "Progress visibility",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3696,7 +3696,7 @@
     {
       "id": "UX-001",
       "title": "Two-gate clean project",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "external",
@@ -3710,7 +3710,7 @@
     {
       "id": "UX-002",
       "title": "Next action clarity",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3734,7 +3734,7 @@
     {
       "id": "UX-003",
       "title": "Exception resolution",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",
@@ -3765,7 +3765,7 @@
     {
       "id": "UX-004",
       "title": "Undo metadata edit",
-      "appVersion": "0.1.0-alpha.4",
+      "appVersion": "0.1.0-alpha.5",
       "databaseSchemaVersion": 18,
       "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
       "classification": "automated",

@@ -1,6 +1,6 @@
 # VideoFactory Desktop
 
-**Build:** 0.1.0-alpha.4 release-evidence hardening
+**Build:** 0.1.0-alpha.5 upload-safe release artifacts
 
 VideoFactory Desktop is a single-user Windows application that turns a licensed stock-footage metadata catalog into exact-location-grounded YouTube videos. It is metadata-first and fail-closed: it does not silently substitute footage that merely looks similar, upscale a source to pass resolution policy, or publish before the final human gate.
 
