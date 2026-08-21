@@ -1,6 +1,6 @@
 {
   "name": "videofactory-desktop",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "private": true,
   "description": "Internal metadata-first stock-footage-to-YouTube production desktop application",
   "main": "./out/main/index.js",
@@ -89,7 +89,7 @@
         "nsis",
         "zip"
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "VideoFactory-Desktop-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

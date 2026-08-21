@@ -14,8 +14,8 @@ function fixtureRoot(): string {
   roots.push(root);
   mkdirSync(resolve(root, 'release'));
   writeFileSync(resolve(root, 'package.json'), JSON.stringify({ version: '9.8.7-alpha.1' }));
-  writeFileSync(resolve(root, 'release', 'VideoFactory-9.8.7-alpha.1-x64.exe'), 'installer');
-  writeFileSync(resolve(root, 'release', 'VideoFactory-9.8.7-alpha.1-x64.zip'), 'archive');
+  writeFileSync(resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.exe'), 'installer');
+  writeFileSync(resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip'), 'archive');
   return root;
 }
 
@@ -77,6 +77,19 @@ afterEach(() => {
 });
 
 describe('release artifact provenance', () => {
+  it('uses a canonical upload-safe Windows artifact template', () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'));
+    const artifactName = packageJson.build?.win?.artifactName;
+    expect(artifactName).toBe('VideoFactory-Desktop-${version}-${arch}.${ext}');
+
+    const renderedName = artifactName
+      .replace('${version}', '9.8.7-alpha.1')
+      .replace('${arch}', 'x64')
+      .replace('${ext}', 'exe');
+    expect(renderedName).toBe('VideoFactory-Desktop-9.8.7-alpha.1-x64.exe');
+    expect(renderedName).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+  });
+
   it('writes and verifies exact hashes for every release artifact', () => {
     const root = fixtureRoot();
     expect(run(root).status).toBe(0);
@@ -89,7 +102,7 @@ describe('release artifact provenance', () => {
   it('fails verification after a published artifact changes', () => {
     const root = fixtureRoot();
     expect(run(root).status).toBe(0);
-    writeFileSync(resolve(root, 'release', 'VideoFactory-9.8.7-alpha.1-x64.zip'), 'tampered');
+    writeFileSync(resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip'), 'tampered');
     const result = run(root, ['--verify']);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('failed integrity verification');
@@ -132,6 +145,17 @@ describe('release artifact provenance', () => {
     expect(result.stderr).toContain('does not match package version');
   });
 
+  it('rejects package filenames that hosted release uploads would normalize', () => {
+    const root = fixtureRoot();
+    renameSync(
+      resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip'),
+      resolve(root, 'release', 'VideoFactory Desktop-9.8.7-alpha.1-x64.zip')
+    );
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('filename is not upload-safe');
+  });
+
   it('rejects validation evidence produced for another commit', () => {
     const root = fixtureRoot();
     writeValidationEvidence(root);
@@ -147,8 +171,8 @@ describe('release artifact provenance', () => {
   it('rejects package filenames from a stale application version', () => {
     const root = fixtureRoot();
     renameSync(
-      resolve(root, 'release', 'VideoFactory-9.8.7-alpha.1-x64.zip'),
-      resolve(root, 'release', 'VideoFactory-9.8.7-alpha.0-x64.zip')
+      resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip'),
+      resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.0-x64.zip')
     );
     const result = run(root);
     expect(result.status).toBe(1);

@@ -33,8 +33,16 @@ function relevantFiles() {
     .sort((left, right) => basename(left).localeCompare(basename(right)));
 }
 
+function assertUploadSafeArtifactName(name) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    throw new Error(`Release artifact filename is not upload-safe: ${name}`);
+  }
+}
+
 function record(path) {
-  return { name: basename(path), sizeBytes: statSync(path).size, sha256: sha256File(path) };
+  const name = basename(path);
+  assertUploadSafeArtifactName(name);
+  return { name, sizeBytes: statSync(path).size, sha256: sha256File(path) };
 }
 
 function readJson(path) {
@@ -45,6 +53,7 @@ function assertArtifactRecord(artifact) {
   if (!artifact || typeof artifact.name !== 'string' || artifact.name !== basename(artifact.name)) {
     throw new Error('Release manifest contains an invalid artifact name.');
   }
+  assertUploadSafeArtifactName(artifact.name);
   if (!Number.isSafeInteger(artifact.sizeBytes) || artifact.sizeBytes < 0) {
     throw new Error(`Release manifest contains an invalid size for ${artifact.name}.`);
   }
