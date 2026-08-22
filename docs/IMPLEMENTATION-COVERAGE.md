@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-21 after the local PRD-completion pass through schema migration 018, UI/exception/color-policy closure, built-Electron accessibility validation, and release-evidence hardening.
+Updated 2026-08-21 after the local PRD-completion pass through schema migration 018, UI/exception/color-policy closure, built-Electron accessibility validation, and packaged-Windows release-evidence hardening.
 
 Status meanings:
 
@@ -39,6 +39,7 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 - [x] Defer an active project's pause request to the next released job checkpoint instead of rejecting or mutating through an active lock.
 - [x] Exercise the built production Electron application with Playwright, Axe WCAG 2 A/AA checks, global shortcuts, and accessible nine-tab keyboard navigation.
 - [x] Map every PRD acceptance ID to versioned local or external evidence, keep external gates pending, require a zero-advisory audit, and generate a CycloneDX SBOM.
+- [x] Gate Windows provenance on hosted ZIP launch plus silent NSIS install, launch, orderly application quit, uninstall, and cleanup evidence bound to the exact commit and package hashes.
 - [x] Classify live geocoding/additional demand adapters and full multi-channel/multilingual/vertical workflows as explicit P1/P2 scope instead of misreporting them as unfinished P0 behavior.
 - [x] Re-run whole-project typechecking, production bundling, runtime diagnostics, all automated tests, JSON parsing, and diff-whitespace validation, then synchronize the evidence documents.
 
@@ -47,7 +48,7 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 | Capability | Status | Evidence / boundary |
 |---|---|---|
 | Desktop shell and sandbox | Implemented + tested | Electron/Vite production bundle plus built-app Playwright/Axe journeys, IPC/security tests, responsive workspaces, focus-visible controls, and deterministic operator-shortcut routing |
-| Clean Windows install/runtime | Implemented, external validation pending | CI builds unsigned NSIS/ZIP; clean-machine launch remains unrun |
+| Clean Windows install/runtime | Implemented, external validation pending | Hosted Windows CI expands and launches the ZIP, silently installs and launches the NSIS package with isolated data, requests an orderly application quit, uninstalls, verifies cleanup, and binds the receipt to the commit and package hashes. The runner contains Node and developer tooling, so clean-machine qualification remains unrun |
 | SQLite schema and migration | Implemented + tested | Migrations 001–018, integrity, source/resource parity plus packaging preflight, contiguous-version enforcement, reopen/idempotency tests, composite catalog-search indexes, immutable project-guidance provenance, job-resource leases, deferred lifecycle intent, and perceptual-match keys |
 | Project detail workspace | Implemented + tested | Nine accessible tabs expose overview, research/sources/claims, script/coverage, storyboard, assets/licenses, voice/audio, renders/QC, publishing/analytics, and audit history from complete backend queries |
 | Catalog XLSX/CSV import and search | Implemented + tested | Worker-thread preview/commit/refresh, progress/status/ping, cooperative cancellation with rollback, staged diff, duplicate-row retention, source-scoped missing detection, validation templates, scheduled refresh staging, normalization/geography, filtered search/export, semantics-preserving initial-import assertion batching, and invalidated facet caching. App-root operation recovery preserves phase/progress/cancel controls across view remounts, including the pre-worker Google Sheets fetch. Repeatable 26K receipts cover count/integrity, bounded-page, warm-search, Sheets staging, cancellation, and main-process responsiveness; renderer startup/interaction/memory and concurrent-render behavior remain externally unqualified |
@@ -130,6 +131,12 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 
 - canonical `VideoFactory-Desktop-<version>-<arch>.<ext>` Windows package names that are independent of the human-facing product name and remain byte-for-byte addressable after hosted upload;
 - fail-closed release-manifest validation for filenames outside the upload-safe ASCII letter, digit, period, underscore, and hyphen set, with regression coverage for normalized-name risk.
+
+## Packaged Windows smoke gate
+
+- hosted Windows CI launches the extracted ZIP and installed NSIS application through the packaged executable, waits for the real dashboard, confirms packaged mode and isolated database initialization, and requests an orderly Electron quit;
+- the same bounded run performs silent installation and uninstallation in an isolated path, verifies removal, and writes `WINDOWS_PACKAGE_SMOKE.json` with exact commit, version, runner, package hash, lifecycle, and cleanup evidence;
+- release provenance fails closed when that receipt is missing, failed, stale, incomplete, or does not match the installer and archive bytes. This supports packaging confidence but does not close the clean-machine qualification gate.
 
 ## Measured catalog performance and remaining UI boundary
 

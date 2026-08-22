@@ -6,8 +6,9 @@ VideoFactory treats the lockfile as release input. Production and CI installs us
 
 1. Run `npm run validate` against the release lockfile. Its canonical pipeline includes the low-severity dependency audit, CycloneDX SBOM, tests, build, Electron E2E, and acceptance receipt; any failed stage blocks packaging.
 2. Build the Windows installer and ZIP from the same exact commit and Node version recorded by validation.
-3. Attach the validation status, acceptance receipt, test reports, and `release/videofactory-sbom.cdx.json`, then run `npm run release:manifest -- --require-validation` and `npm run release:verify`.
-4. Re-run the affected provider, import, packaging, and security tests after dependency changes.
+3. On Windows, run `scripts/windows/test-packaged-app.ps1` against the exact installer and ZIP. It must expand/launch the archive, silently install/launch/uninstall NSIS, verify cleanup, and write `release/WINDOWS_PACKAGE_SMOKE.json`.
+4. Attach the validation status, acceptance receipt, test reports, `release/videofactory-sbom.cdx.json`, and package-smoke receipt, then run `npm run release:manifest -- --require-validation --require-package-smoke` and `npm run release:verify`.
+5. Re-run the affected provider, import, packaging, and security tests after dependency changes.
 
 Critical and high findings block packaging. Moderate findings block promotion until assessed. Exceptions must identify the advisory, affected path, exploitability, compensating control, owner, and expiry; silent suppression is not allowed.
 
@@ -17,4 +18,4 @@ SheetJS Community Edition is pinned to the official 0.20.3 tarball because the n
 
 ## Evidence
 
-Linux CI records the exact source and runner/toolchain, runs the audit and CycloneDX 1.5 SBOM stages inside the full validation pipeline, and uploads the complete validation evidence. The Windows job depends on that exact-head result, attaches the evidence to the installer/ZIP bundle, and generates `RELEASE_PROVENANCE.json` plus `SHA256SUMS.txt`. Verification rejects changed, missing, duplicate, or extra artifacts and stale version evidence. These hashes detect integrity drift but are not an authenticity mechanism; Windows installers remain unsigned until the separate signing gate is completed.
+Linux CI records the exact source and runner/toolchain, runs the audit and CycloneDX 1.5 SBOM stages inside the full validation pipeline, and uploads the complete validation evidence. The Windows job depends on that exact-head result, launches the packaged ZIP and installed NSIS application with isolated data, uninstalls it, attaches all evidence to the installer/ZIP bundle, and generates `RELEASE_PROVENANCE.json` plus `SHA256SUMS.txt`. Verification rejects changed, missing, duplicate, or extra artifacts; stale version/commit evidence; and a missing, failed, incomplete, or package-mismatched smoke receipt. The hosted runner includes build tooling, so this is not clean-machine qualification. These hashes detect integrity drift but are not an authenticity mechanism; Windows installers remain unsigned until the separate signing gate is completed.

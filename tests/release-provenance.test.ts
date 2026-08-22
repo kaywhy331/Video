@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -72,6 +72,29 @@ function evidence(path: string) {
   };
 }
 
+function writePackageSmokeEvidence(root: string, status: 'passed' | 'failed' = 'passed'): void {
+  const installerPath = resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.exe');
+  const archivePath = resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip');
+  const packageEvidence = (path: string) => ({ name: basename(path), ...evidence(path) });
+  writeFileSync(resolve(root, 'release', 'WINDOWS_PACKAGE_SMOKE.json'), JSON.stringify({
+    receiptVersion: 1,
+    status,
+    appVersion: '9.8.7-alpha.1',
+    source: { commit: 'a'.repeat(40) },
+    runner: { platform: 'win32' },
+    packages: {
+      installer: packageEvidence(installerPath),
+      archive: packageEvidence(archivePath)
+    },
+    checks: {
+      archiveLaunch: { status },
+      installerInstall: { status },
+      installedLaunch: { status },
+      uninstall: { status }
+    }
+  }));
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -124,6 +147,31 @@ describe('release artifact provenance', () => {
     expect(run(root, ['--require-validation']).status).toBe(0);
     expect(run(root, ['--verify']).status).toBe(0);
     expect(readFileSync(resolve(root, 'release', 'VALIDATION_STATUS.json'), 'utf8')).toContain('9.8.7-alpha.1');
+  });
+
+  it('rejects missing packaged Windows smoke evidence when requested', () => {
+    const root = fixtureRoot();
+    const result = run(root, ['--require-package-smoke']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('requires WINDOWS_PACKAGE_SMOKE.json');
+  });
+
+  it('rejects a failed packaged Windows smoke receipt', () => {
+    const root = fixtureRoot();
+    writePackageSmokeEvidence(root, 'failed');
+    const result = run(root, ['--require-package-smoke']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('package smoke test did not pass');
+  });
+
+  it('records artifact-bound packaged Windows smoke evidence after it passes', () => {
+    const root = fixtureRoot();
+    writePackageSmokeEvidence(root);
+    expect(run(root, ['--require-package-smoke']).status).toBe(0);
+    expect(run(root, ['--verify']).status).toBe(0);
+    const manifest = JSON.parse(readFileSync(resolve(root, 'release', 'RELEASE_PROVENANCE.json'), 'utf8'));
+    expect(manifest.windowsPackageSmoke.status).toBe('passed');
+    expect(manifest.windowsPackageSmoke.checks.uninstall.status).toBe('passed');
   });
 
   it('records branch builds without claiming a release tag', () => {

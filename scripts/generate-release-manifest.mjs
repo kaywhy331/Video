@@ -71,6 +71,43 @@ function assertEvidenceFile(evidence, path, label) {
   }
 }
 
+function assertPackageSmokeEvidence(smoke, packageJson, sourceCommit, artifacts) {
+  if (smoke?.status !== 'passed') {
+    throw new Error('The installed Windows package smoke test did not pass.');
+  }
+  if (smoke.receiptVersion !== 1) {
+    throw new Error('The installed Windows package smoke receipt version is invalid.');
+  }
+  if (smoke.appVersion !== packageJson.version) {
+    throw new Error('The installed Windows package smoke receipt does not match the package version.');
+  }
+  if (smoke.source?.commit !== sourceCommit) {
+    throw new Error('The installed Windows package smoke receipt was produced for a different source commit.');
+  }
+  if (smoke.runner?.platform !== 'win32') {
+    throw new Error('The installed Windows package smoke receipt was not produced on Windows.');
+  }
+
+  const requiredChecks = ['archiveLaunch', 'installerInstall', 'installedLaunch', 'uninstall'];
+  const failedChecks = requiredChecks.filter(name => smoke.checks?.[name]?.status !== 'passed');
+  if (failedChecks.length > 0) {
+    throw new Error(`The installed Windows package smoke receipt is missing passing checks: ${failedChecks.join(', ')}.`);
+  }
+
+  for (const [label, extension] of [['installer', '.exe'], ['archive', '.zip']]) {
+    const evidence = smoke.packages?.[label];
+    const artifact = artifacts.find(item => item.name.toLowerCase().endsWith(extension));
+    if (
+      !artifact
+      || evidence?.name !== artifact.name
+      || evidence?.sizeBytes !== artifact.sizeBytes
+      || evidence?.sha256 !== artifact.sha256
+    ) {
+      throw new Error(`The installed Windows package smoke receipt does not match the ${label} artifact.`);
+    }
+  }
+}
+
 function verifyManifest() {
   if (!existsSync(manifestPath) || !existsSync(checksumsPath)) {
     throw new Error('RELEASE_PROVENANCE.json and SHA256SUMS.txt are required.');
@@ -227,9 +264,7 @@ const manifest = {
   validation,
   artifacts
 };
-if (requirePackageSmoke && manifest.windowsPackageSmoke?.status !== 'passed') {
-  throw new Error('The installed Windows package smoke test did not pass.');
-}
+if (requirePackageSmoke) assertPackageSmokeEvidence(manifest.windowsPackageSmoke, packageJson, sourceCommit, artifacts);
 if (!packageJson.version.includes('-') && manifest.signing?.status !== 'signed') {
   throw new Error('Stable releases require a valid Authenticode signature report.');
 }
