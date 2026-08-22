@@ -2,7 +2,7 @@
 
 Updated 2026-08-21 after adding exact-head validation provenance, release-artifact checksums, migration-parity preflight, pinned CI toolchain evidence, and a hosted packaged-Windows smoke gate.
 
-Alpha.4 preserves the Alpha.3 durability, security, rendering, backup, and publishing work while closing the local release-evidence gaps. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
+Alpha.6 preserves the earlier durability, security, rendering, backup, publishing, and release-evidence work while adding hosted ZIP and NSIS install/launch/uninstall smoke evidence. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
 ## P0 before production qualification
 

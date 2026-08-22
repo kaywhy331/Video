@@ -1,10 +1,10 @@
-# VideoFactory Desktop alpha.5 — Validation Report
+# VideoFactory Desktop alpha.6 — Validation Report
 
-Generated: 2026-08-21 (America/Los_Angeles) during the upload-safe release-artifact validation pass.
+Generated: 2026-08-21 (America/Los_Angeles) during the packaged-Windows lifecycle-smoke validation pass.
 
 ## Outcome
 
-The local buildout now includes migrations 001–018, checkpoint-safe deferred pause, task-aware graceful shutdown, a DB-backed maximum-one final-render lease, WorkflowService-locked manual/private uploads, remount-safe catalog/Sheets operation controls, worker-backed catalog evidence operations, managed interrupted-render cleanup, atomic project licensing/certificates, immutable Guided starting-script provenance, automatic continuation, perceptual global matching, exact seven-way Final Review revisions plus per-scene audit, a complete nine-tab project workspace, the three-pane storyboard exception editor, generic audited exception recovery, Autopilot operations health, manifest-authorized captions, and fail-closed HDR/log normalization in addition to the established P0 production path. Alpha.4 added contiguous package/source migration preflight, pinned Node execution, exact commit/ref and runner/toolchain receipts, audit/SBOM stages inside canonical validation, and an exact Windows artifact inventory with attached evidence and SHA-256 verification. Alpha.5 uses canonical whitespace-free Windows filenames and makes provenance generation fail closed before hosted uploads can normalize an unsafe name. All 151 PRD acceptance IDs remain mapped: 136 require exact passing local assertions and 15 remain explicitly external. Alpha.5 exact-head PR, post-merge, and tag CI receipts are release gates and are not pre-claimed here. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, real forced-interruption, licensed-media, unattended-cadence, Electron renderer performance, and five-video pilot gates are unrun.
+The local buildout now includes migrations 001–018, checkpoint-safe deferred pause, task-aware graceful shutdown, a DB-backed maximum-one final-render lease, WorkflowService-locked manual/private uploads, remount-safe catalog/Sheets operation controls, worker-backed catalog evidence operations, managed interrupted-render cleanup, atomic project licensing/certificates, immutable Guided starting-script provenance, automatic continuation, perceptual global matching, exact seven-way Final Review revisions plus per-scene audit, a complete nine-tab project workspace, the three-pane storyboard exception editor, generic audited exception recovery, Autopilot operations health, manifest-authorized captions, and fail-closed HDR/log normalization in addition to the established P0 production path. Alpha.4 added contiguous package/source migration preflight, pinned Node execution, exact commit/ref and runner/toolchain receipts, audit/SBOM stages inside canonical validation, and an exact Windows artifact inventory with attached evidence and SHA-256 verification. Alpha.5 uses canonical whitespace-free Windows filenames and makes provenance generation fail closed before hosted uploads can normalize an unsafe name. Alpha.6 adds hosted ZIP and NSIS install/launch/uninstall smoke receipts bound to the source commit, version, runner, package hashes, required lifecycle checks, and release provenance. All 151 PRD acceptance IDs remain mapped: 136 require exact passing local assertions and 15 remain explicitly external. Alpha.6 exact-head PR, post-merge, and tag CI receipts are release gates and are not pre-claimed here. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, real forced-interruption, licensed-media, unattended-cadence, Electron renderer performance, and five-video pilot gates are unrun.
 
 ## Local validation
 
@@ -13,16 +13,16 @@ The local buildout now includes migrations 001–018, checkpoint-safe deferred p
 | `npm run doctor` | Passed |
 | TypeScript typecheck | Passed |
 | Focused real-FFmpeg 4K generated-graphic test | Passed; final 3840×2160 encode and blocker-free QC verified |
-| Full Vitest suite | Current inventory is 79 files / 286 tests. Exact pass/fail counts are written from the JSON reporter into `VALIDATION_STATUS.json`; coverage includes the real media fixtures, perceptual matching, corrupt-ingest isolation, secret storage, workflow/render/catalog/security behavior, acceptance traceability, migration preflight, and release provenance. |
+| Full Vitest suite | Current inventory is 79 files / 289 tests. Exact pass/fail counts are written from the JSON reporter into `VALIDATION_STATUS.json`; coverage includes the real media fixtures, perceptual matching, corrupt-ingest isolation, secret storage, workflow/render/catalog/security behavior, acceptance traceability, migration preflight, and release provenance. |
 | Real FFmpeg analysis fixture | Passed |
 | Real concat/two-pass normalization fixture | Passed |
 | Application migration wrapper (001–018) | Passed; every forward migration recorded, source/resource parity enforced, reopen idempotent, integrity `ok` |
 | Source/resource migration parity | Passed |
 | Electron/Vite main, preload, renderer build | Passed |
 | Built Electron Playwright/Axe | Four serial journeys cover all seven primary views, all nine project tabs, deferred pause, audited exception actions, Node isolation/CSP, and the exact Studio/media-protocol fallback. Exact results come from the Playwright JSON report. |
-| PRD acceptance traceability | All 151 IDs are mapped exactly once with app `0.1.0-alpha.5`, schema 18, fixture version, result, artifacts, and exact assertion bindings; 136 local / 15 external pending. Recording fails unless every bound assertion and canonical validation stage passed in fresh, input-hash-matched reports. |
+| PRD acceptance traceability | All 151 IDs are mapped exactly once with app `0.1.0-alpha.6`, schema 18, fixture version, result, artifacts, and exact assertion bindings; 136 local / 15 external pending. Recording fails unless every bound assertion and canonical validation stage passed in fresh, input-hash-matched reports. |
 | Locked dependency audit and SBOM | Passed; `npm audit --audit-level=low` reports 0 vulnerabilities and CycloneDX 1.5 contains 474 components |
-| Release artifact provenance | Focused tests pass canonical upload-safe Windows naming, exact manifest/checksum verification, unsafe/extra/tampered artifact rejection, matching validation evidence, exact tag/version enforcement, and truthful branch-ref recording; hosted Windows evidence remains pending CI publication |
+| Release artifact provenance | Focused tests pass canonical upload-safe Windows naming, exact manifest/checksum verification, unsafe/extra/tampered artifact rejection, matching validation evidence and package-smoke receipts, exact tag/version enforcement, and truthful branch-ref recording; alpha.6 hosted Windows evidence remains pending exact-head CI publication |
 | `git diff --check` | Passed |
 | Production H.264 encoder boundary | Verified in source and render fixtures: production renders use `libx264`; NVENC/QSV/AMF probes are diagnostics-only and do not select the production encoder |
 | Repeatable 26K production-service catalog benchmark | Passed measured scope: 26,000 rows committed, integrity `ok`, overall warm-search p95 156.034 ms against 300 ms, and a bounded 50-row renderer page; see `VALIDATION_CATALOG_PERFORMANCE.json` |
@@ -32,17 +32,18 @@ The local buildout now includes migrations 001–018, checkpoint-safe deferred p
 
 ## GitHub Actions validation
 
-The previous narration milestone passed both exact-head PR run [31654009236](https://github.com/kaywhy331/Video/actions/runs/31654009236) for commit `8e7dd2c` and post-merge `main` run [31654320673](https://github.com/kaywhy331/Video/actions/runs/31654320673) for merge commit `bf65f6c`:
+The packaged-Windows hardening passed both exact-head PR run [32534074796](https://github.com/kaywhy331/Video/actions/runs/32534074796) for commit `23ee05e` and post-merge `main` run [32540940087](https://github.com/kaywhy331/Video/actions/runs/32540940087) for merge commit `e287cb8`:
 
 | Job | Result |
 |---|---|
-| Linux `validate` | Passed in 37 seconds |
-| Windows `package-windows` | Passed in 5 minutes 22 seconds |
-| Unsigned NSIS/ZIP workflow artifact | Uploaded; 512,295,865 bytes; retained through 2026-08-26 |
+| Linux `validate` | Passed in 1 minute 26 seconds on the PR and 1 minute 19 seconds post-merge |
+| Windows `package-windows` | Passed in 6 minutes 16 seconds on the PR and 5 minutes 59 seconds post-merge |
+| Packaged Windows lifecycle smoke | Passed in 39 seconds post-merge for ZIP launch and NSIS install/launch/uninstall |
+| Unsigned NSIS/ZIP workflow artifact | Uploaded post-merge; 513,767,875 bytes; retained through 2026-09-05 |
 
 This proves the Windows packages can be produced by the hosted runner. It does not replace a clean-machine installation and runtime test.
 
-The current PRD-completion branch's exact-head PR and post-merge CI receipts will be added after publication. They are not pre-claimed here.
+The alpha.6 release branch, post-merge, and tag CI receipts will be added after publication. They are not pre-claimed here.
 
 ## Validated changes
 

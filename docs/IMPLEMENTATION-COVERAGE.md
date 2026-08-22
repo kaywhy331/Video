@@ -132,7 +132,7 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 - canonical `VideoFactory-Desktop-<version>-<arch>.<ext>` Windows package names that are independent of the human-facing product name and remain byte-for-byte addressable after hosted upload;
 - fail-closed release-manifest validation for filenames outside the upload-safe ASCII letter, digit, period, underscore, and hyphen set, with regression coverage for normalized-name risk.
 
-## Packaged Windows smoke gate
+## Packaged Windows smoke gate added in alpha.6
 
 - hosted Windows CI launches the extracted ZIP and installed NSIS application through the packaged executable, waits for the real dashboard, confirms packaged mode and isolated database initialization, and requests an orderly Electron quit;
 - the same bounded run performs silent installation and uninstallation in an isolated path, verifies removal, and writes `WINDOWS_PACKAGE_SMOKE.json` with exact commit, version, runner, package hash, lifecycle, and cleanup evidence;
