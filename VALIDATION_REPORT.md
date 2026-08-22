@@ -4,7 +4,7 @@ Generated: 2026-08-21 (America/Los_Angeles) during the packaged-Windows lifecycl
 
 ## Outcome
 
-The local buildout now includes migrations 001–018, checkpoint-safe deferred pause, task-aware graceful shutdown, a DB-backed maximum-one final-render lease, WorkflowService-locked manual/private uploads, remount-safe catalog/Sheets operation controls, worker-backed catalog evidence operations, managed interrupted-render cleanup, atomic project licensing/certificates, immutable Guided starting-script provenance, automatic continuation, perceptual global matching, exact seven-way Final Review revisions plus per-scene audit, a complete nine-tab project workspace, the three-pane storyboard exception editor, generic audited exception recovery, Autopilot operations health, manifest-authorized captions, and fail-closed HDR/log normalization in addition to the established P0 production path. Alpha.4 added contiguous package/source migration preflight, pinned Node execution, exact commit/ref and runner/toolchain receipts, audit/SBOM stages inside canonical validation, and an exact Windows artifact inventory with attached evidence and SHA-256 verification. Alpha.5 uses canonical whitespace-free Windows filenames and makes provenance generation fail closed before hosted uploads can normalize an unsafe name. Alpha.6 adds hosted ZIP and NSIS install/launch/uninstall smoke receipts bound to the source commit, version, runner, package hashes, required lifecycle checks, and release provenance. All 151 PRD acceptance IDs remain mapped: 136 require exact passing local assertions and 15 remain explicitly external. Alpha.6 exact-head PR, post-merge, and tag CI receipts are release gates and are not pre-claimed here. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, real forced-interruption, licensed-media, unattended-cadence, Electron renderer performance, and five-video pilot gates are unrun.
+The local buildout now includes migrations 001–018, checkpoint-safe deferred pause, task-aware graceful shutdown, a DB-backed maximum-one final-render lease, WorkflowService-locked manual/private uploads, remount-safe catalog/Sheets operation controls, worker-backed catalog evidence operations, managed interrupted-render cleanup, atomic project licensing/certificates, immutable Guided starting-script provenance, automatic continuation, perceptual global matching, exact seven-way Final Review revisions plus per-scene audit, a complete nine-tab project workspace, the three-pane storyboard exception editor, generic audited exception recovery, Autopilot operations health, manifest-authorized captions, and fail-closed HDR/log normalization in addition to the established P0 production path. Alpha.4 added contiguous package/source migration preflight, pinned Node execution, exact commit/ref and runner/toolchain receipts, audit/SBOM stages inside canonical validation, and an exact Windows artifact inventory with attached evidence and SHA-256 verification. Alpha.5 uses canonical whitespace-free Windows filenames and makes provenance generation fail closed before hosted uploads can normalize an unsafe name. Alpha.6 adds hosted ZIP and NSIS install/launch/uninstall smoke receipts bound to the source commit, version, runner, package hashes, required lifecycle checks, and release provenance. All 151 PRD acceptance IDs remain mapped: 136 require exact passing local assertions and 15 remain explicitly external. The alpha.6 exact-head PR, post-merge, and tag CI receipts passed, and the verified 11-file prerelease is published. The release remains an alpha and is not production-qualified because Windows clean-machine, live provider, real forced-interruption, licensed-media, unattended-cadence, Electron renderer performance, and five-video pilot gates are unrun.
 
 ## Local validation
 
@@ -22,7 +22,7 @@ The local buildout now includes migrations 001–018, checkpoint-safe deferred p
 | Built Electron Playwright/Axe | Four serial journeys cover all seven primary views, all nine project tabs, deferred pause, audited exception actions, Node isolation/CSP, and the exact Studio/media-protocol fallback. Exact results come from the Playwright JSON report. |
 | PRD acceptance traceability | All 151 IDs are mapped exactly once with app `0.1.0-alpha.6`, schema 18, fixture version, result, artifacts, and exact assertion bindings; 136 local / 15 external pending. Recording fails unless every bound assertion and canonical validation stage passed in fresh, input-hash-matched reports. |
 | Locked dependency audit and SBOM | Passed; `npm audit --audit-level=low` reports 0 vulnerabilities and CycloneDX 1.5 contains 474 components |
-| Release artifact provenance | Focused tests pass canonical upload-safe Windows naming, exact manifest/checksum verification, unsafe/extra/tampered artifact rejection, matching validation evidence and package-smoke receipts, exact tag/version enforcement, and truthful branch-ref recording; alpha.6 hosted Windows evidence remains pending exact-head CI publication |
+| Release artifact provenance | Passed in tag CI: canonical upload-safe Windows naming, exact manifest/checksum verification, unsafe/extra/tampered artifact rejection, matching validation evidence and package-smoke receipts, exact tag/version enforcement, truthful tag recording, and nine verified manifest artifacts |
 | `git diff --check` | Passed |
 | Production H.264 encoder boundary | Verified in source and render fixtures: production renders use `libx264`; NVENC/QSV/AMF probes are diagnostics-only and do not select the production encoder |
 | Repeatable 26K production-service catalog benchmark | Passed measured scope: 26,000 rows committed, integrity `ok`, overall warm-search p95 156.034 ms against 300 ms, and a bounded 50-row renderer page; see `VALIDATION_CATALOG_PERFORMANCE.json` |
@@ -32,18 +32,19 @@ The local buildout now includes migrations 001–018, checkpoint-safe deferred p
 
 ## GitHub Actions validation
 
-The packaged-Windows hardening passed both exact-head PR run [32534074796](https://github.com/kaywhy331/Video/actions/runs/32534074796) for commit `23ee05e` and post-merge `main` run [32540940087](https://github.com/kaywhy331/Video/actions/runs/32540940087) for merge commit `e287cb8`:
+The alpha.6 release chain passed exact-head PR run [32551014746](https://github.com/kaywhy331/Video/actions/runs/32551014746) for release commit `2579d35`, post-merge `main` run [32551439321](https://github.com/kaywhy331/Video/actions/runs/32551439321) for merge commit `037bc0a`, and tag run [32551805380](https://github.com/kaywhy331/Video/actions/runs/32551805380) for `v0.1.0-alpha.6` at the same merge commit:
 
 | Job | Result |
 |---|---|
-| Linux `validate` | Passed in 1 minute 26 seconds on the PR and 1 minute 19 seconds post-merge |
-| Windows `package-windows` | Passed in 6 minutes 16 seconds on the PR and 5 minutes 59 seconds post-merge |
-| Packaged Windows lifecycle smoke | Passed in 39 seconds post-merge for ZIP launch and NSIS install/launch/uninstall |
-| Unsigned NSIS/ZIP workflow artifact | Uploaded post-merge; 513,767,875 bytes; retained through 2026-09-05 |
+| Linux `validate` | Passed in 1 minute 25 seconds on the PR, 1 minute 27 seconds post-merge, and 1 minute 22 seconds on the tag |
+| Windows `package-windows` | Passed in 7 minutes 13 seconds on the PR, 6 minutes 11 seconds post-merge, and 6 minutes 19 seconds on the tag |
+| Packaged Windows lifecycle smoke | Passed in 45 seconds on the tag for ZIP launch and NSIS install/launch/uninstall |
+| Release provenance | Tag/version/source matched; package-smoke evidence passed; nine release artifacts verified |
+| Published prerelease | [v0.1.0-alpha.6](https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.6) contains 11 uploaded assets with GitHub SHA-256 digests matching the locally verified tag artifact |
 
 This proves the Windows packages can be produced by the hosted runner. It does not replace a clean-machine installation and runtime test.
 
-The alpha.6 release branch, post-merge, and tag CI receipts will be added after publication. They are not pre-claimed here.
+The published tag remains unsigned and explicitly records `production_ready: false`; none of the 15 external qualification gates are waived by these CI receipts.
 
 ## Validated changes
 
