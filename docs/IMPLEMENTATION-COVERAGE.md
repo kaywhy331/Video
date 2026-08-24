@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-21 after the local PRD-completion pass through schema migration 018, UI/exception/color-policy closure, built-Electron accessibility validation, and packaged-Windows release-evidence hardening.
+Updated 2026-08-24 for the alpha.7 release-receipt rollup after the local PRD-completion pass through schema migration 018, UI/exception/color-policy closure, built-Electron accessibility validation, and packaged-Windows release-evidence hardening. Alpha.7 changes release metadata and evidence only; capability status is unchanged.
 
 Status meanings:
 

@@ -1,8 +1,8 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-21 after adding exact-head validation provenance, release-artifact checksums, migration-parity preflight, pinned CI toolchain evidence, and a hosted packaged-Windows smoke gate.
+Updated 2026-08-24 for the alpha.7 release-receipt rollup after adding exact-head validation provenance, release-artifact checksums, migration-parity preflight, pinned CI toolchain evidence, and a hosted packaged-Windows smoke gate.
 
-Alpha.6 preserves the earlier durability, security, rendering, backup, publishing, and release-evidence work while adding hosted ZIP and NSIS install/launch/uninstall smoke evidence. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
+Alpha.7 carries forward the alpha.6 durability, security, rendering, backup, publishing, and hosted ZIP/NSIS lifecycle-smoke evidence while rolling the final publication receipts into the versioned documentation. It adds no runtime behavior and changes no qualification status. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
 
 ## P0 before production qualification
 
