@@ -1,0 +1,72 @@
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { afterEach, describe, expect, it } from 'vitest';
+import { validationInputDigests } from '../scripts/validation-input.mjs';
+
+const repositoryRoot = process.cwd();
+const roots: string[] = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+describe('validation input digests and generated evidence lifecycle', () => {
+  it('separates deterministic runtime inputs from non-circular release claims', () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-validation-input-'));
+    roots.push(root);
+    mkdirSync(resolve(root, 'validation', 'results'), { recursive: true });
+    mkdirSync(resolve(root, 'docs', 'release-evidence'), { recursive: true });
+    writeFileSync(resolve(root, 'package.json'), '{"version":"1.0.0"}\n');
+    writeFileSync(resolve(root, 'README.md'), 'claim one\n');
+    writeFileSync(resolve(root, 'docs', 'release-evidence', 'v1.json'), '{"historical":true}\n');
+    writeFileSync(resolve(root, 'validation', 'results', 'pipeline.json'), '{"generated":true}\n');
+
+    const first = validationInputDigests(root);
+    expect(first.runtime.files.map(file => file.path)).toEqual(['package.json']);
+    expect(first.claims.files.map(file => file.path)).toEqual([
+      'README.md',
+      'docs/release-evidence/v1.json'
+    ]);
+
+    writeFileSync(resolve(root, 'README.md'), 'claim two\n');
+    const claimsChanged = validationInputDigests(root);
+    expect(claimsChanged.runtime.sha256).toBe(first.runtime.sha256);
+    expect(claimsChanged.claims.sha256).not.toBe(first.claims.sha256);
+
+    writeFileSync(resolve(root, 'package.json'), '{"version":"1.0.1"}\n');
+    const runtimeChanged = validationInputDigests(root);
+    expect(runtimeChanged.runtime.sha256).not.toBe(claimsChanged.runtime.sha256);
+    expect(runtimeChanged.claims.sha256).toBe(claimsChanged.claims.sha256);
+
+    writeFileSync(resolve(root, 'validation', 'results', 'pipeline.json'), '{"generated":false}\n');
+    expect(validationInputDigests(root)).toEqual(runtimeChanged);
+  });
+
+  it('[REL-003] keeps generated receipts untracked and transfers release evidence by the exact workflow SHA', () => {
+    for (const path of [
+      'VALIDATION_ACCEPTANCE_RECEIPT.json',
+      'VALIDATION_STATUS.json',
+      'validation/results/pipeline.json'
+    ]) {
+      const ignored = spawnSync('git', ['check-ignore', '--quiet', path], { cwd: repositoryRoot });
+      expect(ignored.status).toBe(0);
+    }
+    for (const path of ['VALIDATION_ACCEPTANCE_RECEIPT.json', 'VALIDATION_STATUS.json']) {
+      const tracked = spawnSync('git', ['ls-files', '--error-unmatch', path], {
+        cwd: repositoryRoot,
+        encoding: 'utf8'
+      });
+      expect(tracked.status).not.toBe(0);
+    }
+
+    const workflow = readFileSync(resolve(repositoryRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+    const exactArtifactName = 'VideoFactory-Desktop-${{ github.sha }}-validation-evidence';
+    expect(workflow.split(exactArtifactName)).toHaveLength(3);
+    expect(workflow).toContain('run: npm run validate:release');
+    expect(workflow).toContain("$pipeline.source.commit -ne '${{ github.sha }}'");
+    expect(workflow).toContain('validation/results/runtime-input.json');
+    expect(workflow).toContain('validation/results/claims-input.json');
+  });
+});

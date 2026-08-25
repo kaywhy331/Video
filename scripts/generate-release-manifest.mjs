@@ -3,19 +3,45 @@ import { copyFileSync, existsSync, readFileSync, readdirSync, statSync, writeFil
 import { arch, platform, release as operatingSystemRelease } from 'node:os';
 import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { validationInputDigests } from './validation-input.mjs';
+import {
+  assertCompletedValidationPipeline,
+  assertInputManifest,
+  assertMatchingValidationEvidence,
+  assertValidationEvidenceDocument
+} from './validation-evidence.mjs';
+import { admitValidationSource, assertValidationSource } from './validation-source.mjs';
 
 const root = process.cwd();
 const releaseDirectory = resolve(root, 'release');
 const manifestPath = resolve(releaseDirectory, 'RELEASE_PROVENANCE.json');
 const checksumsPath = resolve(releaseDirectory, 'SHA256SUMS.txt');
+const signaturePath = resolve(releaseDirectory, 'WINDOWS_SIGNATURES.json');
+const smokePath = resolve(releaseDirectory, 'WINDOWS_PACKAGE_SMOKE.json');
+const statusPath = resolve(releaseDirectory, 'VALIDATION_STATUS.json');
+const receiptPath = resolve(releaseDirectory, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
+const pipelinePath = resolve(releaseDirectory, 'VALIDATION_PIPELINE.json');
+const runtimeInputPath = resolve(releaseDirectory, 'RUNTIME_INPUTS.json');
+const claimsInputPath = resolve(releaseDirectory, 'CLAIMS_INPUTS.json');
+const vitestPath = resolve(releaseDirectory, 'VITEST_RESULTS.json');
+const playwrightPath = resolve(releaseDirectory, 'PLAYWRIGHT_RESULTS.json');
+const sbomPath = resolve(releaseDirectory, 'videofactory-sbom.cdx.json');
 const verify = process.argv.includes('--verify');
 const requirePackageSmoke = process.argv.includes('--require-package-smoke');
-const requireValidation = process.argv.includes('--require-validation');
+
+const requiredValidationPaths = [
+  statusPath,
+  receiptPath,
+  pipelinePath,
+  runtimeInputPath,
+  claimsInputPath,
+  vitestPath,
+  playwrightPath,
+  sbomPath
+];
 
 function sha256File(path) {
-  const hash = createHash('sha256');
-  hash.update(readFileSync(path));
-  return hash.digest('hex');
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 function commandOutput(command, args) {
@@ -30,7 +56,11 @@ function relevantFiles() {
     .map(entry => resolve(releaseDirectory, entry.name))
     .filter(path => path !== manifestPath && path !== checksumsPath)
     .filter(path => /\.(?:exe|zip|json)$/i.test(path))
-    .sort((left, right) => basename(left).localeCompare(basename(right)));
+    .sort((left, right) => compareNames(basename(left), basename(right)));
+}
+
+function compareNames(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function assertUploadSafeArtifactName(name) {
@@ -71,21 +101,134 @@ function assertEvidenceFile(evidence, path, label) {
   }
 }
 
-function assertPackageSmokeEvidence(smoke, packageJson, sourceCommit, artifacts) {
+function copyAvailableValidationEvidence() {
+  const copies = [
+    [resolve(root, 'VALIDATION_STATUS.json'), statusPath],
+    [resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json'), receiptPath],
+    [resolve(root, 'validation', 'results', 'pipeline.json'), pipelinePath],
+    [resolve(root, 'validation', 'results', 'runtime-input.json'), runtimeInputPath],
+    [resolve(root, 'validation', 'results', 'claims-input.json'), claimsInputPath],
+    [resolve(root, 'validation', 'results', 'vitest.json'), vitestPath],
+    [resolve(root, 'validation', 'results', 'playwright.json'), playwrightPath],
+    [resolve(root, 'validation', 'results', 'videofactory-sbom.cdx.json'), sbomPath]
+  ];
+  for (const [source, destination] of copies) {
+    if (!existsSync(destination) && existsSync(source)) copyFileSync(source, destination);
+  }
+}
+
+function loadAndValidateEvidence(packageJson, admission) {
+  const missing = requiredValidationPaths
+    .filter(path => !existsSync(path))
+    .map(path => basename(path));
+  if (missing.length > 0) {
+    throw new Error(`Release provenance requires validation evidence: ${missing.join(', ')}.`);
+  }
+
+  const validation = readJson(statusPath);
+  const acceptanceReceipt = readJson(receiptPath);
+  const pipeline = readJson(pipelinePath);
+  const runtimeInputManifest = readJson(runtimeInputPath);
+  const claimsInputManifest = readJson(claimsInputPath);
+  const vitest = readJson(vitestPath);
+  const playwright = readJson(playwrightPath);
+  const sbom = readJson(sbomPath);
+
+  assertValidationEvidenceDocument(validation, 'Attached validation status', { requireRelease: true });
+  assertValidationEvidenceDocument(acceptanceReceipt, 'Attached acceptance receipt', { requireRelease: true });
+  assertValidationEvidenceDocument(pipeline, 'Attached validation pipeline', { requireRelease: true });
+  assertCompletedValidationPipeline(pipeline, 'Attached validation pipeline');
+  assertMatchingValidationEvidence(validation, acceptanceReceipt, 'Validation status', 'acceptance receipt');
+  assertMatchingValidationEvidence(validation, pipeline, 'Validation status', 'validation pipeline');
+
+  if (validation.release !== packageJson.version || validation.pipeline?.status !== 'passed') {
+    throw new Error('Attached validation status is stale or did not pass.');
+  }
+  if (acceptanceReceipt.appVersion !== packageJson.version) {
+    throw new Error('Attached acceptance receipt does not match the package version.');
+  }
+  if (vitest.success !== true) {
+    throw new Error('Attached Vitest result is not globally successful.');
+  }
+  if (sbom.bomFormat !== 'CycloneDX' || sbom.metadata?.component?.version !== packageJson.version) {
+    throw new Error('Attached SBOM is invalid or does not match the package version.');
+  }
+  if (validation.production_ready !== false) {
+    throw new Error('Attached validation status makes an invalid production-ready claim.');
+  }
+
+  const currentInput = validationInputDigests(root);
+  const currentEvidence = {
+    qualification: 'release',
+    source: admission.source,
+    runtimeInputSha256: currentInput.runtime.sha256,
+    runtimeInputFileCount: currentInput.runtime.fileCount,
+    claimsInputSha256: currentInput.claims.sha256,
+    claimsInputFileCount: currentInput.claims.fileCount
+  };
+  assertValidationEvidenceDocument(currentEvidence, 'Current release checkout', { requireRelease: true });
+  assertMatchingValidationEvidence(validation, currentEvidence, 'Validation status', 'current release checkout');
+  assertInputManifest(runtimeInputManifest, 'runtime', validation, 'Attached runtime input manifest');
+  assertInputManifest(claimsInputManifest, 'claims', validation, 'Attached claims input manifest');
+  if (JSON.stringify(runtimeInputManifest.files) !== JSON.stringify(currentInput.runtime.files)) {
+    throw new Error('Attached runtime input manifest does not match the current release checkout.');
+  }
+  if (JSON.stringify(claimsInputManifest.files) !== JSON.stringify(currentInput.claims.files)) {
+    throw new Error('Attached claims input manifest does not match the current release checkout.');
+  }
+
+  for (const document of [validation, acceptanceReceipt, pipeline]) {
+    assertEvidenceFile(document.inputManifests?.runtime, runtimeInputPath, 'runtime input manifest');
+    assertEvidenceFile(document.inputManifests?.claims, claimsInputPath, 'claims input manifest');
+  }
+  for (const document of [validation, acceptanceReceipt]) {
+    assertEvidenceFile(document.evidence?.pipeline, pipelinePath, 'validation pipeline');
+    assertEvidenceFile(document.evidence?.sbom, sbomPath, 'SBOM status evidence');
+    assertEvidenceFile(document.evidence?.runtimeInput, runtimeInputPath, 'runtime input evidence');
+    assertEvidenceFile(document.evidence?.claimsInput, claimsInputPath, 'claims input evidence');
+  }
+  assertEvidenceFile(acceptanceReceipt.testReports?.vitest, vitestPath, 'Vitest report');
+  assertEvidenceFile(acceptanceReceipt.testReports?.playwright, playwrightPath, 'Playwright report');
+
+  return {
+    validation,
+    acceptanceReceipt,
+    pipeline,
+    runtimeInputManifest,
+    claimsInputManifest,
+    vitest,
+    playwright,
+    sbom
+  };
+}
+
+function assertPackageSmokeEvidence(smoke, packageJson, source, artifacts) {
   if (smoke?.status !== 'passed') {
     throw new Error('The installed Windows package smoke test did not pass.');
   }
-  if (smoke.receiptVersion !== 1) {
+  if (smoke.receiptVersion !== 2) {
     throw new Error('The installed Windows package smoke receipt version is invalid.');
   }
   if (smoke.appVersion !== packageJson.version) {
     throw new Error('The installed Windows package smoke receipt does not match the package version.');
   }
-  if (smoke.source?.commit !== sourceCommit) {
-    throw new Error('The installed Windows package smoke receipt was produced for a different source commit.');
+  assertValidationSource(smoke.source, 'release', 'Installed Windows package smoke source');
+  if (
+    smoke.source.commit !== source.commit
+    || smoke.source.tree !== source.tree
+    || smoke.source.ref !== source.ref
+    || smoke.source.repository !== source.repository
+    || smoke.source.workflowCommit !== source.workflowCommit
+    || smoke.source.runId !== source.runId
+    || smoke.source.runAttempt !== source.runAttempt
+  ) {
+    throw new Error('The installed Windows package smoke receipt was produced for a different source identity.');
   }
   if (smoke.runner?.platform !== 'win32') {
     throw new Error('The installed Windows package smoke receipt was not produced on Windows.');
+  }
+  if (smoke.qualification?.validation !== 'release') {
+    throw new Error('The installed Windows package smoke receipt is not release-qualified evidence.');
   }
 
   const requiredChecks = ['archiveLaunch', 'installerInstall', 'installedLaunch', 'uninstall'];
@@ -108,14 +251,46 @@ function assertPackageSmokeEvidence(smoke, packageJson, sourceCommit, artifacts)
   }
 }
 
+function assertManifestInputs(manifest, validation) {
+  const projection = {
+    qualification: manifest.qualification,
+    source: manifest.source,
+    runtimeInputSha256: manifest.inputs?.runtime?.sha256,
+    runtimeInputFileCount: manifest.inputs?.runtime?.fileCount,
+    claimsInputSha256: manifest.inputs?.claims?.sha256,
+    claimsInputFileCount: manifest.inputs?.claims?.fileCount
+  };
+  assertValidationEvidenceDocument(projection, 'Release manifest', { requireRelease: true });
+  assertMatchingValidationEvidence(projection, validation, 'Release manifest', 'validation status');
+  if (
+    manifest.inputs?.runtime?.sourceCommit !== manifest.source.commit
+    || manifest.inputs?.claims?.sourceCommit !== manifest.source.commit
+  ) {
+    throw new Error('Release manifest input digests do not identify their source commit.');
+  }
+}
+
 function verifyManifest() {
   if (!existsSync(manifestPath) || !existsSync(checksumsPath)) {
     throw new Error('RELEASE_PROVENANCE.json and SHA256SUMS.txt are required.');
   }
   const manifest = readJson(manifestPath);
   const packageJson = readJson(resolve(root, 'package.json'));
+  const admission = admitValidationSource({ root, qualification: 'release' });
+  const evidence = loadAndValidateEvidence(packageJson, admission);
+  if (manifest.manifestVersion !== 2) {
+    throw new Error('Release manifest version is invalid.');
+  }
   if (manifest.appVersion !== packageJson.version) {
     throw new Error(`Manifest version ${manifest.appVersion} does not match package version ${packageJson.version}.`);
+  }
+  assertManifestInputs(manifest, evidence.validation);
+  if (JSON.stringify(manifest.validation) !== JSON.stringify(evidence.validation)) {
+    throw new Error('Release manifest validation projection does not match the attached validation status.');
+  }
+  const expectedTag = `v${packageJson.version}`;
+  if (manifest.tag !== null && manifest.tag !== expectedTag) {
+    throw new Error(`Release manifest tag does not match package version ${expectedTag}.`);
   }
   if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length === 0) {
     throw new Error('Release manifest contains no artifacts.');
@@ -126,7 +301,7 @@ function verifyManifest() {
     throw new Error('Release manifest contains duplicate artifact names.');
   }
   const currentNames = relevantFiles().map(path => basename(path));
-  if ([...listedNames].sort((left, right) => left.localeCompare(right)).join('\n') !== currentNames.join('\n')) {
+  if ([...listedNames].sort(compareNames).join('\n') !== currentNames.join('\n')) {
     throw new Error('Release directory inventory does not exactly match the release manifest.');
   }
   for (const artifact of manifest.artifacts) {
@@ -136,7 +311,17 @@ function verifyManifest() {
       throw new Error(`Manifest artifact failed integrity verification: ${artifact.name}`);
     }
   }
-  const expected = [...(manifest.artifacts ?? []), record(manifestPath)]
+  if (manifest.windowsPackageSmoke) {
+    assertPackageSmokeEvidence(manifest.windowsPackageSmoke, packageJson, manifest.source, manifest.artifacts);
+  }
+  const attachedSmoke = existsSync(smokePath) ? readJson(smokePath) : null;
+  if (JSON.stringify(manifest.windowsPackageSmoke) !== JSON.stringify(attachedSmoke)) {
+    throw new Error('Release manifest package-smoke projection does not match the attached receipt.');
+  }
+  if (!packageJson.version.includes('-') && manifest.signing?.status !== 'signed') {
+    throw new Error('Stable releases require a valid Authenticode signature report.');
+  }
+  const expected = [...manifest.artifacts, record(manifestPath)]
     .map(artifact => `${artifact.sha256}  ${artifact.name}`)
     .join('\n') + '\n';
   if (readFileSync(checksumsPath, 'utf8') !== expected) {
@@ -166,68 +351,13 @@ if (tag && tag !== expectedTag) {
   throw new Error(`Release tag ${tag} does not match package version v${packageJson.version}.`);
 }
 
-const signaturePath = resolve(releaseDirectory, 'WINDOWS_SIGNATURES.json');
-const smokePath = resolve(releaseDirectory, 'WINDOWS_PACKAGE_SMOKE.json');
-const statusPath = resolve(releaseDirectory, 'VALIDATION_STATUS.json');
-const receiptPath = resolve(releaseDirectory, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
-const sbomPath = resolve(releaseDirectory, 'videofactory-sbom.cdx.json');
-const sourceCommit = process.env.GITHUB_SHA ?? commandOutput('git', ['rev-parse', 'HEAD']);
-if (!/^[a-f0-9]{40}$/i.test(sourceCommit)) {
-  throw new Error('Release provenance requires an exact 40-character source commit.');
-}
-const requiredEvidence = [statusPath, receiptPath, sbomPath];
-if (requireValidation) {
-  const evidenceCopies = [
-    [resolve(root, 'VALIDATION_STATUS.json'), statusPath],
-    [resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json'), receiptPath],
-    [resolve(root, 'validation', 'results', 'pipeline.json'), resolve(releaseDirectory, 'VALIDATION_PIPELINE.json')],
-    [resolve(root, 'validation', 'results', 'vitest.json'), resolve(releaseDirectory, 'VITEST_RESULTS.json')],
-    [resolve(root, 'validation', 'results', 'playwright.json'), resolve(releaseDirectory, 'PLAYWRIGHT_RESULTS.json')],
-    [resolve(root, 'validation', 'results', 'videofactory-sbom.cdx.json'), sbomPath]
-  ];
-  for (const [source, destination] of evidenceCopies) {
-    if (!existsSync(destination) && existsSync(source)) copyFileSync(source, destination);
-  }
-  const missing = requiredEvidence.filter(path => !existsSync(path)).map(path => basename(path));
-  if (missing.length > 0) {
-    throw new Error(`Release provenance requires validation evidence: ${missing.join(', ')}.`);
-  }
-}
-const validation = existsSync(statusPath) ? readJson(statusPath) : null;
-const acceptanceReceipt = existsSync(receiptPath) ? readJson(receiptPath) : null;
-const sbom = existsSync(sbomPath) ? readJson(sbomPath) : null;
-if (validation && (validation.release !== packageJson.version || validation.pipeline?.status !== 'passed')) {
-  throw new Error('Attached validation status is stale or did not pass.');
-}
-if (acceptanceReceipt && acceptanceReceipt.appVersion !== packageJson.version) {
-  throw new Error('Attached acceptance receipt does not match the package version.');
-}
-if (sbom && (sbom.bomFormat !== 'CycloneDX' || sbom.metadata?.component?.version !== packageJson.version)) {
-  throw new Error('Attached SBOM is invalid or does not match the package version.');
-}
-if (validation && validation.source?.commit !== sourceCommit) {
-  throw new Error('Attached validation status was produced for a different source commit.');
-}
-if (acceptanceReceipt && acceptanceReceipt.source?.commit !== sourceCommit) {
-  throw new Error('Attached acceptance receipt was produced for a different source commit.');
-}
-if (validation && acceptanceReceipt && validation.validationInputSha256 !== acceptanceReceipt.validationInputSha256) {
-  throw new Error('Attached validation status and acceptance receipt describe different validation inputs.');
-}
-if (requireValidation) {
-  const pipelineEvidencePath = resolve(releaseDirectory, 'VALIDATION_PIPELINE.json');
-  const vitestEvidencePath = resolve(releaseDirectory, 'VITEST_RESULTS.json');
-  const playwrightEvidencePath = resolve(releaseDirectory, 'PLAYWRIGHT_RESULTS.json');
-  assertEvidenceFile(validation.evidence?.pipeline, pipelineEvidencePath, 'validation pipeline');
-  assertEvidenceFile(validation.evidence?.sbom, sbomPath, 'SBOM status evidence');
-  assertEvidenceFile(acceptanceReceipt.evidence?.pipeline, pipelineEvidencePath, 'acceptance pipeline evidence');
-  assertEvidenceFile(acceptanceReceipt.evidence?.sbom, sbomPath, 'acceptance SBOM evidence');
-  assertEvidenceFile(acceptanceReceipt.testReports?.vitest, vitestEvidencePath, 'Vitest report');
-  assertEvidenceFile(acceptanceReceipt.testReports?.playwright, playwrightEvidencePath, 'Playwright report');
-}
+copyAvailableValidationEvidence();
+const admission = admitValidationSource({ root, qualification: 'release' });
+const evidence = loadAndValidateEvidence(packageJson, admission);
 if (requirePackageSmoke && !existsSync(smokePath)) {
   throw new Error('Release provenance requires WINDOWS_PACKAGE_SMOKE.json.');
 }
+
 const artifacts = relevantFiles().map(record);
 if (!artifacts.some(artifact => artifact.name.endsWith('.exe')) || !artifacts.some(artifact => artifact.name.endsWith('.zip'))) {
   throw new Error('Release provenance requires both a Windows installer and ZIP archive.');
@@ -237,20 +367,28 @@ for (const artifact of artifacts.filter(item => /\.(?:exe|zip)$/i.test(item.name
     throw new Error(`Release package filename does not match version ${packageJson.version}: ${artifact.name}`);
   }
 }
+
+const smoke = existsSync(smokePath) ? readJson(smokePath) : null;
+if (smoke) assertPackageSmokeEvidence(smoke, packageJson, admission.source, artifacts);
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const manifest = {
-  manifestVersion: 1,
+  manifestVersion: 2,
   generatedAt: new Date().toISOString(),
   appVersion: packageJson.version,
   tag,
-  source: {
-    commit: sourceCommit,
-    ref: process.env.GITHUB_REF ?? githubRefName ?? null,
-    repository: process.env.GITHUB_REPOSITORY ?? null,
-    workflow: process.env.GITHUB_WORKFLOW_REF ?? null,
-    runId: process.env.GITHUB_RUN_ID ?? null,
-    runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-    dirty: commandOutput('git', ['status', '--porcelain']).length > 0
+  qualification: 'release',
+  source: admission.source,
+  inputs: {
+    runtime: {
+      sha256: evidence.validation.runtimeInputSha256,
+      fileCount: evidence.validation.runtimeInputFileCount,
+      sourceCommit: evidence.validation.source.commit
+    },
+    claims: {
+      sha256: evidence.validation.claimsInputSha256,
+      fileCount: evidence.validation.claimsInputFileCount,
+      sourceCommit: evidence.validation.source.commit
+    }
   },
   environment: {
     platform: platform(),
@@ -260,11 +398,10 @@ const manifest = {
     npm: commandOutput(npmCommand, ['--version'])
   },
   signing: existsSync(signaturePath) ? readJson(signaturePath) : { status: 'not_checked' },
-  windowsPackageSmoke: existsSync(smokePath) ? readJson(smokePath) : null,
-  validation,
+  windowsPackageSmoke: smoke,
+  validation: evidence.validation,
   artifacts
 };
-if (requirePackageSmoke) assertPackageSmokeEvidence(manifest.windowsPackageSmoke, packageJson, sourceCommit, artifacts);
 if (!packageJson.version.includes('-') && manifest.signing?.status !== 'signed') {
   throw new Error('Stable releases require a valid Authenticode signature report.');
 }

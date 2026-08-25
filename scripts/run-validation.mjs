@@ -1,24 +1,30 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { arch, platform, release as operatingSystemRelease } from 'node:os';
-import { resolve } from 'node:path';
-import { validationInputDigest } from './validation-input.mjs';
+import { relative, resolve } from 'node:path';
+import { validationInputDigests } from './validation-input.mjs';
+import {
+  admitValidationSource,
+  assertValidationSourceStable,
+  parseValidationQualification
+} from './validation-source.mjs';
 
 const root = process.cwd();
+const qualification = parseValidationQualification();
+
+// Admission and input capture deliberately happen before generated evidence is touched.
+const admission = admitValidationSource({ root, qualification });
+const input = validationInputDigests(root);
+
 const resultsDirectory = resolve(root, 'validation', 'results');
 const pipelinePath = resolve(resultsDirectory, 'pipeline.json');
+const runtimeInputPath = resolve(resultsDirectory, 'runtime-input.json');
+const claimsInputPath = resolve(resultsDirectory, 'claims-input.json');
 const receiptPath = resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
 const statusPath = resolve(root, 'VALIDATION_STATUS.json');
 const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const source = {
-  commit: process.env.GITHUB_SHA ?? commandOutput('git', ['rev-parse', 'HEAD']),
-  ref: process.env.GITHUB_REF ?? commandOutput('git', ['branch', '--show-current']),
-  repository: process.env.GITHUB_REPOSITORY ?? null,
-  runId: process.env.GITHUB_RUN_ID ?? null,
-  runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-  dirty: commandOutput('git', ['status', '--porcelain']).length > 0
-};
 const environment = {
   platform: platform(),
   release: operatingSystemRelease(),
@@ -26,14 +32,24 @@ const environment = {
   node: process.version,
   npm: commandOutput(npmCommand, ['--version'])
 };
+
 mkdirSync(resultsDirectory, { recursive: true });
-for (const name of ['pipeline.json', 'vitest.json', 'playwright.json', 'videofactory-sbom.cdx.json']) {
+for (const name of [
+  'pipeline.json',
+  'runtime-input.json',
+  'claims-input.json',
+  'vitest.json',
+  'playwright.json',
+  'videofactory-sbom.cdx.json'
+]) {
   rmSync(resolve(resultsDirectory, name), { force: true });
 }
 rmSync(receiptPath, { force: true });
+rmSync(statusPath, { force: true });
 rmSync(resolve(root, 'release', 'videofactory-sbom.cdx.json'), { force: true });
 
 const stages = [
+  { name: 'release_evidence', command: npmCommand, args: ['run', 'validate:release-evidence'] },
   { name: 'typecheck', command: npmCommand, args: ['run', 'typecheck'] },
   { name: 'vitest', command: npmCommand, args: ['run', 'test'] },
   { name: 'build', command: npmCommand, args: ['run', 'build'] },
@@ -41,9 +57,10 @@ const stages = [
   { name: 'security_audit', command: npmCommand, args: ['run', 'security:audit'] },
   { name: 'sbom', command: npmCommand, args: ['run', 'security:sbom'] }
 ];
-const input = validationInputDigest(root);
 const startedAt = new Date().toISOString();
 const results = [];
+writeInputManifest(runtimeInputPath, 'runtime', input.runtime);
+writeInputManifest(claimsInputPath, 'claims', input.claims);
 writeStatus('running');
 
 for (const stage of stages) {
@@ -59,30 +76,21 @@ for (const stage of stages) {
     ...(result.error ? { error: result.error.message } : {})
   });
   if (result.status !== 0 || result.error) {
-    writePipeline({ startedAt, input, results, completed: false });
+    writePipeline(false);
     writeStatus('failed', result.error?.message ?? `Stage ${stage.name} exited with ${result.status ?? 'no status'}.`);
     if (result.error) console.error(result.error.message);
     process.exit(result.status ?? 1);
   }
 }
 
-const completedInput = validationInputDigest(root);
-if (completedInput.sha256 !== input.sha256) {
-  results.push({
-    name: 'input_stability',
-    command: 'validation input digest comparison',
-    startedAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
-    status: 'failed',
-    exitCode: 1,
-    error: 'Validation inputs changed while the validation pipeline was running.'
-  });
-  writePipeline({ startedAt, input, results, completed: false });
-  writeStatus('failed', 'Validation inputs changed while the validation pipeline was running.');
+try {
+  assertCompletionStable();
+} catch (error) {
+  recordStabilityFailure(error);
   process.exit(1);
 }
 
-writePipeline({ startedAt, input, results, completed: true });
+writePipeline(true);
 const receipt = spawnSync(process.execPath, [
   'scripts/validate-acceptance.mjs',
   '--record-validated'
@@ -93,31 +101,54 @@ if (receipt.status !== 0 || receipt.error) {
     'failed',
     receipt.error?.message ?? `Acceptance receipt validation exited with ${receipt.status ?? 'no status'}.`
   );
+  process.exit(receipt.status ?? 1);
 }
-process.exit(receipt.status ?? 1);
+try {
+  assertCompletionStable();
+} catch (error) {
+  rmSync(receiptPath, { force: true });
+  recordStabilityFailure(error);
+  process.exit(1);
+}
+process.exit(0);
 
-function writePipeline(value) {
+function writePipeline(completed) {
   const payload = {
     generatedAt: new Date().toISOString(),
-    inputSha256: value.input.sha256,
-    inputFileCount: value.input.fileCount,
-    startedAt: value.startedAt,
-    completed: value.completed,
-    source,
+    admittedAt: admission.admittedAt,
+    qualification,
+    runtimeInputSha256: input.runtime.sha256,
+    runtimeInputFileCount: input.runtime.fileCount,
+    claimsInputSha256: input.claims.sha256,
+    claimsInputFileCount: input.claims.fileCount,
+    inputManifests: {
+      runtime: fileEvidence(runtimeInputPath),
+      claims: fileEvidence(claimsInputPath)
+    },
+    startedAt,
+    completed,
+    source: admission.source,
     environment,
-    stages: value.results
+    stages: results
   };
-  const temporary = `${pipelinePath}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
-  renameSync(temporary, pipelinePath);
+  writeJsonAtomic(pipelinePath, payload);
 }
 
 function writeStatus(status, error) {
   const payload = {
     generatedAt: new Date().toISOString(),
+    admittedAt: admission.admittedAt,
     release: packageJson.version,
-    validationInputSha256: input.sha256,
-    source,
+    qualification,
+    runtimeInputSha256: input.runtime.sha256,
+    runtimeInputFileCount: input.runtime.fileCount,
+    claimsInputSha256: input.claims.sha256,
+    claimsInputFileCount: input.claims.fileCount,
+    inputManifests: {
+      runtime: fileEvidence(runtimeInputPath),
+      claims: fileEvidence(claimsInputPath)
+    },
+    source: admission.source,
     environment,
     pipeline: {
       status,
@@ -136,9 +167,63 @@ function writeStatus(status, error) {
     },
     production_ready: false
   };
-  const temporary = `${statusPath}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
-  renameSync(temporary, statusPath);
+  writeJsonAtomic(statusPath, payload);
+}
+
+function writeInputManifest(path, kind, digest) {
+  writeJsonAtomic(path, {
+    manifestVersion: 1,
+    generatedAt: startedAt,
+    kind,
+    qualification,
+    source: admission.source,
+    sha256: digest.sha256,
+    fileCount: digest.fileCount,
+    files: digest.files
+  });
+}
+
+function assertDigestStable(label, admitted, completed) {
+  if (completed.sha256 !== admitted.sha256 || completed.fileCount !== admitted.fileCount) {
+    throw new Error(`Validation ${label} inputs changed while the pipeline was running.`);
+  }
+}
+
+function assertCompletionStable() {
+  const completedInput = validationInputDigests(root);
+  assertDigestStable('runtime', input.runtime, completedInput.runtime);
+  assertDigestStable('claims', input.claims, completedInput.claims);
+  assertValidationSourceStable(admission, { root });
+}
+
+function recordStabilityFailure(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  results.push({
+    name: 'source_and_input_stability',
+    command: 'validation source and input comparison',
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    status: 'failed',
+    exitCode: 1,
+    error: message
+  });
+  writePipeline(false);
+  writeStatus('failed', message);
+  console.error(message);
+}
+
+function fileEvidence(path) {
+  return {
+    path: relative(root, path).replaceAll('\\', '/'),
+    sha256: createHash('sha256').update(readFileSync(path)).digest('hex'),
+    sizeBytes: statSync(path).size
+  };
+}
+
+function writeJsonAtomic(path, value) {
+  const temporary = `${path}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(temporary, path);
 }
 
 function commandOutput(command, args) {

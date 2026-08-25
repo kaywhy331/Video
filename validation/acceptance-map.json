@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-20-v1",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v1",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -213,6 +213,20 @@
         "tests/exception-service.test.ts",
         "tests/operator-shortcuts.test.ts",
         "tests/project-detail.test.ts"
+      ]
+    },
+    {
+      "ids": ["REL-001", "REL-002", "REL-003"],
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "docs/release-evidence/v0.1.0-alpha.7.json",
+        "scripts/generate-release-manifest.mjs",
+        "scripts/run-validation.mjs",
+        "scripts/validation-source.mjs",
+        "tests/release-evidence.test.ts",
+        "tests/release-provenance.test.ts",
+        "tests/validation-input.test.ts",
+        "tests/validation-source.test.ts"
       ]
     }
   ],

@@ -724,6 +724,42 @@
       "runner": "playwright",
       "file": "tests/e2e/electron-accessibility.spec.ts",
       "title": "[UX-002][PERF-004] exposes deferred pause state and accessible evidence on every project tab"
+    },
+    {
+      "ids": ["REL-001"],
+      "runner": "vitest",
+      "file": "tests/validation-source.test.ts",
+      "title": "[REL-001] rejects dirty release validation before touching generated receipts"
+    },
+    {
+      "ids": ["REL-001"],
+      "runner": "vitest",
+      "file": "tests/validation-source.test.ts",
+      "title": "[REL-001] admits a clean exact HEAD and tree, including detached HEAD"
+    },
+    {
+      "ids": ["REL-002"],
+      "runner": "vitest",
+      "file": "tests/validation-source.test.ts",
+      "title": "[REL-002] rejects changed HEAD, dirty completion, and workflow SHA mismatch"
+    },
+    {
+      "ids": ["REL-002"],
+      "runner": "vitest",
+      "file": "tests/release-provenance.test.ts",
+      "title": "[REL-002] rejects stale commit, tree, dirty, development, and mismatched-digest evidence"
+    },
+    {
+      "ids": ["REL-003"],
+      "runner": "vitest",
+      "file": "tests/validation-input.test.ts",
+      "title": "[REL-003] keeps generated receipts untracked and transfers release evidence by the exact workflow SHA"
+    },
+    {
+      "ids": ["REL-003"],
+      "runner": "vitest",
+      "file": "tests/release-evidence.test.ts",
+      "title": "[REL-003] validates alpha.7 as historical evidence without claiming the current checkout"
     }
   ]
 }

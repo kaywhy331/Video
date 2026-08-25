@@ -32,7 +32,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Validate application
-        run: npm run validate
+        run: npm run validate:release
 
       - name: Upload validation evidence
         uses: actions/upload-artifact@v7
@@ -44,6 +44,8 @@ jobs:
             validation/results/vitest.json
             validation/results/playwright.json
             validation/results/pipeline.json
+            validation/results/runtime-input.json
+            validation/results/claims-input.json
             release/videofactory-sbom.cdx.json
           if-no-files-found: error
           retention-days: 30
@@ -117,9 +119,21 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $evidenceRoot = '${{ runner.temp }}/videofactory-validation-evidence'
+          $pipeline = Get-Content "$evidenceRoot/validation/results/pipeline.json" -Raw | ConvertFrom-Json
+          if ($pipeline.qualification -ne 'release') {
+            throw 'Downloaded validation evidence is not release-qualified.'
+          }
+          if ($pipeline.source.commit -ne '${{ github.sha }}' -or $pipeline.source.workflowCommit -ne '${{ github.sha }}') {
+            throw 'Downloaded validation evidence does not match the exact workflow SHA.'
+          }
+          if ($pipeline.source.dirty -ne $false -or $pipeline.source.tree -notmatch '^[a-fA-F0-9]{40}$') {
+            throw 'Downloaded validation evidence is dirty or has no exact source tree.'
+          }
           Copy-Item "$evidenceRoot/VALIDATION_ACCEPTANCE_RECEIPT.json" release/VALIDATION_ACCEPTANCE_RECEIPT.json
           Copy-Item "$evidenceRoot/VALIDATION_STATUS.json" release/VALIDATION_STATUS.json
           Copy-Item "$evidenceRoot/validation/results/pipeline.json" release/VALIDATION_PIPELINE.json
+          Copy-Item "$evidenceRoot/validation/results/runtime-input.json" release/RUNTIME_INPUTS.json
+          Copy-Item "$evidenceRoot/validation/results/claims-input.json" release/CLAIMS_INPUTS.json
           Copy-Item "$evidenceRoot/validation/results/vitest.json" release/VITEST_RESULTS.json
           Copy-Item "$evidenceRoot/validation/results/playwright.json" release/PLAYWRIGHT_RESULTS.json
           Copy-Item "$evidenceRoot/release/videofactory-sbom.cdx.json" release/videofactory-sbom.cdx.json

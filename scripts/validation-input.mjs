@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 
-const INPUTS = [
+export const RUNTIME_INPUTS = Object.freeze([
   '.github',
+  '.gitignore',
   '.nvmrc',
   'VALIDATION_CATALOG_PERFORMANCE.json',
   'VALIDATION_CATALOG_RESPONSIVENESS.json',
-  'docs/prd/06-ACCEPTANCE-TESTS.md',
+  'docs/prd',
   'electron.vite.config.mjs',
   'package-lock.json',
   'package.json',
@@ -19,7 +20,17 @@ const INPUTS = [
   'tsconfig.json',
   'validation',
   'vitest.config.ts'
-];
+]);
+
+export const CLAIMS_INPUTS = Object.freeze([
+  'ALPHA-OPERATING-GUIDE.md',
+  'README.md',
+  'VALIDATION_REPORT.md',
+  'docs/DEPENDENCY-SECURITY.md',
+  'docs/IMPLEMENTATION-COVERAGE.md',
+  'docs/PRODUCTION-HARDENING.md',
+  'docs/release-evidence'
+]);
 
 function filesUnder(root, path, output) {
   const relativePath = relative(root, path).replaceAll('\\', '/');
@@ -34,22 +45,54 @@ function filesUnder(root, path, output) {
 }
 
 export function validationInputDigest(root = process.cwd()) {
+  return runtimeInputDigest(root);
+}
+
+export function runtimeInputDigest(root = process.cwd()) {
+  return inputDigest(root, RUNTIME_INPUTS);
+}
+
+export function claimsInputDigest(root = process.cwd()) {
+  return inputDigest(root, CLAIMS_INPUTS);
+}
+
+export function validationInputDigests(root = process.cwd()) {
+  return {
+    runtime: runtimeInputDigest(root),
+    claims: claimsInputDigest(root)
+  };
+}
+
+function inputDigest(root, inputs) {
   const files = [];
-  for (const input of INPUTS) {
+  for (const input of inputs) {
     const path = resolve(root, input);
     if (!existsSync(path)) continue;
     if (readdirSafe(path)) filesUnder(root, path, files);
     else files.push(path);
   }
-  files.sort((left, right) => left.localeCompare(right));
+  files.sort((left, right) => comparePaths(normalizedPath(root, left), normalizedPath(root, right)));
   const hash = createHash('sha256');
+  const manifest = [];
   for (const path of files) {
-    hash.update(relative(root, path).replaceAll('\\', '/'));
+    const name = normalizedPath(root, path);
+    const bytes = readFileSync(path);
+    const fileSha256 = createHash('sha256').update(bytes).digest('hex');
+    hash.update(name);
     hash.update('\0');
-    hash.update(readFileSync(path));
+    hash.update(bytes);
     hash.update('\0');
+    manifest.push({ path: name, sizeBytes: bytes.length, sha256: fileSha256 });
   }
-  return { sha256: hash.digest('hex'), fileCount: files.length };
+  return { sha256: hash.digest('hex'), fileCount: files.length, files: manifest };
+}
+
+function normalizedPath(root, path) {
+  return relative(root, path).replaceAll('\\', '/');
+}
+
+function comparePaths(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function readdirSafe(path) {
