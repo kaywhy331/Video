@@ -30,7 +30,7 @@ describe('persisted system diagnostics', () => {
       backupFolder: root,
       ffmpegPath,
       ffprobePath: ffprobeStatic.path,
-      minFreeDiskGb: 1
+      minFreeDiskGb: 0
     } as AppSettings;
     const service = new DiagnosticsService(db, () => settings, 'test-version');
     const report = await service.run();
@@ -59,7 +59,7 @@ describe('persisted system diagnostics', () => {
       backupFolder: root,
       ffmpegPath,
       ffprobePath: ffprobeStatic.path,
-      minFreeDiskGb: 1
+      minFreeDiskGb: 0
     } as AppSettings;
     const service = new DiagnosticsService(db, () => settings, 'test-version');
     const report = await service.run();

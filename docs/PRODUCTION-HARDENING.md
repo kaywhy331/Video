@@ -1,8 +1,8 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-24 for the alpha.7 release-receipt rollup after adding exact-head validation provenance, release-artifact checksums, migration-parity preflight, pinned CI toolchain evidence, and a hosted packaged-Windows smoke gate.
+Updated 2026-08-25 for clean exact-HEAD/tree release admission, separate runtime/claims digests, untracked generated receipts, and the alpha.7 historical evidence index.
 
-Alpha.7 carries forward the alpha.6 durability, security, rendering, backup, publishing, and hosted ZIP/NSIS lifecycle-smoke evidence while rolling the final publication receipts into the versioned documentation. It adds no runtime behavior and changes no qualification status. This document now tracks only work that remains; completed claims are in `IMPLEMENTATION-COVERAGE.md` and `VALIDATION_REPORT.md`.
+Alpha.7 carries forward the alpha.6 durability, security, rendering, backup, publishing, and hosted ZIP/NSIS lifecycle-smoke evidence while rolling the final publication receipts into the versioned documentation. It adds no runtime behavior and changes no qualification status. Its immutable publication facts are in the [historical evidence index](release-evidence/v0.1.0-alpha.7.json); that later documentation receipt does not validate the current checkout or move the alpha.7 tag. Current release evidence must come from a clean `npm run validate:release` run or the matching exact-workflow-SHA CI artifact.
 
 ## P0 before production qualification
 
@@ -21,7 +21,7 @@ Alpha.7 carries forward the alpha.6 durability, security, rendering, backup, pub
 - Add crash reporting only with an explicit privacy/redaction policy.
 - Validate Windows fixtures covering ProRes, H.264, H.265, alpha, variable frame rate, interlaced sources, rotation, and unusual color spaces.
 - Benchmark dashboard startup and project operations against the PRD data-size targets; production catalog search and worker/main-loop import now have checked-in 26K receipts.
-- Preserve the implemented acceptance receipt, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, commit- and artifact-bound packaged-Windows smoke receipt, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`.
+- Preserve the generated acceptance receipt, runtime/claims input manifests, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, commit/tree- and artifact-bound packaged-Windows smoke receipt, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`. Do not commit generated root receipts as current source evidence.
 
 ## P1 after qualification
 

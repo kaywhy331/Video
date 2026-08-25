@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
-import { validationInputDigest } from './validation-input.mjs';
+import { validationInputDigests } from './validation-input.mjs';
+import {
+  assertCompletedValidationPipeline,
+  assertInputManifest,
+  assertMatchingValidationEvidence,
+  assertValidationEvidenceDocument
+} from './validation-evidence.mjs';
+import { captureValidationSource } from './validation-source.mjs';
 
 const root = process.cwd();
 const acceptancePath = resolve(root, 'docs/prd/06-ACCEPTANCE-TESTS.md');
@@ -11,6 +18,8 @@ const resultsRoot = resolve(root, 'validation/results');
 const vitestPath = resolve(resultsRoot, 'vitest.json');
 const playwrightPath = resolve(resultsRoot, 'playwright.json');
 const pipelinePath = resolve(resultsRoot, 'pipeline.json');
+const runtimeInputPath = resolve(resultsRoot, 'runtime-input.json');
+const claimsInputPath = resolve(resultsRoot, 'claims-input.json');
 const receiptPath = resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
 const statusPath = resolve(root, 'VALIDATION_STATUS.json');
 const sbomPath = resolve(root, 'release', 'videofactory-sbom.cdx.json');
@@ -186,7 +195,7 @@ if (!recordValidated) {
 }
 
 const reportErrors = [];
-for (const path of [vitestPath, playwrightPath, pipelinePath, sbomPath]) {
+for (const path of [vitestPath, playwrightPath, pipelinePath, runtimeInputPath, claimsInputPath, sbomPath]) {
   if (!existsSync(path)) reportErrors.push(`required validation result is missing: ${normalizedFile(path)}`);
 }
 if (reportErrors.length > 0) fail(reportErrors);
@@ -194,33 +203,58 @@ if (reportErrors.length > 0) fail(reportErrors);
 let vitestReport;
 let playwrightReport;
 let pipeline;
+let runtimeInputManifest;
+let claimsInputManifest;
 try {
   vitestReport = readJson(vitestPath);
   playwrightReport = readJson(playwrightPath);
   pipeline = readJson(pipelinePath);
+  runtimeInputManifest = readJson(runtimeInputPath);
+  claimsInputManifest = readJson(claimsInputPath);
 } catch (error) {
   fail([`validation result JSON could not be parsed: ${error instanceof Error ? error.message : String(error)}`]);
 }
 
-const currentInput = validationInputDigest(root);
-if (pipeline.completed !== true) reportErrors.push('validation pipeline is not marked complete.');
-if (pipeline.inputSha256 !== currentInput.sha256) {
-  reportErrors.push('validation reports were produced for different source/test inputs.');
-}
-const requiredStages = ['typecheck', 'vitest', 'build', 'electron_e2e', 'security_audit', 'sbom'];
-for (const name of requiredStages) {
-  const stages = (pipeline.stages ?? []).filter(stage => stage.name === name);
-  if (stages.length !== 1 || stages[0]?.status !== 'passed' || stages[0]?.exitCode !== 0) {
-    reportErrors.push(`pipeline stage is not uniquely recorded as passed: ${name}`);
+const currentInput = validationInputDigests(root);
+try {
+  assertValidationEvidenceDocument(pipeline, 'Validation pipeline');
+  assertCompletedValidationPipeline(pipeline);
+  assertInputManifest(runtimeInputManifest, 'runtime', pipeline, 'Runtime input manifest');
+  assertInputManifest(claimsInputManifest, 'claims', pipeline, 'Claims input manifest');
+  const currentSource = captureValidationSource(root);
+  const currentEvidence = {
+    qualification: pipeline.qualification,
+    source: currentSource,
+    runtimeInputSha256: currentInput.runtime.sha256,
+    runtimeInputFileCount: currentInput.runtime.fileCount,
+    claimsInputSha256: currentInput.claims.sha256,
+    claimsInputFileCount: currentInput.claims.fileCount
+  };
+  assertValidationEvidenceDocument(currentEvidence, 'Current validation checkout');
+  assertMatchingValidationEvidence(pipeline, currentEvidence, 'Validation pipeline', 'current checkout');
+  if (JSON.stringify(runtimeInputManifest.files) !== JSON.stringify(currentInput.runtime.files)) {
+    throw new Error('Runtime input manifest does not match the current checkout files.');
   }
+  if (JSON.stringify(claimsInputManifest.files) !== JSON.stringify(currentInput.claims.files)) {
+    throw new Error('Claims input manifest does not match the current checkout files.');
+  }
+  for (const [kind, path, manifest] of [
+    ['runtime', runtimeInputPath, runtimeInputManifest],
+    ['claims', claimsInputPath, claimsInputManifest]
+  ]) {
+    const recorded = pipeline.inputManifests?.[kind];
+    const actual = fileEvidence(path);
+    if (recorded?.sha256 !== actual.sha256 || recorded?.sizeBytes !== actual.sizeBytes) {
+      throw new Error(`Validation pipeline ${kind} input-manifest evidence is stale.`);
+    }
+    if (manifest.qualification !== pipeline.qualification) {
+      throw new Error(`Validation pipeline ${kind} input manifest has a different qualification.`);
+    }
+  }
+} catch (error) {
+  reportErrors.push(error instanceof Error ? error.message : String(error));
 }
 if (vitestReport.success !== true) reportErrors.push('Vitest JSON report is not globally successful.');
-if (!/^[a-f0-9]{40}$/i.test(String(pipeline.source?.commit ?? ''))) {
-  reportErrors.push('validation pipeline has no exact 40-character source commit.');
-}
-if (!pipeline.environment?.platform || !pipeline.environment?.architecture || !pipeline.environment?.node || !pipeline.environment?.npm) {
-  reportErrors.push('validation pipeline is missing runner/toolchain provenance.');
-}
 
 const resultIndex = new Map();
 for (const fileResult of vitestReport.testResults ?? []) {
@@ -306,11 +340,16 @@ const cases = acceptance.map(({ id, title }) => {
 const generatedAt = new Date().toISOString();
 const receipt = {
   generatedAt,
+  admittedAt: pipeline.admittedAt,
   appVersion: packageJson.version,
   databaseSchemaVersion: schemaVersion,
   fixtureVersion: map.fixtureVersion,
-  validationInputSha256: currentInput.sha256,
-  validationInputFileCount: currentInput.fileCount,
+  qualification: pipeline.qualification,
+  runtimeInputSha256: currentInput.runtime.sha256,
+  runtimeInputFileCount: currentInput.runtime.fileCount,
+  claimsInputSha256: currentInput.claims.sha256,
+  claimsInputFileCount: currentInput.claims.fileCount,
+  inputManifests: pipeline.inputManifests,
   source: pipeline.source,
   environment: pipeline.environment,
   acceptancePlan: 'docs/prd/06-ACCEPTANCE-TESTS.md',
@@ -321,6 +360,7 @@ const receipt = {
   acceptanceBindingsSha256: sha256(bindingsText),
   validationPipeline: 'validation/results/pipeline.json',
   validationCommands: [
+    'npm run validate:release-evidence',
     'npm run typecheck',
     'npm run test',
     'npm run build',
@@ -347,7 +387,9 @@ const receipt = {
   },
   evidence: {
     pipeline: fileEvidence(pipelinePath),
-    sbom: fileEvidence(sbomPath)
+    sbom: fileEvidence(sbomPath),
+    runtimeInput: fileEvidence(runtimeInputPath),
+    claimsInput: fileEvidence(claimsInputPath)
   },
   summary: {
     total: acceptance.length,
@@ -361,15 +403,23 @@ writeJsonAtomic(receiptPath, receipt);
 
 const status = {
   generatedAt,
+  admittedAt: pipeline.admittedAt,
   release: packageJson.version,
   databaseSchemaVersion: schemaVersion,
   fixtureVersion: map.fixtureVersion,
-  validationInputSha256: currentInput.sha256,
+  qualification: pipeline.qualification,
+  runtimeInputSha256: currentInput.runtime.sha256,
+  runtimeInputFileCount: currentInput.runtime.fileCount,
+  claimsInputSha256: currentInput.claims.sha256,
+  claimsInputFileCount: currentInput.claims.fileCount,
+  inputManifests: pipeline.inputManifests,
   source: pipeline.source,
   environment: pipeline.environment,
   evidence: {
     pipeline: fileEvidence(pipelinePath),
-    sbom: fileEvidence(sbomPath)
+    sbom: fileEvidence(sbomPath),
+    runtimeInput: fileEvidence(runtimeInputPath),
+    claimsInput: fileEvidence(claimsInputPath)
   },
   pipeline: {
     status: 'passed',

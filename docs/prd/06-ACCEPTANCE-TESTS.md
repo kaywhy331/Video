@@ -709,7 +709,23 @@ Operator can restore prior effective metadata revision.
 
 ---
 
-## 20. Release gates
+## 20. Release evidence integrity tests
+
+### REL-001 - Clean exact release validation source
+
+Release validation admits only a clean repository at an exact 40-character HEAD and tree, including detached CI checkouts, and rejects before touching generated evidence otherwise.
+
+### REL-002 - Stale or non-release evidence rejection
+
+Changed HEAD/tree, dirty, cross-workflow-SHA, development-qualified, and runtime/claims-digest-mismatched receipts are rejected by acceptance recording and release provenance.
+
+### REL-003 - Generated and historical evidence lifecycle
+
+Current validation receipts remain untracked exact-workflow-SHA artifacts, while a tracked machine-readable historical index identifies alpha.7 without claiming to validate the current checkout.
+
+---
+
+## 21. Release gates
 
 ### Alpha gate
 

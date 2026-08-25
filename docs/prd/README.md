@@ -28,6 +28,7 @@ Exceptions are surfaced only when the system cannot continue safely or accuratel
 - `05-IPC-AND-PROVIDER-CONTRACTS.md` - Desktop IPC and external-provider interfaces.
 - `06-ACCEPTANCE-TESTS.md` - End-to-end, functional, resilience, media, and security tests.
 - `07-IMPLEMENTATION-PLAN.md` - Milestones, sequencing, gates, and definition of done.
+- `08-CRITICAL-GAP-REMEDIATION-PRD.md` - Security, evidence-integrity, workflow, and publishing remediation requirements discovered after alpha.7.
 - `schemas/scene-contract.schema.json` - Machine-readable narration/visual contract.
 - `schemas/render-manifest.schema.json` - Machine-readable final timeline/render contract.
 - `config/default-autopilot-policy.json` - Initial automated decision thresholds.

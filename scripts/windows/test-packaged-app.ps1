@@ -26,28 +26,51 @@ $archiveRoot = Join-Path $workRoot 'archive'
 $installRoot = Join-Path $workRoot 'installed'
 $archiveDataRoot = Join-Path $workRoot 'archive-data'
 $installedDataRoot = Join-Path $workRoot 'installed-data'
-$sourceCommit = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) {
-  $commit = (& git rev-parse HEAD).Trim()
-  if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the source commit for package smoke provenance.' }
-  $commit
-} else {
-  $env:GITHUB_SHA.Trim()
-}
+$sourceCommit = (& git rev-parse --verify 'HEAD^{commit}').Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the source commit for package smoke provenance.' }
 if ($sourceCommit -notmatch '^[a-fA-F0-9]{40}$') {
   throw 'Package smoke provenance requires an exact 40-character source commit.'
 }
+$sourceTree = (& git rev-parse --verify 'HEAD^{tree}').Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceTree -notmatch '^[a-fA-F0-9]{40}$') {
+  throw 'Package smoke provenance requires an exact 40-character source tree.'
+}
+$workflowCommit = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) { $null } else { $env:GITHUB_SHA.Trim() }
+if ($null -ne $workflowCommit -and $workflowCommit -ne $sourceCommit) {
+  throw 'Package smoke HEAD does not match the workflow source commit.'
+}
+$sourceStatus = (& git status --porcelain=v1 --untracked-files=all) -join "`n"
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect package smoke source cleanliness.' }
+if (-not [string]::IsNullOrWhiteSpace($sourceStatus)) {
+  throw 'Package smoke release evidence requires a clean source worktree and index.'
+}
+$sourceRef = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REF)) {
+  $branch = ([string](& git symbolic-ref --quiet --short HEAD)).Trim()
+  if ([string]::IsNullOrWhiteSpace($branch)) { 'HEAD' } else { $branch }
+} else {
+  $env:GITHUB_REF.Trim()
+}
+$sourceRepository = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) {
+  $remote = ([string](& git config --get remote.origin.url)).Trim()
+  if ([string]::IsNullOrWhiteSpace($remote)) { 'local' } else { $remote }
+} else {
+  $env:GITHUB_REPOSITORY.Trim()
+}
 
 $receipt = [ordered]@{
-  receiptVersion = 1
+  receiptVersion = 2
   status = 'running'
   generatedAt = $null
   appVersion = $version
   source = [ordered]@{
     commit = $sourceCommit
-    ref = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REF)) { $null } else { $env:GITHUB_REF }
-    repository = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) { $null } else { $env:GITHUB_REPOSITORY }
+    tree = $sourceTree
+    ref = $sourceRef
+    repository = $sourceRepository
+    workflowCommit = $workflowCommit
     runId = if ([string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ID)) { $null } else { $env:GITHUB_RUN_ID }
     runAttempt = if ([string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ATTEMPT)) { $null } else { $env:GITHUB_RUN_ATTEMPT }
+    dirty = $false
   }
   runner = [ordered]@{
     platform = 'win32'
@@ -56,6 +79,7 @@ $receipt = [ordered]@{
     image = if ([string]::IsNullOrWhiteSpace($env:ImageOS)) { $null } else { $env:ImageOS }
   }
   qualification = [ordered]@{
+    validation = 'release'
     scope = 'hosted_windows_package_smoke'
     cleanMachine = $false
     developerToolingPresent = $true

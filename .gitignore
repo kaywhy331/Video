@@ -5,6 +5,8 @@ release/
 coverage/
 test-results/
 validation/results/*.json
+/VALIDATION_ACCEPTANCE_RECEIPT.json
+/VALIDATION_STATUS.json
 *.log
 *.db
 *.db-shm

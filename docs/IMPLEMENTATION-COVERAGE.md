@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-24 for the alpha.7 release-receipt rollup after the local PRD-completion pass through schema migration 018, UI/exception/color-policy closure, built-Electron accessibility validation, and packaged-Windows release-evidence hardening. Alpha.7 changes release metadata and evidence only; capability status is unchanged.
+Updated 2026-08-25 for clean exact-source validation and generated-evidence lifecycle hardening after the alpha.7 release-receipt rollup. Alpha.7 itself changed release metadata and evidence only; capability status is unchanged.
 
 Status meanings:
 
@@ -117,7 +117,7 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 - active-final review selection, artifact-changing revision invalidation, and verified replacement-final resolution of only superseded render/render-QC exceptions.
 - editable-control-safe operator shortcuts, visible focus treatment, responsive storyboard collapse, and managed active-final WebVTT preview captions.
 - real PQ-to-BT.709 tone mapping, stale media-pipeline regeneration, contained media/caption protocol resolution, nine-tab project detail, generic exception actions, and deferred pause checkpoints;
-- built Electron Playwright/Axe journeys, 151-ID acceptance traceability, zero-vulnerability dependency audit, and CycloneDX SBOM generation.
+- built Electron Playwright/Axe journeys, 154-ID acceptance traceability, zero-vulnerability dependency audit, and CycloneDX SBOM generation.
 
 ## Release evidence added in alpha.4
 
@@ -137,6 +137,14 @@ The repository-wide PRD audit found the following implementation gaps. Every loc
 - hosted Windows CI launches the extracted ZIP and installed NSIS application through the packaged executable, waits for the real dashboard, confirms packaged mode and isolated database initialization, and requests an orderly Electron quit;
 - the same bounded run performs silent installation and uninstallation in an isolated path, verifies removal, and writes `WINDOWS_PACKAGE_SMOKE.json` with exact commit, version, runner, package hash, lifecycle, and cleanup evidence;
 - release provenance fails closed when that receipt is missing, failed, stale, incomplete, or does not match the installer and archive bytes. This supports packaging confidence but does not close the clean-machine qualification gate.
+
+## Validation evidence lifecycle hardened after alpha.7
+
+- development and release validation are explicitly qualified; release mode admits only a clean exact Git HEAD/tree and rechecks source plus runtime/claims inputs after all stages;
+- generated root status/acceptance receipts and `validation/results/*.json` are ignored artifacts rather than tracked claims about a later checkout;
+- runtime and human release-claim inputs have separate deterministic per-file manifests without hashing their own generated provenance;
+- Linux validation and Windows packaging retain the exact `${{ github.sha }}` artifact handoff, while manifest generation and verification reject dirty, development, stale commit/tree, or mismatched-input evidence;
+- the tracked [alpha.7 historical evidence index](release-evidence/v0.1.0-alpha.7.json) records the immutable tag/release, workflow/job chain, transient Actions artifacts, and all published assets without claiming to validate the current checkout.
 
 ## Measured catalog performance and remaining UI boundary
 
