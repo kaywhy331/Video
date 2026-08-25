@@ -4,6 +4,7 @@ import { relative, resolve } from 'node:path';
 
 export const RUNTIME_INPUTS = Object.freeze([
   '.github',
+  '.gitattributes',
   '.gitignore',
   '.nvmrc',
   'VALIDATION_CATALOG_PERFORMANCE.json',

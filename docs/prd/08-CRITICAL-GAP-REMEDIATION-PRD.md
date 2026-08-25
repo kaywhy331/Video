@@ -142,6 +142,7 @@ Validation has two modes:
 5. Remove tracked generated outputs from version control and add narrowly scoped ignore entries. Do not ignore immutable release-evidence indexes.
 6. Add a migration note for consumers that previously read root receipts: use the current CI artifact or release asset instead.
 7. Add fixture receipts for clean/current, dirty, stale-commit, changed-tree, and development-mode cases.
+8. Pin tracked text worktrees to LF so the required raw-byte runtime and claims manifests are identical for the same Git tree on Linux and Windows.
 
 ### 5.5 Verification and acceptance
 
@@ -170,7 +171,7 @@ Required tests:
 - [x] `REL-001` through `REL-003` have exact automated bindings and negative fixtures.
 - [x] Documentation tells operators where to obtain current checkout, CI, and immutable release evidence.
 
-Local implementation and canonical development-qualified validation completed on 2026-08-25. The remaining checkbox requires the first hosted CI run of the committed change; the workflow and regression assertion preserve the exact `${{ github.sha }}` artifact name and Windows download.
+Local implementation and canonical development-qualified validation completed on 2026-08-25. The remaining checkbox requires a passing hosted CI run of the committed change; the workflow and regression assertions preserve the exact `${{ github.sha }}` artifact name, Windows download, and cross-platform raw-byte digest.
 
 ---
 

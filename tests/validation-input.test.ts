@@ -69,4 +69,26 @@ describe('validation input digests and generated evidence lifecycle', () => {
     expect(workflow).toContain('validation/results/runtime-input.json');
     expect(workflow).toContain('validation/results/claims-input.json');
   });
+
+  it('[REL-003] pins raw validation input bytes to LF across Linux and Windows checkouts', () => {
+    expect(readFileSync(resolve(repositoryRoot, '.gitattributes'), 'utf8')).toBe('* text=auto eol=lf\n');
+
+    const representativeInputs = [
+      '.github/workflows/ci.yml',
+      'scripts/validation-input.mjs',
+      'src/main/app-context.ts',
+      'README.md',
+      'docs/release-evidence/v0.1.0-alpha.7.json'
+    ];
+    const attributes = spawnSync(
+      'git',
+      ['check-attr', 'text', 'eol', '--', ...representativeInputs],
+      { cwd: repositoryRoot, encoding: 'utf8' }
+    );
+    expect(attributes.status).toBe(0);
+    for (const path of representativeInputs) {
+      expect(attributes.stdout).toContain(`${path}: text: auto`);
+      expect(attributes.stdout).toContain(`${path}: eol: lf`);
+    }
+  });
 });
