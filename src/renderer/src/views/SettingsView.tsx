@@ -76,6 +76,21 @@ export function SettingsView({
     void window.videoFactory.youtube.status().then(setYoutube).catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    const pending = youtube?.pendingAuthorization;
+    if (!pending || pending.phase === 'confirmation_required') return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void window.videoFactory.youtube.status()
+        .then(status => { if (active) setYoutube(status); })
+        .catch(() => undefined);
+    }, 750);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [youtube?.pendingAuthorization?.pendingAuthorizationId, youtube?.pendingAuthorization?.phase]);
+
   async function choose(field: keyof AppSettings): Promise<void> {
     const path = await window.videoFactory.settings.choosePath({
       kind: ['ffmpegPath', 'ffprobePath', 'catalogImportFile'].includes(field) ? 'file' : 'directory',
@@ -114,7 +129,28 @@ export function SettingsView({
 
   async function connectYouTube(): Promise<void> {
     await run('youtube', async () => {
-      setYoutube(await window.videoFactory.youtube.authorize());
+      setYoutube(await window.videoFactory.youtube.beginAuthorization());
+    });
+  }
+
+  async function confirmYouTube(): Promise<void> {
+    const pending = youtube?.pendingAuthorization;
+    if (!pending?.channelId || pending.phase !== 'confirmation_required') return;
+    await run('youtube-confirm', async () => {
+      setYoutube(await window.videoFactory.youtube.confirmAuthorization({
+        pendingAuthorizationId: pending.pendingAuthorizationId,
+        expectedChannelId: pending.channelId as string,
+        replaceExisting: pending.replacement
+      }));
+      await onRefresh();
+    });
+  }
+
+  async function cancelYouTube(): Promise<void> {
+    const pending = youtube?.pendingAuthorization;
+    if (!pending) return;
+    await run('youtube-cancel', async () => {
+      setYoutube(await window.videoFactory.youtube.cancelAuthorization(pending.pendingAuthorizationId));
       await onRefresh();
     });
   }
@@ -579,9 +615,55 @@ export function SettingsView({
               <span>Disclose synthetic media (enabled by default for generated narration)</span>
             </label>
             <div className="button-row">
-              <Button variant="secondary" busy={busy === 'youtube'} onClick={() => void connectYouTube()}><Youtube size={16} /> Connect YouTube</Button>
-              {youtube ? <StatusPill value={youtube.authorized ? 'authorized' : youtube.configured ? 'configured' : 'not configured'} /> : null}
+              <Button variant="secondary" busy={busy === 'youtube'} onClick={() => void connectYouTube()}>
+                <Youtube size={16} /> {youtube?.authorized ? 'Reconnect or replace channel' : 'Connect YouTube'}
+              </Button>
+              {youtube ? <StatusPill value={youtube.state.replaceAll('_', ' ')} /> : null}
             </div>
+            {youtube?.authorized ? (
+              <small>
+                Confirmed destination: <strong>{youtube.channelTitle}</strong> ({youtube.channelId}).
+                Every automatic upload and publication is locked to this channel.
+              </small>
+            ) : null}
+            {youtube?.pendingAuthorization ? (
+              <div className="diagnostic-list">
+                <div>
+                  <ShieldCheck size={14} />
+                  <div>
+                    <strong>{youtube.pendingAuthorization.phase === 'confirmation_required'
+                      ? 'Verify the exact destination channel'
+                      : 'Waiting for Google authorization'}</strong>
+                    <span>{youtube.pendingAuthorization.phase === 'confirmation_required'
+                      ? `${youtube.pendingAuthorization.channelTitle} (${youtube.pendingAuthorization.channelId})`
+                      : 'Complete the browser flow, then return here. No token is saved before confirmation.'}</span>
+                  </div>
+                </div>
+                {youtube.pendingAuthorization.replacement ? (
+                  <div>
+                    <ShieldCheck size={14} />
+                    <div>
+                      <strong>Channel replacement</strong>
+                      <span>
+                        Existing: {youtube.pendingAuthorization.previousChannelTitle} ({youtube.pendingAuthorization.previousChannelId})
+                        {' → '}New: {youtube.pendingAuthorization.channelTitle} ({youtube.pendingAuthorization.channelId})
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="button-row">
+                  {youtube.pendingAuthorization.phase === 'confirmation_required' ? (
+                    <Button busy={busy === 'youtube-confirm'} onClick={() => void confirmYouTube()}>
+                      <Check size={15} /> {youtube.pendingAuthorization.replacement ? 'Confirm channel replacement' : 'Confirm this channel'}
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" busy={busy === 'youtube-cancel'} onClick={() => void cancelYouTube()}>
+                    <X size={15} /> Cancel authorization
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            {youtube?.error ? <small>{youtube.error.message}</small> : null}
           </div>
         </Panel>
 

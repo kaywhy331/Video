@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
-import { isYouTubeStudioRestriction, YouTubeService } from '@main/services/youtube-service';
+import {
+  isYouTubeStudioRestriction,
+  YouTubeService,
+  youtubeCredentialFingerprint
+} from '@main/services/youtube-service';
 import { approvalFingerprint } from '@shared/approval';
 import type { ProjectDetail } from '@shared/types';
 import type { ProjectService } from '@main/services/project-service';
@@ -42,11 +46,16 @@ function fixture() {
   });
   db.raw.prepare(`
     INSERT INTO publication_records(
-      id, project_id, video_id, privacy_status, final_sha256, processing_status,
+      id, project_id, channel_id, video_id, privacy_status, final_sha256, processing_status,
       caption_id, thumbnail_uploaded, approval_hash, created_at, updated_at
-    ) VALUES('publication-1', 'project-1', 'video_123', 'private', 'final-sha',
+    ) VALUES('publication-1', 'project-1', 'UC-confirmed', 'video_123', 'private', 'final-sha',
       'succeeded', 'caption-1', 1, ?, ?, ?)
   `).run(approvalHash, now, now);
+  db.raw.prepare(`
+    INSERT INTO youtube_connection_binding(
+      singleton_id, channel_id, channel_title, credential_fingerprint, confirmed_at
+    ) VALUES(1, 'UC-confirmed', 'Confirmed Channel', ?, ?)
+  `).run(youtubeCredentialFingerprint('client-id', 'refresh-token'), now);
   const transition = vi.fn();
   const project = {
     id: 'project-1',
@@ -141,6 +150,20 @@ describe('YouTube publication approval', () => {
       SELECT privacy_status, scheduled_at, published_at FROM publication_records WHERE id = 'publication-1'
     `).get()).toEqual({ privacy_status: 'private', scheduled_at: scheduledAt, published_at: null });
     valid.db.close();
+  });
+
+  it('rejects approval when the publication receipt targets a different YouTube channel', async () => {
+    const value = fixture();
+    value.db.raw.prepare(`UPDATE publication_records SET channel_id = 'UC-other' WHERE id = 'publication-1'`).run();
+    const update = vi.fn();
+    const service = new YouTubeService(
+      value.db, () => ({}) as never, value.secrets, value.projects, vi.fn(), update, vi.fn()
+    );
+    await expect(service.approve('project-1', 'keep_private')).rejects.toThrow(/does not match/i);
+    expect(update).not.toHaveBeenCalled();
+    expect(value.db.raw.prepare(`SELECT privacy_status, approved_at FROM publication_records WHERE id = 'publication-1'`).get())
+      .toEqual({ privacy_status: 'private', approved_at: null });
+    value.db.close();
   });
 
   it('classifies only explicit 403 publication restrictions for Studio fallback', () => {

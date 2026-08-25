@@ -59,7 +59,9 @@ import {
   StoryboardVerifyLocationSchema,
   SettingsPatchSchema,
   SettingsProfilePathSchema,
-  StorageCleanupSchema
+  StorageCleanupSchema,
+  YouTubeAuthorizationCancellationSchema,
+  YouTubeAuthorizationConfirmationSchema
 } from '@shared/contracts';
 import type { AppSettings } from '@shared/types';
 import { assertAllowedExternalUrl, assertAuthorizedIpcSender, pathIsInside } from './security-policy';
@@ -657,7 +659,13 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   });
 
   handle(IPC.youtubeStatus, () => context.youtube.status());
-  handle(IPC.youtubeAuthorize, () => context.youtube.authorize());
+  handle(IPC.youtubeAuthorizationBegin, () => context.youtube.beginAuthorization());
+  handle(IPC.youtubeAuthorizationConfirm, (_event, payload) =>
+    context.youtube.confirmAuthorization(YouTubeAuthorizationConfirmationSchema.parse(payload)));
+  handle(IPC.youtubeAuthorizationCancel, (_event, payload) =>
+    context.youtube.cancelAuthorization(
+      YouTubeAuthorizationCancellationSchema.parse(payload).pendingAuthorizationId
+    ));
   handle(IPC.youtubeUploadPrivate, async (_event, payload) => {
     context.setLongOperationActive(true);
     try {

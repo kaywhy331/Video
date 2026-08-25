@@ -588,6 +588,18 @@
       "file": "tests/youtube-approval.test.ts",
       "title": "[YT-008] validates schedule time before an API update and sends private future status"
     },
+    {
+      "ids": ["YT-009", "SEC-009"],
+      "runner": "vitest",
+      "file": "tests/youtube-oauth-session.test.ts",
+      "title": "[YT-009][SEC-009] enforces state, PKCE, callback shape, replay protection, and secret-free snapshots"
+    },
+    {
+      "ids": ["YT-010"],
+      "runner": "vitest",
+      "file": "tests/youtube-channel-binding.test.ts",
+      "title": "[YT-010] keeps candidate credentials pending and requires explicit confirmed replacement identity"
+    },
 
     {
       "ids": ["ANA-001"],
@@ -686,6 +698,12 @@
       "runner": "vitest",
       "file": "tests/security-policy.test.ts",
       "title": "redacts bearer, JSON token, secret, key, and credential URL values"
+    },
+    {
+      "ids": ["SEC-009"],
+      "runner": "vitest",
+      "file": "tests/security-policy.test.ts",
+      "title": "[SEC-009] redacts OAuth callback queries, state, verifier, code, and token values"
     },
 
     {

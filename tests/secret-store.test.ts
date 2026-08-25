@@ -54,4 +54,19 @@ describe('encrypted secret storage', () => {
       .toThrow(/encryption is unavailable/i);
     expect(existsSync(path)).toBe(false);
   });
+
+  it('replaces or clears only the stored YouTube credentials', () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-secrets-replace-'));
+    roots.push(root);
+    const store = new SecretStore(join(root, 'secrets.vf'));
+    store.update({ llmApiKey: 'keep-me', youtubeRefreshToken: 'old', youtubeAccessToken: 'old-access' });
+    store.replaceYouTubeCredentials({
+      youtubeRefreshToken: 'new', youtubeAccessToken: 'new-access', youtubeTokenExpiry: 123
+    });
+    expect(store.getAll()).toMatchObject({
+      llmApiKey: 'keep-me', youtubeRefreshToken: 'new', youtubeAccessToken: 'new-access', youtubeTokenExpiry: 123
+    });
+    store.replaceYouTubeCredentials(null);
+    expect(store.getAll()).toEqual({ llmApiKey: 'keep-me' });
+  });
 });

@@ -117,4 +117,24 @@ describe('desktop security policy', () => {
       expect(value).not.toContain(secret);
     }
   });
+
+  it('[SEC-009] redacts OAuth callback queries, state, verifier, code, and token values', () => {
+    const value = redactSecrets({
+      callback: 'http://127.0.0.1:45123/oauth2callback?code=authorization-code&state=oauth-state',
+      oauthState: 'oauth-state',
+      codeVerifier: 'pkce-verifier',
+      codeChallenge: 'pkce-challenge',
+      authorizationCode: 'authorization-code',
+      youtubeAccessToken: 'access-token',
+      youtubeRefreshToken: 'refresh-token'
+    });
+    for (const secret of [
+      'authorization-code', 'oauth-state', 'pkce-verifier', 'pkce-challenge', 'access-token', 'refresh-token'
+    ]) {
+      expect(value).not.toContain(secret);
+    }
+    expect(value).toContain('/oauth2callback?[REDACTED]');
+    expect(redactSecrets({ state: 'WAITING_FINAL_APPROVAL', code: 'YOUTUBE_AUTH_REQUIRED' }))
+      .toContain('YOUTUBE_AUTH_REQUIRED');
+  });
 });

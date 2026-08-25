@@ -492,7 +492,8 @@ export class AppContext {
     if (this.storageTimer) clearInterval(this.storageTimer);
     const serviceStops = await Promise.allSettled([
       this.watcher.stop(),
-      this.catalogImports.shutdown()
+      this.catalogImports.shutdown(),
+      this.youtube.shutdown()
     ]);
     await this.operationGate.waitForIdle();
     const stopFailures = serviceStops.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
