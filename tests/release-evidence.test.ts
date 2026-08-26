@@ -1,7 +1,12 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { assertReleaseEvidenceIndex } from '../scripts/release-evidence.mjs';
+import {
+  assertReleaseEvidenceGitBinding,
+  assertReleaseEvidenceIndex
+} from '../scripts/release-evidence.mjs';
 
 const evidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.7.json');
 
@@ -39,5 +44,60 @@ describe('historical release evidence', () => {
     const handoff = evidenceIndex();
     handoff.workflowRuns[0].artifactHandoffCommit = 'a'.repeat(40);
     expect(() => assertReleaseEvidenceIndex(handoff)).toThrow('not keyed to its exact handoff commit');
+  });
+
+  it('[REL-004] rejects circular digest claims inside immutable release evidence', () => {
+    const circular = evidenceIndex();
+    circular.claimsInputSha256 = 'a'.repeat(64);
+    expect(() => assertReleaseEvidenceIndex(circular)).toThrow(/circular digest claim/i);
+  });
+
+  it('[REL-006] binds the later docs receipt to the immutable release tag, trees, and single-change index', () => {
+    const index = evidenceIndex();
+    expect(() => assertReleaseEvidenceGitBinding(index, {
+      root: process.cwd(),
+      indexPath: evidencePath
+    })).not.toThrow();
+
+    const moved = evidenceIndex();
+    moved.releaseSource.commit = 'a'.repeat(40);
+    moved.publication.targetCommitish = moved.releaseSource.commit;
+    expect(() => assertReleaseEvidenceGitBinding(moved, {
+      root: process.cwd(),
+      indexPath: evidencePath
+    })).toThrow(/release tag no longer resolves/i);
+
+    const cloneRoot = mkdtempSync(join(tmpdir(), 'videofactory-release-evidence-'));
+    try {
+      const clone = spawnSync('git', ['clone', '--quiet', '--shared', process.cwd(), cloneRoot], {
+        encoding: 'utf8'
+      });
+      expect(clone.status, clone.stderr).toBe(0);
+      const cloneIndexPath = resolve(cloneRoot, 'docs', 'release-evidence', 'v0.1.0-alpha.7.json');
+      const immutable = JSON.parse(readFileSync(cloneIndexPath, 'utf8'));
+      const changes: Array<[string, (value: any) => void]> = [
+        ['workflow timing', value => {
+          value.workflowRuns[0].startedAt = '2026-08-24T19:38:20Z';
+        }],
+        ['asset digest', value => {
+          value.publication.assets[0].digest = `sha256:${'a'.repeat(64)}`;
+        }],
+        ['prerelease state', value => {
+          value.qualification.prerelease = false;
+          value.publication.prerelease = false;
+        }]
+      ];
+      for (const [name, change] of changes) {
+        const changed = structuredClone(immutable);
+        change(changed);
+        writeFileSync(cloneIndexPath, `${JSON.stringify(changed, null, 2)}\n`);
+        expect(() => assertReleaseEvidenceGitBinding(changed, {
+          root: cloneRoot,
+          indexPath: cloneIndexPath
+        }), name).toThrow(/changed after its immutable index commit/i);
+      }
+    } finally {
+      rmSync(cloneRoot, { recursive: true, force: true });
+    }
   });
 });

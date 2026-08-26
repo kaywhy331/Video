@@ -1,6 +1,6 @@
 # Implementation Coverage
 
-Updated 2026-08-25 for clean exact-source validation, generated-evidence lifecycle hardening, OAuth destination binding, and centralized provider endpoint trust after the alpha.7 release-receipt rollup. Alpha.7 itself changed release metadata and evidence only; the later remediation work does not alter that historical release.
+Updated 2026-08-26 for clean exact-source validation, machine-verifiable release claims, OAuth destination binding, centralized provider endpoint trust, state-safe retry, device-local media-tool trust, and active-final publication identity after the alpha.7 release-receipt rollup. Alpha.7 itself changed release metadata and evidence only; the later remediation work does not alter that historical release.
 
 Status meanings:
 
@@ -120,7 +120,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - active-final review selection, artifact-changing revision invalidation, and verified replacement-final resolution of only superseded render/render-QC exceptions.
 - editable-control-safe operator shortcuts, visible focus treatment, responsive storyboard collapse, and managed active-final WebVTT preview captions.
 - real PQ-to-BT.709 tone mapping, stale media-pipeline regeneration, contained media/caption protocol resolution, nine-tab project detail, generic exception actions, and deferred pause checkpoints;
-- built Electron Playwright/Axe journeys, 169-ID acceptance traceability, zero-vulnerability dependency audit, and CycloneDX SBOM generation.
+- built Electron Playwright/Axe journeys, 172-ID acceptance traceability, zero-vulnerability dependency audit, and CycloneDX SBOM generation.
 
 ## Release evidence added in alpha.4
 
@@ -146,6 +146,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - development and release validation are explicitly qualified; release mode admits only a clean exact Git HEAD/tree and rechecks source plus runtime/claims inputs after all stages;
 - generated root status/acceptance receipts and `validation/results/*.json` are ignored artifacts rather than tracked claims about a later checkout;
 - runtime and human release-claim inputs have separate deterministic per-file manifests without hashing their own generated provenance;
+- claim validation checks exact tags, commits, workflow runs, published-asset counts, signing/readiness state, and external-gate counts against the immutable historical index across every tracked claim document, while Git checks the recorded tag, trees, ancestry, and single-change index history;
 - Linux validation and Windows packaging retain the exact `${{ github.sha }}` artifact handoff, while manifest generation and verification reject dirty, development, stale commit/tree, or mismatched-input evidence;
 - the tracked [alpha.7 historical evidence index](release-evidence/v0.1.0-alpha.7.json) records the immutable tag/release, workflow/job chain, transient Actions artifacts, and all published assets without claiming to validate the current checkout.
 

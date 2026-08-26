@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
+
 export function assertReleaseEvidenceIndex(index, label = 'Release evidence index') {
   if (!index || typeof index !== 'object' || Array.isArray(index)) {
     throw new Error(`${label} is not a JSON object.`);
@@ -113,6 +117,70 @@ export function assertReleaseEvidenceIndex(index, label = 'Release evidence inde
     throw new Error(`${label} creates a circular digest claim.`);
   }
   return index;
+}
+
+export function assertReleaseEvidenceGitBinding(
+  index,
+  { root = process.cwd(), indexPath },
+  label = 'Release evidence index'
+) {
+  assertReleaseEvidenceIndex(index, label);
+  if (typeof indexPath !== 'string' || indexPath.length === 0) {
+    throw new Error(`${label} has no repository-relative index path.`);
+  }
+  const absoluteIndexPath = resolve(root, indexPath);
+  const normalizedPath = relative(root, absoluteIndexPath).replaceAll('\\', '/');
+  if (!normalizedPath || normalizedPath.startsWith('../')) {
+    throw new Error(`${label} path is outside the repository.`);
+  }
+
+  const releaseCommit = git(root, ['rev-parse', '--verify', `refs/tags/${index.releaseSource.tag}^{commit}`], label);
+  if (releaseCommit !== index.releaseSource.commit) {
+    throw new Error(`${label} release tag no longer resolves to its recorded immutable commit.`);
+  }
+  assertGitTree(root, index.releaseSource.commit, index.releaseSource.tree, `${label} release source`);
+  assertGitTree(root, index.releaseSource.candidateCommit, index.releaseSource.candidateTree, `${label} candidate source`);
+  assertGitTree(root, index.documentationReceipt.commit, index.documentationReceipt.tree, `${label} documentation receipt`);
+  assertAncestor(root, index.releaseSource.candidateCommit, index.releaseSource.commit, `${label} candidate is not in the release history.`);
+  assertAncestor(root, index.releaseSource.commit, index.documentationReceipt.commit, `${label} documentation receipt does not descend from the release.`);
+
+  const history = git(root, ['log', '--follow', '--format=%H', '--', normalizedPath], label)
+    .split(/\r?\n/)
+    .filter(Boolean);
+  if (history.length !== 1) {
+    throw new Error(`${label} is not immutable: its tracked file has ${history.length} content-changing commits.`);
+  }
+  const indexCommit = history[0];
+  assertAncestor(root, index.documentationReceipt.commit, indexCommit, `${label} was recorded before its documentation receipt.`);
+  assertAncestor(root, indexCommit, 'HEAD', `${label} introduction commit is not in the current checkout history.`);
+  const introduced = git(root, ['show', `${indexCommit}:${normalizedPath}`], label, false);
+  const current = readFileSync(absoluteIndexPath, 'utf8').trimEnd();
+  if (introduced.trimEnd() !== current) {
+    throw new Error(`${label} changed after its immutable index commit.`);
+  }
+  return index;
+}
+
+function assertGitTree(root, commit, expectedTree, label) {
+  const actual = git(root, ['rev-parse', '--verify', `${commit}^{tree}`], label);
+  if (actual !== expectedTree) throw new Error(`${label} tree does not match its recorded Git tree.`);
+}
+
+function assertAncestor(root, ancestor, descendant, message) {
+  const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], {
+    cwd: root,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) throw new Error(message);
+}
+
+function git(root, args, label, trim = true) {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  if (result.status !== 0) {
+    const detail = String(result.stderr || result.stdout || '').trim();
+    throw new Error(`${label} Git binding failed${detail ? `: ${detail}` : '.'}`);
+  }
+  return trim ? result.stdout.trim() : result.stdout;
 }
 
 function assertNamedRecords(records, label, validate) {

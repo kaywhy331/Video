@@ -892,6 +892,60 @@
       "runner": "vitest",
       "file": "tests/release-evidence.test.ts",
       "title": "[REL-003] validates alpha.7 as historical evidence without claiming the current checkout"
+    },
+    {
+      "ids": ["REL-004"],
+      "runner": "vitest",
+      "file": "tests/validation-input.test.ts",
+      "title": "[REL-004] separates deterministic runtime inputs from non-circular release claims"
+    },
+    {
+      "ids": ["REL-004"],
+      "runner": "vitest",
+      "file": "tests/validation-input.test.ts",
+      "title": "[REL-004] covers every normative and claim document with deterministic raw-byte manifests"
+    },
+    {
+      "ids": ["REL-004"],
+      "runner": "vitest",
+      "file": "tests/validation-input.test.ts",
+      "title": "[REL-004] produces identical manifests regardless of filesystem creation order"
+    },
+    {
+      "ids": ["REL-004"],
+      "runner": "vitest",
+      "file": "tests/release-provenance.test.ts",
+      "title": "[REL-004] writes and verifies exact hashes plus runtime and claims provenance"
+    },
+    {
+      "ids": ["REL-004"],
+      "runner": "vitest",
+      "file": "tests/release-evidence.test.ts",
+      "title": "[REL-004] rejects circular digest claims inside immutable release evidence"
+    },
+    {
+      "ids": ["REL-005"],
+      "runner": "vitest",
+      "file": "tests/release-claims.test.ts",
+      "title": "[REL-005] rejects stale tag, commit, run, asset, signing, readiness, and gate claims"
+    },
+    {
+      "ids": ["REL-005"],
+      "runner": "vitest",
+      "file": "tests/release-claims.test.ts",
+      "title": "[REL-005] keeps claim-free documents valid when later release indexes disagree"
+    },
+    {
+      "ids": ["REL-006"],
+      "runner": "vitest",
+      "file": "tests/release-claims.test.ts",
+      "title": "[REL-006] requires a later documentation receipt that cannot imply a moved release tag"
+    },
+    {
+      "ids": ["REL-006"],
+      "runner": "vitest",
+      "file": "tests/release-evidence.test.ts",
+      "title": "[REL-006] binds the later docs receipt to the immutable release tag, trees, and single-change index"
     }
   ]
 }

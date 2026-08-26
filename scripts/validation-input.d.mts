@@ -11,6 +11,8 @@ export type ValidationInputDigest = {
 };
 
 export const RUNTIME_INPUTS: readonly string[];
+export const RUNTIME_NORMATIVE_DOCUMENTS: readonly string[];
+export const RELEASE_CLAIM_DOCUMENTS: readonly string[];
 export const CLAIMS_INPUTS: readonly string[];
 
 export function validationInputDigest(root?: string): ValidationInputDigest;

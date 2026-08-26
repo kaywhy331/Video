@@ -783,6 +783,18 @@ Changed HEAD/tree, dirty, cross-workflow-SHA, development-qualified, and runtime
 
 Current validation receipts remain untracked exact-workflow-SHA artifacts, while a tracked machine-readable historical index identifies alpha.7 without claiming to validate the current checkout.
 
+### REL-004 - Separate runtime and release-claim provenance
+
+Normative runtime inputs and human release-claim inputs have separate deterministic raw-byte manifests, and release provenance records both digests plus their exact source commits without a hash cycle.
+
+### REL-005 - Machine-verifiable human release claims
+
+Release tag, commit, workflow run, published asset count, signing state, external-gate count, and `production_ready` statements in tracked claim documents must agree with the immutable release-evidence index.
+
+### REL-006 - Immutable post-publication documentation receipt
+
+The later documentation receipt and historical evidence index remain distinct from the immutable release commit and tag; Git tree/history checks and negative fixtures reject a moved tag, changed index, or false qualification claim.
+
 ---
 
 ## 21. Release gates

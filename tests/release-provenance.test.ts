@@ -235,7 +235,7 @@ describe('release artifact provenance', () => {
     expect(result.stderr).toContain('requires validation evidence');
   });
 
-  it('writes and verifies exact hashes plus runtime and claims provenance', () => {
+  it('[REL-004] writes and verifies exact hashes plus runtime and claims provenance', () => {
     const root = fixtureRoot();
     writeValidationEvidence(root);
     expect(run(root).status).toBe(0);
@@ -249,6 +249,7 @@ describe('release artifact provenance', () => {
     expect(manifest.inputs.runtime.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(manifest.inputs.claims.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(manifest.inputs.runtime.sourceCommit).toBe(manifest.source.commit);
+    expect(manifest.inputs.claims.sourceCommit).toBe(manifest.source.commit);
   });
 
   it('fails verification after a published artifact changes', () => {

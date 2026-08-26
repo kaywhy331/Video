@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import { validationInputDigests } from '../scripts/validation-input.mjs';
+import {
+  RELEASE_CLAIM_DOCUMENTS,
+  RUNTIME_NORMATIVE_DOCUMENTS,
+  validationInputDigests
+} from '../scripts/validation-input.mjs';
 
 const repositoryRoot = process.cwd();
 const roots: string[] = [];
@@ -13,7 +17,7 @@ afterEach(() => {
 });
 
 describe('validation input digests and generated evidence lifecycle', () => {
-  it('separates deterministic runtime inputs from non-circular release claims', () => {
+  it('[REL-004] separates deterministic runtime inputs from non-circular release claims', () => {
     const root = mkdtempSync(join(tmpdir(), 'videofactory-validation-input-'));
     roots.push(root);
     mkdirSync(resolve(root, 'validation', 'results'), { recursive: true });
@@ -42,6 +46,44 @@ describe('validation input digests and generated evidence lifecycle', () => {
 
     writeFileSync(resolve(root, 'validation', 'results', 'pipeline.json'), '{"generated":false}\n');
     expect(validationInputDigests(root)).toEqual(runtimeChanged);
+  });
+
+  it('[REL-004] covers every normative and claim document with deterministic raw-byte manifests', () => {
+    const first = validationInputDigests(repositoryRoot);
+    const runtimePaths = new Set(first.runtime.files.map(file => file.path));
+    const claimsPaths = new Set(first.claims.files.map(file => file.path));
+    for (const path of RUNTIME_NORMATIVE_DOCUMENTS) expect(runtimePaths.has(path), path).toBe(true);
+    for (const path of RELEASE_CLAIM_DOCUMENTS) expect(claimsPaths.has(path), path).toBe(true);
+    expect(claimsPaths.has('docs/release-evidence/v0.1.0-alpha.7.json')).toBe(true);
+    expect(first.runtime.files.map(file => file.path)).toEqual(
+      [...first.runtime.files.map(file => file.path)].sort()
+    );
+    expect(first.claims.files.map(file => file.path)).toEqual(
+      [...first.claims.files.map(file => file.path)].sort()
+    );
+    expect(validationInputDigests(repositoryRoot)).toEqual(first);
+  });
+
+  it('[REL-004] produces identical manifests regardless of filesystem creation order', () => {
+    const left = mkdtempSync(join(tmpdir(), 'videofactory-input-order-left-'));
+    const right = mkdtempSync(join(tmpdir(), 'videofactory-input-order-right-'));
+    roots.push(left, right);
+    const files: Array<[string, string]> = [
+      ['package.json', '{"version":"1.0.0"}\n'],
+      ['docs/prd/01-PRD.md', 'normative product bytes\n'],
+      ['README.md', 'release claim bytes\n'],
+      ['docs/release-evidence/v1.json', '{"historical":true}\n']
+    ];
+    const write = (root: string, entries: Array<[string, string]>) => {
+      for (const [path, contents] of entries) {
+        mkdirSync(resolve(root, path, '..'), { recursive: true });
+        writeFileSync(resolve(root, path), contents);
+      }
+    };
+    write(left, files);
+    write(right, [...files].reverse());
+
+    expect(validationInputDigests(left)).toEqual(validationInputDigests(right));
   });
 
   it('[REL-003] keeps generated receipts untracked and transfers release evidence by the exact workflow SHA', () => {
