@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
@@ -16,14 +16,33 @@ import type { AppBootstrap, CatalogImportOperationStatus, ProgressEvent } from '
 import { canTransitionProject } from '@shared/state-machine';
 import { resolveOperatorShortcut, selectOperatorTarget } from '@shared/operator-shortcuts';
 import { ErrorBanner, StatusPill } from './components/ui';
-import { ProjectDrawer } from './components/ProjectDrawer';
 import { AutopilotView } from './views/AutopilotView';
-import { DownloadsView } from './views/DownloadsView';
 import { ExceptionsView } from './views/ExceptionsView';
-import { FinalReviewView } from './views/FinalReviewView';
 import { LibraryView } from './views/LibraryView';
 import { SettingsView } from './views/SettingsView';
-import { AnalyticsView } from './views/AnalyticsView';
+
+const loadDownloadsView = () => import('./views/DownloadsView');
+const loadFinalReviewView = () => import('./views/FinalReviewView');
+const loadAnalyticsView = () => import('./views/AnalyticsView');
+const loadProjectDrawer = () => import('./components/ProjectDrawer');
+
+const DownloadsView = lazy(() => loadDownloadsView()
+  .then(module => ({ default: module.DownloadsView })));
+const FinalReviewView = lazy(() => loadFinalReviewView()
+  .then(module => ({ default: module.FinalReviewView })));
+const AnalyticsView = lazy(() => loadAnalyticsView()
+  .then(module => ({ default: module.AnalyticsView })));
+const ProjectDrawer = lazy(() => loadProjectDrawer()
+  .then(module => ({ default: module.ProjectDrawer })));
+
+function preloadWorkspaceViews(): void {
+  void Promise.all([
+    loadDownloadsView(),
+    loadFinalReviewView(),
+    loadAnalyticsView(),
+    loadProjectDrawer()
+  ]).catch(() => undefined);
+}
 
 type ViewId = 'autopilot' | 'downloads' | 'final-review' | 'library' | 'analytics' | 'exceptions' | 'settings';
 
@@ -45,6 +64,7 @@ export default function App() {
   const [catalogOperation, setCatalogOperation] = useState<CatalogImportOperationStatus | null>(null);
   const [catalogCancelId, setCatalogCancelId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const dashboardReady = bootstrap !== null;
 
   const refresh = useCallback(async (): Promise<void> => {
     setBootstrap(await window.videoFactory.app.bootstrap());
@@ -66,6 +86,21 @@ export default function App() {
       unsubscribeState();
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!dashboardReady) return;
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        preloadWorkspaceViews();
+        void window.videoFactory.app.rendererReady().catch(() => undefined);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+    };
+  }, [dashboardReady]);
 
   useEffect(() => {
     let disposed = false;
@@ -280,33 +315,35 @@ export default function App() {
         <div className="content">
           {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
-          {view === 'autopilot' ? (
-            <AutopilotView
-              bootstrap={bootstrap}
-              onRefresh={refresh}
-              onNavigate={target => setView(target as ViewId)}
-              onOpenProject={setProjectId}
-              setError={setError}
-            />
-          ) : null}
-          {view === 'downloads' ? (
-            <DownloadsView projects={bootstrap.projects} onRefresh={refresh} setError={setError} />
-          ) : null}
-          {view === 'final-review' ? (
-            <FinalReviewView projects={bootstrap.projects} onRefresh={refresh} setError={setError} />
-          ) : null}
-          {view === 'library' ? (
-            <LibraryView initialStats={bootstrap.catalog} onRefresh={refresh} setError={setError} />
-          ) : null}
-          {view === 'analytics' ? (
-            <AnalyticsView projects={bootstrap.projects} onRefresh={refresh} />
-          ) : null}
-          {view === 'exceptions' ? (
-            <ExceptionsView onRefresh={refresh} onOpenProject={setProjectId} setError={setError} />
-          ) : null}
-          {view === 'settings' ? (
-            <SettingsView bootstrap={bootstrap} onRefresh={refresh} setError={setError} />
-          ) : null}
+          <Suspense fallback={<div className="empty-state" role="status">Loading workspace…</div>}>
+            {view === 'autopilot' ? (
+              <AutopilotView
+                bootstrap={bootstrap}
+                onRefresh={refresh}
+                onNavigate={target => setView(target as ViewId)}
+                onOpenProject={setProjectId}
+                setError={setError}
+              />
+            ) : null}
+            {view === 'downloads' ? (
+              <DownloadsView projects={bootstrap.projects} onRefresh={refresh} setError={setError} />
+            ) : null}
+            {view === 'final-review' ? (
+              <FinalReviewView projects={bootstrap.projects} onRefresh={refresh} setError={setError} />
+            ) : null}
+            {view === 'library' ? (
+              <LibraryView initialStats={bootstrap.catalog} onRefresh={refresh} setError={setError} />
+            ) : null}
+            {view === 'analytics' ? (
+              <AnalyticsView projects={bootstrap.projects} onRefresh={refresh} />
+            ) : null}
+            {view === 'exceptions' ? (
+              <ExceptionsView onRefresh={refresh} onOpenProject={setProjectId} setError={setError} />
+            ) : null}
+            {view === 'settings' ? (
+              <SettingsView bootstrap={bootstrap} onRefresh={refresh} setError={setError} />
+            ) : null}
+          </Suspense>
         </div>
       </main>
 
@@ -338,12 +375,16 @@ export default function App() {
         </div>
       ) : null}
 
-      <ProjectDrawer
-        projectId={projectId}
-        onClose={() => setProjectId(null)}
-        onRefresh={refresh}
-        setError={setError}
-      />
+      {projectId ? (
+        <Suspense fallback={null}>
+          <ProjectDrawer
+            projectId={projectId}
+            onClose={() => setProjectId(null)}
+            onRefresh={refresh}
+            setError={setError}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

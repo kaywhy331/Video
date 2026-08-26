@@ -114,8 +114,11 @@ export class AppContext {
   private schedulerTimer?: NodeJS.Timeout;
   private analyticsTimer?: NodeJS.Timeout;
   private storageTimer?: NodeJS.Timeout;
+  private backgroundStartupTimer?: NodeJS.Timeout;
   private diagnosticsRefresh?: Promise<void>;
   private started = false;
+  private backgroundServicesStarted = false;
+  private startupStaleDerivativeCount = 0;
   private readonly operationGate = new OperationGate();
   private stopPromise?: Promise<void>;
 
@@ -484,7 +487,6 @@ export class AppContext {
 
   async bootstrap(): Promise<AppBootstrap> {
     const snapshot = this.stateSnapshot();
-    if (!snapshot.diagnostics) this.refreshDiagnosticsInBackground();
     return {
       settings: this.settings(),
       secrets: this.secrets.status(),
@@ -539,31 +541,42 @@ export class AppContext {
     await this.watcher.start();
     const staleDerivativeCount = this.media.staleDerivativeCount();
     if (!staleDerivativeCount) await this.media.recoverPendingSemanticAlternates();
+    this.startupStaleDerivativeCount = staleDerivativeCount;
     this.started = true;
-    this.refreshDiagnosticsInBackground();
-    if (staleDerivativeCount) {
-      this.runBackground(
-        'media:refresh-stale-derivatives',
-        async () => {
-          const refreshed = await this.media.refreshStaleDerivatives();
-          await this.media.recoverPendingSemanticAlternates();
-          this.logger.info('Stale media derivatives regenerated', {
-            refreshed,
-            pipelineVersion: MediaService.PIPELINE_VERSION
-          });
-          await this.workflow.resumeOldest();
-          this.emitState();
-        },
-        error => {
-          this.logger.error('Stale media derivative regeneration failed closed', error);
-          this.notify(`Media derivative regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      );
-    } else {
-      this.queueOldestWorkflow();
-    }
-    this.startBackupScheduler();
-    this.startOperationsSchedulers();
+  }
+
+  startBackgroundServices(): void {
+    if (!this.started || this.backgroundServicesStarted || !this.operationGate.isAccepting) return;
+    this.backgroundServicesStarted = true;
+    this.backgroundStartupTimer = setTimeout(() => {
+      this.backgroundStartupTimer = undefined;
+      if (!this.started || !this.operationGate.isAccepting) return;
+      this.refreshDiagnosticsInBackground();
+      if (this.startupStaleDerivativeCount) {
+        this.runBackground(
+          'media:refresh-stale-derivatives',
+          async () => {
+            const refreshed = await this.media.refreshStaleDerivatives();
+            await this.media.recoverPendingSemanticAlternates();
+            this.logger.info('Stale media derivatives regenerated', {
+              refreshed,
+              pipelineVersion: MediaService.PIPELINE_VERSION
+            });
+            await this.workflow.resumeOldest();
+            this.emitState();
+          },
+          error => {
+            this.logger.error('Stale media derivative regeneration failed closed', error);
+            this.notify(`Media derivative regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        );
+      } else {
+        this.queueOldestWorkflow();
+      }
+      this.startBackupScheduler();
+      this.startOperationsSchedulers();
+    }, 1_000);
+    this.backgroundStartupTimer.unref();
   }
 
   stop(): Promise<void> {
@@ -575,6 +588,7 @@ export class AppContext {
   }
 
   private async stopOnce(): Promise<void> {
+    if (this.backgroundStartupTimer) clearTimeout(this.backgroundStartupTimer);
     if (this.backupStartupTimer) clearTimeout(this.backupStartupTimer);
     if (this.backupTimer) clearInterval(this.backupTimer);
     if (this.catalogRefreshTimer) clearInterval(this.catalogRefreshTimer);

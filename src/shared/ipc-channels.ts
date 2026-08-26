@@ -1,5 +1,6 @@
 export const IPC = {
   bootstrap: 'app:bootstrap',
+  rendererReady: 'app:renderer-ready',
   diagnosticsRun: 'diagnostics:run',
   backupCreate: 'backup:create',
   backupList: 'backup:list',

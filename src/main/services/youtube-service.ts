@@ -1,8 +1,9 @@
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { shell } from 'electron';
-import { google, type Auth, type youtube_v3 } from 'googleapis';
+import type { Auth, youtube_v3 } from 'googleapis';
 import type { AppDatabase } from '../database/database';
+import { googleApis } from '../google-apis';
 import type {
   AppSettings,
   PublicationApprovalResult,
@@ -225,7 +226,7 @@ export class YouTubeService {
     private readonly projects: ProjectService,
     private readonly progress: (projectId: string, progress: number, message: string) => void,
     private readonly updatePublicationStatus: UpdatePublicationStatus = async (auth, videoId, status) => {
-      const result = await google.youtube({ version: 'v3', auth }).videos.update({
+      const result = await googleApis().google.youtube({ version: 'v3', auth }).videos.update({
         part: ['status'],
         requestBody: { id: videoId, status }
       });
@@ -386,7 +387,7 @@ export class YouTubeService {
       );
     }
     this.requireConfirmedBinding(secret);
-    const client = new google.auth.OAuth2(secret.youtubeClientId, secret.youtubeClientSecret);
+    const client = new (googleApis().google.auth.OAuth2)(secret.youtubeClientId, secret.youtubeClientSecret);
     if (secret.youtubeRefreshToken || secret.youtubeAccessToken) {
       client.setCredentials({
         refresh_token: secret.youtubeRefreshToken,
@@ -716,7 +717,7 @@ export class YouTubeService {
     }
 
     const auth = await this.client();
-    const youtube = google.youtube({ version: 'v3', auth });
+    const youtube = googleApis().google.youtube({ version: 'v3', auth });
     if (existing?.video_id) {
       this.publications.assertCurrent(snapshot, publicationId, 'metadata');
       await youtube.videos.update({

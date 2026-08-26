@@ -201,6 +201,8 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   await context.start();
   setupTray();
   await loadWindow(mainWindow);
+  const backgroundStartupFallback = setTimeout(() => context?.startBackgroundServices(), 10_000);
+  backgroundStartupFallback.unref();
 
   mainWindow.on('close', event => {
     if (!shutdown.isQuitting) {
