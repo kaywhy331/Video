@@ -760,11 +760,13 @@ Health/diagnostics should surface counts and categories without sensitive values
 
 ### Security/observability completion criteria
 
-- [ ] Every privileged rejection has a stable code and a redacted structured event.
-- [ ] Redaction tests cover OAuth, provider, publication, retry, and tool-trust flows.
-- [ ] Health UI distinguishes configuration/trust failures from provider/runtime failures.
-- [ ] Security events are sufficient to reconstruct decisions without retaining secrets or sensitive content.
-- [ ] Renderer-visible messages contain actionable recovery steps but no privileged material.
+- [x] Every privileged rejection has a stable code and a redacted structured event.
+- [x] Redaction tests cover OAuth, provider, publication, retry, and tool-trust flows.
+- [x] Health UI distinguishes configuration/trust failures from provider/runtime failures.
+- [x] Security events are sufficient to reconstruct decisions without retaining secrets or sensitive content.
+- [x] Renderer-visible messages contain actionable recovery steps but no privileged material.
+
+The version-1 `security.privileged_rejected` contract records flow, operation, stable code, recovery guidance, and bounded safe context. Exact `SEC-013` bindings cover the shared sanitizer plus OAuth callback/confirmation, provider admission, publication snapshot invalidation, retry state/version checks, and media-tool trust/execution rejection paths.
 
 ---
 

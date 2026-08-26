@@ -135,10 +135,25 @@ describe('confirmed YouTube channel binding', () => {
       pendingAuthorizationId: 'pending-authorization',
       expectedChannelId: 'UC-new',
       replaceExisting: false
-    })).rejects.toThrow(/explicit replacement confirmation/i);
+    })).rejects.toMatchObject({
+      code: 'OAUTH_REPLACEMENT_CONFIRMATION_REQUIRED',
+      recovery: expect.stringContaining('explicitly confirm replacement')
+    });
     expect(rejected.secrets.current.youtubeRefreshToken).toBe('old-refresh');
     expect(rejected.db.raw.prepare(`SELECT channel_id FROM youtube_connection_binding`).get())
       .toEqual({ channel_id: 'UC-old' });
+    const replacementRejection = rejected.db.raw.prepare(`
+      SELECT metadata_json FROM audit_log
+      WHERE action = 'security.privileged_rejected' ORDER BY id DESC LIMIT 1
+    `).get() as { metadata_json: string };
+    expect(JSON.parse(replacementRejection.metadata_json)).toMatchObject({
+      schemaVersion: 1,
+      flow: 'oauth',
+      operation: 'confirmation.replacement_check',
+      code: 'OAUTH_REPLACEMENT_CONFIRMATION_REQUIRED',
+      outcome: 'rejected'
+    });
+    expect(replacementRejection.metadata_json).not.toMatch(/client-secret|old-refresh|new-refresh/i);
     rejected.db.close();
 
     const confirmed = fixture();

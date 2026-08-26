@@ -89,7 +89,18 @@ describe('device-local media tool trust', () => {
     expect(resolved).toBe(path);
     writeFileSync(path, `#!/bin/sh\nprintf 'ffmpeg version changed\\n'\n`, 'utf8');
     chmodSync(path, 0o755);
-    expect(() => service.guardLaunch(resolved as string)).toThrow('SHA-256 changed before execution');
+    let changedError: unknown;
+    try {
+      service.guardLaunch(resolved as string);
+    } catch (error) {
+      changedError = error;
+    }
+    expect(changedError).toMatchObject({
+      code: 'MEDIA_TOOL_HASH_CHANGED',
+      recovery: expect.stringContaining('Inspect the executable again')
+    });
+    expect(String(changedError)).toContain('[MEDIA_TOOL_HASH_CHANGED]');
+    expect(String(changedError)).toContain('SHA-256 changed before execution');
     expect(service.state('ffmpeg').status).toBe('changed');
 
     const audit = db.raw.prepare(`
@@ -97,7 +108,16 @@ describe('device-local media tool trust', () => {
       WHERE entity_type = 'media_tool' ORDER BY id
     `).all() as Array<{ action: string; metadata_json: string }>;
     expect(audit.map(row => row.action)).toContain('media_tool.execution_blocked');
+    expect(audit.map(row => row.action)).toContain('security.privileged_rejected');
     expect(audit.some(row => row.metadata_json.includes(path))).toBe(false);
+    const securityEvent = audit.find(row => row.action === 'security.privileged_rejected');
+    expect(JSON.parse(securityEvent?.metadata_json ?? '{}')).toMatchObject({
+      schemaVersion: 1,
+      flow: 'media_tool',
+      operation: 'trust.concurrent_change',
+      code: 'MEDIA_TOOL_TRUST_IN_PROGRESS',
+      outcome: 'rejected'
+    });
 
     const cleared = service.clear('ffmpeg');
     expect(settings().ffmpegPath).toBe('');

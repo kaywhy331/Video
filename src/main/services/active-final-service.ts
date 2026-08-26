@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import type { AppDatabase } from '../database/database';
 import { pathIsInside } from '../security-policy';
+import { formatSecurityError, recordSecurityRejection } from '../security-events';
 import { approvalFingerprint } from '@shared/approval';
 
 export type ActiveFinalErrorCode =
@@ -19,10 +20,35 @@ export type ActiveFinalErrorCode =
   | 'FINAL_HASH_MISSING'
   | 'FINAL_HASH_MISMATCH';
 
+function activeFinalRecovery(code: ActiveFinalErrorCode): string {
+  const recoveries: Record<ActiveFinalErrorCode, string> = {
+    PROJECT_MISSING: 'Refresh the project list and select an existing project.',
+    ACTIVE_FINAL_MISSING: 'Complete a final render and explicitly select it as the active final.',
+    RENDER_MISSING: 'Create a new final render and select the completed replacement.',
+    CROSS_PROJECT_RENDER: 'Select a final render that belongs to this project.',
+    NOT_FINAL_RENDER: 'Complete and select a render created with the final-render workflow.',
+    FINAL_RENDER_FAILED: 'Resolve the render failure and complete a new final render.',
+    OUTPUT_PATH_MISSING: 'Create a new final render in managed output storage.',
+    OUTPUT_FILE_MISSING: 'Restore the exact final file or create and approve a new final render.',
+    OUTPUT_NOT_MANAGED: 'Create the final render inside the configured managed MP4 output folder.',
+    OUTPUT_NOT_REGULAR: 'Replace the output with a regular MP4 file produced by the final renderer.',
+    FINAL_HASH_MISSING: 'Create a new final render with a persisted SHA-256 receipt.',
+    FINAL_HASH_MISMATCH: 'Treat the file as changed and create and approve a new final render.'
+  };
+  return recoveries[code];
+}
+
 export class ActiveFinalError extends Error {
-  constructor(readonly code: ActiveFinalErrorCode, message: string) {
-    super(message);
+  readonly recovery: string;
+
+  constructor(
+    readonly code: ActiveFinalErrorCode,
+    readonly detail: string,
+    recovery = activeFinalRecovery(code)
+  ) {
+    super(formatSecurityError(code, detail, recovery));
     this.name = 'ActiveFinalError';
+    this.recovery = recovery;
   }
 }
 
@@ -224,9 +250,37 @@ export type PublicationBoundary =
   | 'publish';
 
 export class StalePublicationSnapshotError extends Error {
-  constructor(readonly boundary: PublicationBoundary, message: string) {
-    super(message);
+  readonly code = 'STALE_PUBLICATION_SNAPSHOT';
+  readonly recovery = 'Keep the stale upload private, capture the current publication package, and review the new private upload.';
+
+  constructor(readonly boundary: PublicationBoundary, readonly detail: string) {
+    super(formatSecurityError('STALE_PUBLICATION_SNAPSHOT', detail,
+      'Keep the stale upload private, capture the current publication package, and review the new private upload.'));
     this.name = 'StalePublicationSnapshotError';
+  }
+}
+
+export type PublicationIdentityErrorCode =
+  | 'PUBLICATION_CHANNEL_MISMATCH'
+  | 'PUBLICATION_PACKAGE_SELECTION_INVALID'
+  | 'PUBLICATION_PACKAGE_BLOCKED'
+  | 'PUBLICATION_THUMBNAIL_REQUIRED'
+  | 'PUBLICATION_THUMBNAIL_MISSING'
+  | 'PUBLICATION_THUMBNAIL_NOT_FILE'
+  | 'PUBLICATION_TAGS_INVALID'
+  | 'PUBLICATION_CAPTURE_FAILED';
+
+export class PublicationIdentityError extends Error {
+  readonly recovery: string;
+
+  constructor(
+    readonly code: PublicationIdentityErrorCode,
+    readonly detail: string,
+    recovery: string
+  ) {
+    super(formatSecurityError(code, detail, recovery));
+    this.name = 'PublicationIdentityError';
+    this.recovery = recovery;
   }
 }
 
@@ -266,6 +320,23 @@ function staleRows(
           error = ?, updated_at = ?
         WHERE id = ?
       `).run(reason, now, row.id);
+      recordSecurityRejection(db, {
+        flow: 'publication',
+        operation: 'snapshot.invalidation',
+        code: 'STALE_PUBLICATION_SNAPSHOT',
+        recovery: 'Keep the stale upload private, capture the current publication package, and review the new private upload.',
+        entityType: 'publication',
+        entityId: row.id,
+        context: {
+          projectId,
+          boundary,
+          hasRemoteVideo: Boolean(row.video_id),
+          hasUploadSession: Boolean(row.upload_session_uri),
+          finalRenderPresent: Boolean(row.final_render_id),
+          selectedPackagePresent: Boolean(row.selected_package_id),
+          channelBindingPresent: Boolean(row.channel_id)
+        }
+      });
       if (!row.video_id && !row.upload_session_uri) continue;
       const existing = db.raw.prepare(`
         SELECT id FROM exceptions
@@ -336,12 +407,43 @@ export class PublicationIdentityService {
   ) {}
 
   capture(projectId: string, confirmedChannelId: string): PublicationSnapshot {
+    try {
+      return this.captureCandidate(projectId, confirmedChannelId);
+    } catch (error) {
+      const normalized = error instanceof ActiveFinalError || error instanceof PublicationIdentityError
+        ? error
+        : new PublicationIdentityError(
+          'PUBLICATION_CAPTURE_FAILED',
+          'The publication identity could not be captured safely.',
+          'Refresh project state and retry after checking managed output and database health.'
+        );
+      recordSecurityRejection(this.db, {
+        flow: 'publication',
+        operation: 'snapshot.capture',
+        code: normalized.code,
+        recovery: normalized.recovery,
+        entityType: 'publication',
+        entityId: projectId,
+        context: {
+          confirmedChannelProvided: Boolean(confirmedChannelId.trim()),
+          errorType: error instanceof Error ? error.name : 'UnknownError'
+        }
+      });
+      throw normalized;
+    }
+  }
+
+  private captureCandidate(projectId: string, confirmedChannelId: string): PublicationSnapshot {
     const channelId = confirmedChannelId.trim();
     const binding = this.db.raw.prepare(`
       SELECT channel_id FROM youtube_connection_binding WHERE singleton_id = 1
     `).get() as { channel_id: string } | undefined;
     if (!channelId || binding?.channel_id !== channelId) {
-      throw new Error('The confirmed YouTube channel changed or is no longer available.');
+      throw new PublicationIdentityError(
+        'PUBLICATION_CHANNEL_MISMATCH',
+        'The confirmed YouTube channel changed or is no longer available.',
+        'Reconnect YouTube and explicitly confirm the exact destination channel.'
+      );
     }
     const final = this.activeFinal.requireActiveFinal(projectId);
     const packages = this.db.raw.prepare(`
@@ -350,28 +452,52 @@ export class PublicationIdentityService {
       ORDER BY ordinal
     `).all(projectId) as unknown as PackageRow[];
     if (packages.length !== 1) {
-      throw new Error('Exactly one selected publishing package is required.');
+      throw new PublicationIdentityError(
+        'PUBLICATION_PACKAGE_SELECTION_INVALID',
+        'Exactly one selected publishing package is required.',
+        'Select exactly one publishing package and run publishing QC again.'
+      );
     }
     const selected = packages[0]!;
     if (selected.risk_status === 'blocked') {
-      throw new Error('The selected publishing package is blocked by publishing QC.');
+      throw new PublicationIdentityError(
+        'PUBLICATION_PACKAGE_BLOCKED',
+        'The selected publishing package is blocked by publishing QC.',
+        'Resolve the publishing QC blockers or select a package that passes QC.'
+      );
     }
     if (!selected.thumbnail_path) {
-      throw new Error('The selected publishing package requires a generated thumbnail.');
+      throw new PublicationIdentityError(
+        'PUBLICATION_THUMBNAIL_REQUIRED',
+        'The selected publishing package requires a generated thumbnail.',
+        'Generate and select the package thumbnail before creating an upload snapshot.'
+      );
     }
     let thumbnailPath: string;
     try {
       thumbnailPath = realpathSync(selected.thumbnail_path);
     } catch {
-      throw new Error('The selected publishing package thumbnail is missing.');
+      throw new PublicationIdentityError(
+        'PUBLICATION_THUMBNAIL_MISSING',
+        'The selected publishing package thumbnail is missing.',
+        'Regenerate the thumbnail and select the repaired publishing package.'
+      );
     }
     if (!statSync(thumbnailPath).isFile()) {
-      throw new Error('The selected publishing package thumbnail is not a regular file.');
+      throw new PublicationIdentityError(
+        'PUBLICATION_THUMBNAIL_NOT_FILE',
+        'The selected publishing package thumbnail is not a regular file.',
+        'Replace it with a generated thumbnail image file and run publishing QC again.'
+      );
     }
     const thumbnailSha256 = sha256File(thumbnailPath);
     const tags = JSON.parse(selected.tags_json) as unknown;
     if (!Array.isArray(tags) || tags.some(tag => typeof tag !== 'string')) {
-      throw new Error('The selected publishing package tags are invalid.');
+      throw new PublicationIdentityError(
+        'PUBLICATION_TAGS_INVALID',
+        'The selected publishing package tags are invalid.',
+        'Repair the package tags and run publishing QC before retrying.'
+      );
     }
     const approvalHash = approvalFingerprint({
       finalSha256: final.sha256,
@@ -468,12 +594,14 @@ export class PublicationIdentityService {
   ): void {
     let reason: string | null = null;
     try {
-      const current = this.capture(snapshot.projectId, snapshot.confirmedChannelId);
+      const current = this.captureCandidate(snapshot.projectId, snapshot.confirmedChannelId);
       if (!sameIdentity(snapshot, current)) {
         reason = 'The active final render or publishing package changed after the private upload snapshot was created.';
       }
     } catch (error) {
-      reason = error instanceof Error ? error.message : String(error);
+      reason = error instanceof ActiveFinalError || error instanceof PublicationIdentityError
+        ? error.detail
+        : 'The publication identity could not be revalidated safely.';
     }
     const row = this.db.raw.prepare(`
       SELECT id, video_id, upload_session_uri, final_render_id, final_sha256,
@@ -500,6 +628,20 @@ export class PublicationIdentityService {
     const message = `${reason} The stale YouTube upload remains private and cannot be approved.`;
     if (row) {
       staleRows(this.db, snapshot.projectId, [row], message, boundary, new Date().toISOString());
+    } else {
+      recordSecurityRejection(this.db, {
+        flow: 'publication',
+        operation: 'snapshot.current_check',
+        code: 'STALE_PUBLICATION_SNAPSHOT',
+        recovery: 'Keep the stale upload private, capture the current publication package, and review the new private upload.',
+        entityType: 'publication',
+        entityId: publicationId,
+        context: {
+          projectId: snapshot.projectId,
+          boundary,
+          publicationRecordPresent: false
+        }
+      });
     }
     throw new StalePublicationSnapshotError(boundary, message);
   }

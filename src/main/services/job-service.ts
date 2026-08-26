@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { AppDatabase } from '../database/database';
 import { redactSecrets } from '../logger';
+import { formatSecurityError, recordSecurityRejection } from '../security-events';
 import type {
   JobExpediteRequest,
   JobExpediteResult,
@@ -8,6 +9,7 @@ import type {
   JobRetryCapability,
   JobRetryOutcome,
   JobRetryRequest,
+  JobRetryResultCode,
   JobRetryResult,
   JobState
 } from '@shared/types';
@@ -57,6 +59,53 @@ type RetryReconciliation = {
 };
 
 const SIDE_EFFECT_JOB_TYPES = new Set(['workflow_upload_private']);
+
+type RetryDecisionOutcome = JobRetryOutcome | 'expedited';
+
+interface RetryDecisionContract {
+  code: JobRetryResultCode;
+  recovery: string;
+}
+
+function retryDecisionContract(outcome: RetryDecisionOutcome): RetryDecisionContract {
+  const contracts: Record<RetryDecisionOutcome, RetryDecisionContract> = {
+    retry_started: {
+      code: 'JOB_RETRY_STARTED',
+      recovery: 'No recovery is required; monitor the newly queued attempt.'
+    },
+    expedited: {
+      code: 'JOB_RETRY_EXPEDITED',
+      recovery: 'No recovery is required; monitor the expedited attempt.'
+    },
+    already_scheduled: {
+      code: 'JOB_RETRY_ALREADY_SCHEDULED',
+      recovery: 'Wait for the scheduled retry or explicitly expedite it from the refreshed job view.'
+    },
+    invalid_state: {
+      code: 'JOB_RETRY_INVALID_STATE',
+      recovery: 'Refresh the job and use the action allowed for its current state.'
+    },
+    reconciliation_required: {
+      code: 'JOB_RETRY_RECONCILIATION_REQUIRED',
+      recovery: 'Resolve the persisted side-effect identity before attempting this job again.'
+    },
+    concurrent_change: {
+      code: 'JOB_RETRY_CONCURRENT_CHANGE',
+      recovery: 'Refresh the job, review its latest transition, and submit a new action.'
+    }
+  };
+  return contracts[outcome];
+}
+
+function retryResultFields(outcome: RetryDecisionOutcome, message: string): RetryDecisionContract & { message: string } {
+  const contract = retryDecisionContract(outcome);
+  return {
+    ...contract,
+    message: outcome === 'retry_started' || outcome === 'expedited'
+      ? message
+      : formatSecurityError(contract.code, message, contract.recovery)
+  };
+}
 
 function toJob(row: JobRow, retryCapability: JobRetryCapability): JobRecord {
   return {
@@ -346,14 +395,14 @@ export class JobService {
       if (!row) {
         const message = 'Job not found.';
         this.auditRetry(null, request, 'invalid_state', message, null, 0, null, now);
-        return { outcome: 'invalid_state', job: null, capability: null, message };
+        return { outcome: 'invalid_state', job: null, capability: null, ...retryResultFields('invalid_state', message) };
       }
 
       if (row.state !== request.expectedState || Number(row.transition_version) !== request.expectedVersion) {
         const message = 'The job changed after this retry action was presented. Refresh and review its current state.';
         this.auditRetry(row, request, 'concurrent_change', message, row, 0, null, now);
         const job = this.mapJob(row);
-        return { outcome: 'concurrent_change', job, capability: job.retryCapability, message };
+        return { outcome: 'concurrent_change', job, capability: job.retryCapability, ...retryResultFields('concurrent_change', message) };
       }
 
       const capability = this.capabilityForRow(row);
@@ -361,7 +410,7 @@ export class JobService {
         const message = 'This job already has a scheduled retry. Expedite it only when immediate execution is intentional.';
         this.auditRetry(row, request, 'already_scheduled', message, row, 0, null, now);
         const job = this.mapJob(row);
-        return { outcome: 'already_scheduled', job, capability: job.retryCapability, message };
+        return { outcome: 'already_scheduled', job, capability: job.retryCapability, ...retryResultFields('already_scheduled', message) };
       }
 
       if (!capability.canRetry) {
@@ -370,7 +419,7 @@ export class JobService {
           : 'invalid_state';
         this.auditRetry(row, request, outcome, capability.message, row, 0, null, now);
         const job = this.mapJob(row);
-        return { outcome, job, capability: job.retryCapability, message: capability.message };
+        return { outcome, job, capability: job.retryCapability, ...retryResultFields(outcome, capability.message) };
       }
 
       const permanent = row.state === 'FAILED_PERMANENT';
@@ -379,7 +428,7 @@ export class JobService {
         const message = 'A permanent failure requires an operator reason and one explicitly granted attempt.';
         this.auditRetry(row, request, 'invalid_state', message, row, 0, null, now);
         const job = this.mapJob(row);
-        return { outcome: 'invalid_state', job, capability: job.retryCapability, message };
+        return { outcome: 'invalid_state', job, capability: job.retryCapability, ...retryResultFields('invalid_state', message) };
       }
 
       let reconciliation: RetryReconciliation | null = null;
@@ -389,7 +438,7 @@ export class JobService {
           const message = reconciliation.message;
           this.auditRetry(row, request, 'reconciliation_required', message, row, 0, reconciliation, now);
           const job = this.mapJob(row);
-          return { outcome: 'reconciliation_required', job, capability: job.retryCapability, message };
+          return { outcome: 'reconciliation_required', job, capability: job.retryCapability, ...retryResultFields('reconciliation_required', message) };
         }
       }
 
@@ -415,7 +464,7 @@ export class JobService {
         const message = 'The job changed while the retry was being committed. Refresh and review its current state.';
         this.auditRetry(row, request, 'concurrent_change', message, current ?? null, 0, reconciliation, now);
         const job = current ? this.mapJob(current) : null;
-        return { outcome: 'concurrent_change', job, capability: job?.retryCapability ?? null, message };
+        return { outcome: 'concurrent_change', job, capability: job?.retryCapability ?? null, ...retryResultFields('concurrent_change', message) };
       }
 
       this.releaseLocks(row.id, now);
@@ -426,7 +475,7 @@ export class JobService {
         : 'Retry queued.';
       this.auditRetry(row, request, 'retry_started', message, resulting, grantedAttempts, reconciliation, now);
       const job = this.mapJob(resulting);
-      return { outcome: 'retry_started', job, capability: job.retryCapability, message };
+      return { outcome: 'retry_started', job, capability: job.retryCapability, ...retryResultFields('retry_started', message) };
     })();
   }
 
@@ -442,19 +491,19 @@ export class JobService {
       if (!row) {
         const message = 'Job not found.';
         this.auditRetry(null, auditRequest, 'invalid_state', message, null, 0, null, now, 'job.retry_expedited');
-        return { outcome: 'invalid_state', job: null, capability: null, message };
+        return { outcome: 'invalid_state', job: null, capability: null, ...retryResultFields('invalid_state', message) };
       }
       if (Number(row.transition_version) !== request.expectedVersion) {
         const message = 'The job changed after this expedite action was presented.';
         this.auditRetry(row, auditRequest, 'concurrent_change', message, row, 0, null, now, 'job.retry_expedited');
         const job = this.mapJob(row);
-        return { outcome: 'concurrent_change', job, capability: job.retryCapability, message };
+        return { outcome: 'concurrent_change', job, capability: job.retryCapability, ...retryResultFields('concurrent_change', message) };
       }
       if (row.state !== 'RETRY_SCHEDULED') {
         const message = `A job in ${row.state} cannot be expedited.`;
         this.auditRetry(row, auditRequest, 'invalid_state', message, row, 0, null, now, 'job.retry_expedited');
         const job = this.mapJob(row);
-        return { outcome: 'invalid_state', job, capability: job.retryCapability, message };
+        return { outcome: 'invalid_state', job, capability: job.retryCapability, ...retryResultFields('invalid_state', message) };
       }
       const changed = this.db.raw.prepare(`
         UPDATE jobs SET state = 'QUEUED', available_at = ?, phase = 'Scheduled retry expedited',
@@ -466,7 +515,7 @@ export class JobService {
         const message = 'The job changed while the expedite action was being committed.';
         this.auditRetry(row, auditRequest, 'concurrent_change', message, current ?? null, 0, null, now, 'job.retry_expedited');
         const job = current ? this.mapJob(current) : null;
-        return { outcome: 'concurrent_change', job, capability: job?.retryCapability ?? null, message };
+        return { outcome: 'concurrent_change', job, capability: job?.retryCapability ?? null, ...retryResultFields('concurrent_change', message) };
       }
       this.releaseLocks(row.id, now);
       const resulting = this.rowById(row.id);
@@ -474,7 +523,7 @@ export class JobService {
       const message = 'Scheduled retry expedited without consuming an attempt.';
       this.auditRetry(row, auditRequest, 'retry_started', message, resulting, 0, null, now, 'job.retry_expedited');
       const job = this.mapJob(resulting);
-      return { outcome: 'expedited', job, capability: job.retryCapability, message };
+      return { outcome: 'expedited', job, capability: job.retryCapability, ...retryResultFields('expedited', message) };
     })();
   }
 
@@ -774,6 +823,28 @@ export class JobService {
       }),
       now
     );
+    if (outcome !== 'retry_started') {
+      const contract = retryDecisionContract(outcome);
+      recordSecurityRejection(this.db, {
+        flow: 'retry',
+        operation: action === 'job.retry_expedited'
+          ? 'manual_expedite.state_check'
+          : 'manual_retry.state_check',
+        code: contract.code,
+        recovery: contract.recovery,
+        entityType: 'job',
+        entityId: request.jobId,
+        actor: 'human',
+        context: {
+          expectedState: request.expectedState,
+          expectedVersion: request.expectedVersion,
+          actualState: before?.state ?? null,
+          actualVersion: before ? Number(before.transition_version) : null,
+          outcome,
+          reconciliationOutcome: reconciliation?.outcome ?? null
+        }
+      });
+    }
   }
 
   private releaseLocks(jobId: string, now: string): void {

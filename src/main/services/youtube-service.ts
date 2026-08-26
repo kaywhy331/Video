@@ -10,6 +10,13 @@ import type {
   YouTubeConnectionStatus
 } from '@shared/types';
 import type { SecretStore } from '../secret-store';
+import {
+  formatSecurityError,
+  PrivilegedOperationError,
+  recordSecurityRejection,
+  rejectPrivilegedOperation
+} from '../security-events';
+import { redactSecrets } from '../logger';
 import type { ProjectService } from './project-service';
 import {
   createGoogleYouTubeOAuthProvider,
@@ -73,7 +80,11 @@ export function assertPublicationUploadOwner(
   projectId: string
 ): void {
   if (existing && existing.project_id !== projectId) {
-    throw new Error('This final render hash is already assigned to a different project upload.');
+    throw new PrivilegedOperationError(
+      'PUBLICATION_PROJECT_OWNER_MISMATCH',
+      'This final render hash is already assigned to a different project upload.',
+      'Use the publication receipt owned by this project or create a new final render.'
+    );
   }
 }
 
@@ -82,7 +93,11 @@ export function assertPublicationChannelBinding(
   confirmedChannelId: string
 ): void {
   if (publicationChannelId !== confirmedChannelId) {
-    throw new Error('The YouTube publication destination does not match the confirmed channel.');
+    throw new PrivilegedOperationError(
+      'PUBLICATION_CHANNEL_MISMATCH',
+      'The YouTube publication destination does not match the confirmed channel.',
+      'Keep the upload private, reconnect YouTube, and confirm the exact destination channel.'
+    );
   }
 }
 
@@ -222,7 +237,16 @@ export class YouTubeService {
   ) {
     this.oauthSessions = oauthSessions ?? new YouTubeOAuthSessionManager({
       openExternal: this.openExternal,
-      createProvider: input => createGoogleYouTubeOAuthProvider({ ...input, scopes: SCOPES })
+      createProvider: input => createGoogleYouTubeOAuthProvider({ ...input, scopes: SCOPES }),
+      onSecurityRejection: rejection => recordSecurityRejection(this.db, {
+        flow: 'oauth',
+        operation: rejection.operation,
+        code: rejection.code,
+        recovery: rejection.recovery,
+        entityType: 'youtube_oauth',
+        entityId: 'youtube',
+        context: rejection.context
+      })
     });
     this.publications = new PublicationIdentityService(db, activeFinal);
   }
@@ -262,7 +286,13 @@ export class YouTubeService {
   private requireConfirmedBinding(secret = this.secrets.getAll()): YouTubeBindingRow {
     const binding = this.matchingBinding(secret);
     if (!binding) {
-      throw new Error('Confirm the exact YouTube destination channel in Settings before upload or publication.');
+      return this.rejectPublication(
+        'YOUTUBE_CHANNEL_NOT_CONFIRMED',
+        'upload.binding_check',
+        'Confirm the exact YouTube destination channel before upload or publication.',
+        'Reconnect YouTube and explicitly confirm the exact destination channel.',
+        { credentialConfigured: Boolean(secret.youtubeRefreshToken), bindingPresent: Boolean(this.binding()) }
+      );
     }
     return binding;
   }
@@ -298,8 +328,13 @@ export class YouTubeService {
         previousChannelId: storedBinding?.channel_id ?? null
       } : null,
       error: safeError ?? (credentialMismatch ? {
-        code: 'credential_mismatch',
-        message: 'Stored YouTube credentials no longer match the confirmed channel. Confirm or reconnect the destination.'
+        code: 'YOUTUBE_CREDENTIAL_MISMATCH',
+        message: formatSecurityError(
+          'YOUTUBE_CREDENTIAL_MISMATCH',
+          'Stored YouTube credentials no longer match the confirmed channel.',
+          'Reconnect YouTube and explicitly confirm the exact destination channel.'
+        ),
+        recovery: 'Reconnect YouTube and explicitly confirm the exact destination channel.'
       } : null)
     };
   }
@@ -343,7 +378,12 @@ export class YouTubeService {
   private async client() {
     const secret = this.secrets.getAll();
     if (!secret.youtubeClientId || !secret.youtubeClientSecret) {
-      throw new Error('YouTube OAuth client ID and secret are not configured.');
+      this.rejectPublication(
+        'YOUTUBE_OAUTH_CLIENT_CONFIG_MISSING',
+        'upload.oauth_configuration',
+        'YouTube OAuth client configuration is missing.',
+        'Save the Google OAuth desktop client ID and secret, then reconnect YouTube.'
+      );
     }
     this.requireConfirmedBinding(secret);
     const client = new google.auth.OAuth2(secret.youtubeClientId, secret.youtubeClientSecret);
@@ -387,7 +427,12 @@ export class YouTubeService {
   async beginAuthorization(): Promise<YouTubeConnectionStatus> {
     const secret = this.secrets.getAll();
     if (!secret.youtubeClientId || !secret.youtubeClientSecret) {
-      throw new Error('Save a Google OAuth desktop client ID and secret in Settings first.');
+      this.rejectOAuth(
+        'OAUTH_CLIENT_CONFIG_MISSING',
+        'session.configuration_check',
+        'A Google OAuth desktop client ID and secret are required.',
+        'Save the Google OAuth desktop client ID and secret in Settings, then reconnect.'
+      );
     }
     this.legacyInspectionAttempted = true;
     const pending = await this.oauthSessions.begin({
@@ -408,7 +453,13 @@ export class YouTubeService {
         const source = await this.oauthSessions.cancel(pending.pendingAuthorizationId);
         if (source === 'stored') this.secrets.replaceYouTubeCredentials(null);
       }
-      throw new Error('Replacing the confirmed YouTube channel requires explicit replacement confirmation.');
+      this.rejectOAuth(
+        'OAUTH_REPLACEMENT_CONFIRMATION_REQUIRED',
+        'confirmation.replacement_check',
+        'Replacing the confirmed YouTube channel requires explicit replacement confirmation.',
+        'Start the connection again and explicitly confirm replacement of the current channel.',
+        { existingBindingPresent: true, candidateChannelPresent: Boolean(pending?.channelId) }
+      );
     }
 
     const previousSecrets = this.secrets.getAll();
@@ -417,9 +468,21 @@ export class YouTubeService {
       request.expectedChannelId,
       async candidate => {
         const refreshToken = candidate.credentials.refreshToken;
-        if (!refreshToken) throw new Error('YouTube authorization did not provide a durable refresh credential.');
+        if (!refreshToken) {
+          this.rejectOAuth(
+            'OAUTH_REFRESH_CREDENTIAL_MISSING',
+            'confirmation.credential_check',
+            'YouTube authorization did not provide a durable refresh credential.',
+            'Reconnect YouTube and grant durable offline account access.'
+          );
+        }
         if (!previousSecrets.youtubeClientId || candidate.clientId !== previousSecrets.youtubeClientId) {
-          throw new Error('The OAuth client configuration changed during authorization. Start the connection again.');
+          this.rejectOAuth(
+            'OAUTH_CLIENT_CONFIG_CHANGED',
+            'confirmation.client_check',
+            'The OAuth client configuration changed during authorization.',
+            'Review the saved OAuth client configuration and start the connection again.'
+          );
         }
         let secretsReplaced = false;
         try {
@@ -495,18 +558,73 @@ export class YouTubeService {
     await this.oauthSessions.shutdown();
   }
 
+  private rejectOAuth(
+    code: string,
+    operation: string,
+    message: string,
+    recovery: string,
+    context: Record<string, unknown> = {}
+  ): never {
+    return rejectPrivilegedOperation(this.db, {
+      flow: 'oauth',
+      operation,
+      code,
+      recovery,
+      entityType: 'youtube_oauth',
+      entityId: 'youtube',
+      actor: 'human',
+      context
+    }, message);
+  }
+
+  private rejectPublication(
+    code: string,
+    operation: string,
+    message: string,
+    recovery: string,
+    context: Record<string, unknown> = {},
+    entityId = 'youtube'
+  ): never {
+    return rejectPrivilegedOperation(this.db, {
+      flow: 'publication',
+      operation,
+      code,
+      recovery,
+      entityType: 'publication',
+      entityId,
+      context
+    }, message);
+  }
+
   async uploadPrivate(
     projectId: string,
     expectedSnapshot?: PublicationSnapshot
   ): Promise<{ videoId: string; url: string }> {
     const project = this.projects.get(projectId);
     if (!['QC_FINAL', 'WAITING_FINAL_APPROVAL', 'WAITING_YOUTUBE_PROCESSING', 'UPLOADING_PRIVATE'].includes(project.state)) {
-      throw new Error(`Private upload is not allowed from project state ${project.state}.`);
+      this.rejectPublication(
+        'PUBLICATION_UPLOAD_STATE_INVALID',
+        'upload.project_state',
+        `Private upload is not allowed from project state ${project.state}.`,
+        'Refresh the project and complete the required workflow stages before uploading.',
+        { projectState: project.state },
+        projectId
+      );
     }
     const binding = this.requireConfirmedBinding();
     const snapshot = expectedSnapshot ?? this.publications.capture(projectId, binding.channel_id);
     if (snapshot.projectId !== projectId || snapshot.confirmedChannelId !== binding.channel_id) {
-      throw new Error('The durable upload snapshot does not match the project and confirmed YouTube channel.');
+      this.rejectPublication(
+        'PUBLICATION_SNAPSHOT_OWNER_MISMATCH',
+        'upload.snapshot_identity',
+        'The durable upload snapshot does not match the project and confirmed YouTube channel.',
+        'Capture a new upload snapshot from the current project and confirmed channel.',
+        {
+          projectMatched: snapshot.projectId === projectId,
+          channelMatched: snapshot.confirmedChannelId === binding.channel_id
+        },
+        projectId
+      );
     }
     this.publications.markSuperseded(snapshot);
 
@@ -956,7 +1074,9 @@ export class YouTubeService {
         privateVideoStatus(this.settings().youtubeSyntheticMediaDisclosure)
       );
     } catch (resetError) {
-      const resetMessage = resetError instanceof Error ? resetError.message : String(resetError);
+      const resetMessage = redactSecrets(
+        resetError instanceof Error ? resetError.message : String(resetError)
+      ).slice(0, 1_000);
       this.db.raw.prepare(`
         UPDATE publication_records SET error = ?, updated_at = ? WHERE id = ?
       `).run(
@@ -978,10 +1098,24 @@ export class YouTubeService {
   ): Promise<PublicationApprovalResult> {
     const project = this.projects.get(projectId);
     if (project.state !== 'WAITING_FINAL_APPROVAL') {
-      throw new Error(`Publication approval is not allowed from project state ${project.state}.`);
+      this.rejectPublication(
+        'PUBLICATION_APPROVAL_STATE_INVALID',
+        'approval.project_state',
+        `Publication approval is not allowed from project state ${project.state}.`,
+        'Refresh the project and complete private upload processing before approval.',
+        { projectState: project.state, requestedAction: action },
+        projectId
+      );
     }
     if (!project.youtubeVideoId) {
-      throw new Error('Project has not been uploaded to YouTube.');
+      this.rejectPublication(
+        'PUBLICATION_VIDEO_MISSING',
+        'approval.video_check',
+        'Project has not been uploaded to YouTube.',
+        'Complete a private YouTube upload and processing checks before approval.',
+        { requestedAction: action },
+        projectId
+      );
     }
     const binding = this.requireConfirmedBinding();
     const publication = this.db.raw.prepare(`
@@ -1001,7 +1135,16 @@ export class YouTubeService {
       snapshot_version: number;
       snapshot_status: string;
     } | undefined;
-    if (!publication) throw new Error('The private publication receipt is missing.');
+    if (!publication) {
+      this.rejectPublication(
+        'PUBLICATION_RECEIPT_MISSING',
+        'approval.receipt_check',
+        'The private publication receipt is missing.',
+        'Keep the remote video private and create a new verified upload receipt.',
+        { requestedAction: action },
+        projectId
+      );
+    }
     let snapshot: PublicationSnapshot;
     try {
       snapshot = this.publications.capture(projectId, binding.channel_id);
@@ -1018,9 +1161,30 @@ export class YouTubeService {
     this.publications.assertCurrent(snapshot, publication.id, 'approval');
     const currentApprovalHash = snapshot.approvalHash;
     if (publication.processing_status !== 'succeeded' || !publication.caption_id || !publication.thumbnail_uploaded) {
-      throw new Error('YouTube processing, thumbnail, and timed captions must all succeed before approval.');
+      this.rejectPublication(
+        'PUBLICATION_PREREQUISITES_INCOMPLETE',
+        'approval.prerequisite_check',
+        'YouTube processing, thumbnail, and timed captions must all succeed before approval.',
+        'Wait for processing and complete the thumbnail and timed-caption steps before approval.',
+        {
+          processingStatus: publication.processing_status,
+          captionPresent: Boolean(publication.caption_id),
+          thumbnailUploaded: Boolean(publication.thumbnail_uploaded),
+          requestedAction: action
+        },
+        publication.id
+      );
     }
-    assertPublicationChannelBinding(publication.channel_id, binding.channel_id);
+    if (publication.channel_id !== binding.channel_id) {
+      this.rejectPublication(
+        'PUBLICATION_CHANNEL_MISMATCH',
+        'approval.channel_check',
+        'The YouTube publication destination does not match the confirmed channel.',
+        'Keep the upload private, reconnect YouTube, and confirm the exact destination channel.',
+        { requestedAction: action },
+        publication.id
+      );
+    }
 
     if (action === 'keep_private') {
       const now = new Date().toISOString();
@@ -1041,7 +1205,14 @@ export class YouTubeService {
 
     if (action === 'schedule' && (!scheduledAt || !Number.isFinite(new Date(scheduledAt).getTime())
       || new Date(scheduledAt).getTime() <= Date.now())) {
-      throw new Error('A valid future schedule time is required.');
+      this.rejectPublication(
+        'PUBLICATION_SCHEDULE_INVALID',
+        'approval.schedule_validation',
+        'A valid future schedule time is required.',
+        'Choose a valid future time and submit the schedule approval again.',
+        { scheduleProvided: Boolean(scheduledAt), requestedAction: action },
+        publication.id
+      );
     }
 
     const auth = await this.client();

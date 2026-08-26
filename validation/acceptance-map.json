@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v6",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v7",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -204,16 +204,20 @@
       ]
     },
     {
-      "ids": ["SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-005", "SEC-006", "SEC-007", "SEC-008", "SEC-009", "SEC-010", "SEC-011", "SEC-012"],
+      "ids": ["SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-005", "SEC-006", "SEC-007", "SEC-008", "SEC-009", "SEC-010", "SEC-011", "SEC-012", "SEC-013"],
       "evidence": [
+        "tests/active-final-service.test.ts",
         "tests/contracts.test.ts",
         "tests/e2e/electron-accessibility.spec.ts",
+        "tests/job-service.test.ts",
         "tests/media-protocol.test.ts",
         "tests/media-tool-service.test.ts",
         "tests/operations-service.test.ts",
         "tests/project-artifact-service.integration.test.ts",
         "tests/provider-endpoint-policy.test.ts",
+        "tests/security-events.test.ts",
         "tests/security-policy.test.ts",
+        "tests/youtube-channel-binding.test.ts",
         "tests/youtube-oauth-session.test.ts"
       ]
     },

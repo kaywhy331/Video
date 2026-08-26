@@ -120,7 +120,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - active-final review selection, artifact-changing revision invalidation, and verified replacement-final resolution of only superseded render/render-QC exceptions.
 - editable-control-safe operator shortcuts, visible focus treatment, responsive storyboard collapse, and managed active-final WebVTT preview captions.
 - real PQ-to-BT.709 tone mapping, stale media-pipeline regeneration, contained media/caption protocol resolution, nine-tab project detail, generic exception actions, and deferred pause checkpoints;
-- built Electron Playwright/Axe journeys, 174-ID acceptance traceability, zero-vulnerability dependency audit, and CycloneDX SBOM generation.
+- built Electron Playwright/Axe journeys, 175-ID acceptance traceability, zero-vulnerability dependency audit, and CycloneDX SBOM generation.
 
 ## Release evidence added in alpha.4
 

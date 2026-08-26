@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { basename, isAbsolute, join } from 'node:path';
 import type { AppDatabase } from '../database/database';
+import { PrivilegedOperationError, rejectPrivilegedOperation } from '../security-events';
 import type {
   AppSettings,
   MediaToolInspection,
@@ -53,6 +54,34 @@ interface LaunchAuthorization {
   source: Exclude<MediaToolSource, 'unavailable'> | 'trust_probe';
   canonicalPath: string;
   sha256: string;
+}
+
+type MediaToolSecurityCode =
+  | 'MEDIA_TOOL_ACK_REQUIRED'
+  | 'MEDIA_TOOL_TRUST_IN_PROGRESS'
+  | 'MEDIA_TOOL_IDENTITY_CHANGED'
+  | 'MEDIA_TOOL_ROLE_MISMATCH'
+  | 'MEDIA_TOOL_NOT_EXECUTABLE'
+  | 'MEDIA_TOOL_SIGNATURE_INVALID'
+  | 'MEDIA_TOOL_PROBE_FAILED'
+  | 'MEDIA_TOOL_PATH_INVALID'
+  | 'MEDIA_TOOL_MISSING'
+  | 'MEDIA_TOOL_NOT_FILE'
+  | 'MEDIA_TOOL_LINK_UNRESOLVED'
+  | 'MEDIA_TOOL_EMPTY'
+  | 'MEDIA_TOOL_INSPECTION_FAILED'
+  | 'MEDIA_TOOL_TRUST_MISMATCH'
+  | 'MEDIA_TOOL_HASH_CHANGED';
+
+class MediaToolInspectionError extends Error {
+  constructor(
+    readonly code: MediaToolSecurityCode,
+    message: string,
+    readonly recovery: string
+  ) {
+    super(message);
+    this.name = 'MediaToolInspectionError';
+  }
 }
 
 function detectedRole(path: string, originalFilename: string | null = null): MediaToolRole | 'unknown' {
@@ -227,30 +256,54 @@ export class MediaToolService implements MediaToolPathResolver {
   }
 
   async inspect(role: MediaToolRole, path: string): Promise<MediaToolInspection> {
-    const initial = this.inspectFile(role, path, {
-      status: 'unavailable',
-      subject: null,
-      originalFilename: null
-    });
-    const signature = await this.inspectPlatformSignature(initial.canonicalPath);
-    const inspection = this.inspectFile(role, path, signature);
-    this.saveInspection(inspection, inspection.roleMatches ? 'confirmation_required' : 'role_mismatch');
-    this.audit('media_tool.inspected', role, {
-      detectedRole: inspection.detectedRole,
-      roleMatches: inspection.roleMatches,
-      executableByCurrentUser: inspection.executableByCurrentUser,
-      hashPrefix: inspection.sha256.slice(0, 12),
-      signatureStatus: inspection.signature.status
-    });
-    return inspection;
+    try {
+      const initial = this.inspectFile(role, path, {
+        status: 'unavailable',
+        subject: null,
+        originalFilename: null
+      });
+      const signature = await this.inspectPlatformSignature(initial.canonicalPath);
+      const inspection = this.inspectFile(role, path, signature);
+      this.saveInspection(inspection, inspection.roleMatches ? 'confirmation_required' : 'role_mismatch');
+      this.audit('media_tool.inspected', role, {
+        detectedRole: inspection.detectedRole,
+        roleMatches: inspection.roleMatches,
+        executableByCurrentUser: inspection.executableByCurrentUser,
+        hashPrefix: inspection.sha256.slice(0, 12),
+        signatureStatus: inspection.signature.status
+      });
+      return inspection;
+    } catch (error) {
+      const known = error instanceof MediaToolInspectionError ? error : null;
+      return this.reject(
+        role,
+        'inspection.path_validation',
+        known?.code ?? 'MEDIA_TOOL_INSPECTION_FAILED',
+        known?.message ?? 'The media tool could not be inspected safely.',
+        known?.recovery ?? 'Verify the executable permissions and select the file again.',
+        { errorType: error instanceof Error ? error.name : 'UnknownError' }
+      );
+    }
   }
 
   async trust(request: MediaToolTrustRequest): Promise<MediaToolState> {
     if (request.acknowledgePermissions !== true) {
-      throw new Error('Explicit executable-permission acknowledgement is required.');
+      this.reject(
+        request.role,
+        'trust.permission_acknowledgement',
+        'MEDIA_TOOL_ACK_REQUIRED',
+        'Explicit executable-permission acknowledgement is required.',
+        'Review the executable identity and explicitly acknowledge local execution permission.'
+      );
     }
     if (this.trustingRoles.has(request.role)) {
-      throw new Error(`A ${request.role} trust operation is already in progress.`);
+      this.reject(
+        request.role,
+        'trust.concurrent_change',
+        'MEDIA_TOOL_TRUST_IN_PROGRESS',
+        `A ${request.role} trust operation is already in progress.`,
+        'Wait for the current inspection and trust operation to finish before retrying.'
+      );
     }
     this.trustingRoles.add(request.role);
     try {
@@ -264,19 +317,45 @@ export class MediaToolService implements MediaToolPathResolver {
     const inspection = await this.inspect(request.role, request.path);
     if (inspection.sha256 !== request.expectedSha256) {
       this.markStatus(request.role, 'changed');
-      throw new Error('The executable changed after inspection. Inspect it again before trusting it.');
+      this.reject(
+        request.role,
+        'trust.identity_check',
+        'MEDIA_TOOL_IDENTITY_CHANGED',
+        'The executable changed after inspection. Inspect it again before trusting it.',
+        'Inspect the executable again and explicitly confirm its new identity.',
+        { observedHashPrefix: inspection.sha256.slice(0, 12) }
+      );
     }
     if (!inspection.roleMatches) {
       this.markStatus(request.role, 'role_mismatch');
-      throw new Error(`The selected file does not identify as ${request.role}.`);
+      this.reject(
+        request.role,
+        'trust.role_check',
+        'MEDIA_TOOL_ROLE_MISMATCH',
+        `The selected file does not identify as ${request.role}.`,
+        `Select an executable that identifies itself as ${request.role}, then inspect it again.`,
+        { detectedRole: inspection.detectedRole }
+      );
     }
     if (!inspection.executableByCurrentUser) {
       this.markStatus(request.role, 'probe_failed');
-      throw new Error('The selected file is not executable by the current user.');
+      this.reject(
+        request.role,
+        'trust.permission_check',
+        'MEDIA_TOOL_NOT_EXECUTABLE',
+        'The selected file is not executable by the current user.',
+        'Correct the file permissions or select an executable available to the current user.'
+      );
     }
     if (inspection.signature.status === 'invalid') {
       this.markStatus(request.role, 'probe_failed');
-      throw new Error('The selected file has an invalid platform signature and cannot be trusted.');
+      this.reject(
+        request.role,
+        'trust.signature_check',
+        'MEDIA_TOOL_SIGNATURE_INVALID',
+        'The selected file has an invalid platform signature and cannot be trusted.',
+        'Replace the file with an authentic executable and inspect the replacement.'
+      );
     }
 
     const probeAuthorization: LaunchAuthorization = {
@@ -298,7 +377,7 @@ export class MediaToolService implements MediaToolPathResolver {
       }
     } catch (error) {
       this.saveInspection(inspection, 'probe_failed', {
-        versionOutput: version || null,
+        versionOutput: null,
         probedAt: new Date().toISOString()
       });
       this.audit('media_tool.trust_probe_failed', request.role, {
@@ -306,7 +385,19 @@ export class MediaToolService implements MediaToolPathResolver {
         reason: 'bounded_version_probe_failed',
         errorType: error instanceof Error ? error.name : 'UnknownError'
       });
-      throw new Error(`The ${request.role} trust probe failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof PrivilegedOperationError) throw error;
+      this.reject(
+        request.role,
+        'trust.version_probe',
+        'MEDIA_TOOL_PROBE_FAILED',
+        `The ${request.role} trust probe failed safely.`,
+        'Verify the executable is authentic and runnable, then inspect and trust it again.',
+        {
+          hashPrefix: inspection.sha256.slice(0, 12),
+          signatureStatus: inspection.signature.status,
+          errorType: error instanceof Error ? error.name : 'UnknownError'
+        }
+      );
     } finally {
       this.pendingProbes.delete(probeAuthorization.canonicalPath);
     }
@@ -354,7 +445,14 @@ export class MediaToolService implements MediaToolPathResolver {
           expectedHashPrefix: missingAuthorization.sha256.slice(0, 12),
           reason: 'missing_before_launch'
         });
-        throw new Error(`Blocked ${missingAuthorization.role}: its executable disappeared before launch.`);
+        this.reject(
+          missingAuthorization.role,
+          'execution.identity_check',
+          'MEDIA_TOOL_MISSING',
+          `Blocked ${missingAuthorization.role}: its executable disappeared before launch.`,
+          'Restore the exact executable or inspect and trust its replacement before retrying.',
+          { source: missingAuthorization.source, expectedHashPrefix: missingAuthorization.sha256.slice(0, 12) }
+        );
       }
       return;
     }
@@ -372,7 +470,14 @@ export class MediaToolService implements MediaToolPathResolver {
           expectedHashPrefix: authorization.sha256.slice(0, 12),
           reason: 'trust_record_no_longer_matches'
         });
-        throw new Error(`Blocked ${authorization.role}: its device-local trust record no longer matches.`);
+        this.reject(
+          authorization.role,
+          'execution.trust_check',
+          'MEDIA_TOOL_TRUST_MISMATCH',
+          `Blocked ${authorization.role}: its device-local trust record no longer matches.`,
+          'Refresh tool status and explicitly trust the current executable before retrying.',
+          { source: authorization.source, expectedHashPrefix: authorization.sha256.slice(0, 12) }
+        );
       }
     }
 
@@ -385,7 +490,18 @@ export class MediaToolService implements MediaToolPathResolver {
         observedHashPrefix: observedHash.slice(0, 12),
         reason: 'hash_changed_before_launch'
       });
-      throw new Error(`Blocked ${authorization.role}: its SHA-256 changed before execution.`);
+      this.reject(
+        authorization.role,
+        'execution.identity_check',
+        'MEDIA_TOOL_HASH_CHANGED',
+        `Blocked ${authorization.role}: its SHA-256 changed before execution.`,
+        'Inspect the executable again and explicitly confirm its new identity before retrying.',
+        {
+          source: authorization.source,
+          expectedHashPrefix: authorization.sha256.slice(0, 12),
+          observedHashPrefix: observedHash.slice(0, 12)
+        }
+      );
     }
     this.audit('media_tool.execution_authorized', authorization.role, {
       source: authorization.source,
@@ -399,24 +515,54 @@ export class MediaToolService implements MediaToolPathResolver {
     signature: PlatformSignature
   ): MediaToolInspection {
     if (!requestedPath.trim() || !isAbsolute(requestedPath)) {
-      throw new Error('Media tool paths must be absolute.');
+      throw new MediaToolInspectionError(
+        'MEDIA_TOOL_PATH_INVALID',
+        'Media tool paths must be absolute.',
+        'Select the executable through the file picker or enter its absolute path.'
+      );
     }
     let requestedStats;
     try {
       requestedStats = lstatSync(requestedPath);
     } catch {
-      throw new Error('The selected media tool does not exist.');
+      throw new MediaToolInspectionError(
+        'MEDIA_TOOL_MISSING',
+        'The selected media tool does not exist.',
+        'Restore the file or select the current executable location.'
+      );
     }
-    if (requestedStats.isDirectory()) throw new Error('The selected media tool is a directory, not a file.');
+    if (requestedStats.isDirectory()) {
+      throw new MediaToolInspectionError(
+        'MEDIA_TOOL_NOT_FILE',
+        'The selected media tool is a directory, not a file.',
+        'Select the ffmpeg or ffprobe executable file inside the directory.'
+      );
+    }
     let canonicalPath: string;
     try {
       canonicalPath = realpathSync.native(requestedPath);
     } catch {
-      throw new Error('The selected media tool link could not be resolved.');
+      throw new MediaToolInspectionError(
+        'MEDIA_TOOL_LINK_UNRESOLVED',
+        'The selected media tool link could not be resolved.',
+        'Repair the link or select the executable at its canonical location.'
+      );
     }
     const stats = statSync(canonicalPath);
-    if (!stats.isFile()) throw new Error('The selected media tool is not a regular file.');
-    if (stats.size <= 0) throw new Error('The selected media tool is empty.');
+    if (!stats.isFile()) {
+      throw new MediaToolInspectionError(
+        'MEDIA_TOOL_NOT_FILE',
+        'The selected media tool is not a regular file.',
+        'Select a regular ffmpeg or ffprobe executable file.'
+      );
+    }
+    if (stats.size <= 0) {
+      throw new MediaToolInspectionError(
+        'MEDIA_TOOL_EMPTY',
+        'The selected media tool is empty.',
+        'Replace the empty file with a valid executable and inspect it again.'
+      );
+    }
     const detected = detectedRole(canonicalPath, signature.originalFilename);
     return {
       role,
@@ -700,6 +846,25 @@ export class MediaToolService implements MediaToolPathResolver {
     } catch {
       return false;
     }
+  }
+
+  private reject(
+    role: MediaToolRole,
+    operation: string,
+    code: MediaToolSecurityCode,
+    message: string,
+    recovery: string,
+    context: Record<string, unknown> = {}
+  ): never {
+    return rejectPrivilegedOperation(this.db, {
+      flow: 'media_tool',
+      operation,
+      code,
+      recovery,
+      entityType: 'media_tool',
+      entityId: role,
+      context
+    }, message);
   }
 
   private audit(action: string, role: MediaToolRole, metadata: Record<string, unknown>): void {
