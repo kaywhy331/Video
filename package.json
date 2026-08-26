@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node scripts/run-vitest.mjs",
     "test:watch": "vitest",
+    "test:autonomy": "vitest run tests/autonomous-production-rehearsal.integration.test.ts --reporter=verbose",
     "test:e2e": "npm run build && node scripts/run-electron-e2e.mjs",
     "validate:acceptance": "node scripts/validate-acceptance.mjs",
     "validate:release-evidence": "node scripts/validate-release-evidence.mjs",

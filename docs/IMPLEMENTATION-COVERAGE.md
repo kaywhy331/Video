@@ -144,6 +144,12 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - the same bounded run performs silent installation and uninstallation in an isolated path, verifies removal, and writes `WINDOWS_PACKAGE_SMOKE.json` with exact commit, version, runner, package hash, lifecycle, and cleanup evidence;
 - release provenance fails closed when that receipt is missing, failed, stale, incomplete, or does not match the installer and archive bytes. This supports packaging confidence but does not close the clean-machine qualification gate.
 
+## Autonomous production supporting rehearsal
+
+`npm run test:autonomy` creates a fresh catalog of twelve distinct, human-verified 1080p clips and drives the production services from Autopilot planning through license attestation, footage verification, locked final-script generation, local narration synthesis, draft/final FFmpeg rendering, blocker-free media/package QC, and a resumable private-upload protocol fixture. The final assertions require a managed active final, synchronized package/thumbnail/captions, processed private publication state, and an exact uploaded byte count before the project may reach `WAITING_FINAL_APPROVAL`.
+
+This is deterministic supporting evidence, not live-provider qualification: its media is generated, language and narration use local fallbacks, and the YouTube runtime is protocol-faithful but non-networked. It therefore does not qualify `E2E-001`, `E2E-002`, `E2E-005`, the clean-Windows gate, or any representative hardware/account pilot gate.
+
 ## Validation evidence lifecycle hardened after alpha.7
 
 - development and release validation are explicitly qualified; release mode admits only a clean exact Git HEAD/tree and rechecks source plus runtime/claims inputs after all stages;
