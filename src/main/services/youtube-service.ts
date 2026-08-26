@@ -188,6 +188,16 @@ type UpdatePublicationStatus = (
   status: youtube_v3.Schema$VideoStatus
 ) => Promise<youtube_v3.Schema$VideoStatus | null>;
 
+export interface YouTubeApiRuntime {
+  createOAuthClient(clientId: string, clientSecret: string): Auth.OAuth2Client;
+  createYouTubeClient(auth: Auth.OAuth2Client): youtube_v3.Youtube;
+}
+
+const defaultYouTubeApiRuntime: YouTubeApiRuntime = {
+  createOAuthClient: (clientId, clientSecret) => new (googleApis().google.auth.OAuth2)(clientId, clientSecret),
+  createYouTubeClient: auth => googleApis().google.youtube({ version: 'v3', auth })
+};
+
 function retryDelay(attempt: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt + Math.floor(Math.random() * 350)));
 }
@@ -234,7 +244,8 @@ export class YouTubeService {
     },
     private readonly openExternal: (url: string) => Promise<unknown> = url => shell.openExternal(url, { activate: true }),
     oauthSessions?: YouTubeOAuthSessionPort,
-    activeFinal = new ActiveFinalService(db, () => settings().outputFolder)
+    activeFinal = new ActiveFinalService(db, () => settings().outputFolder),
+    private readonly apiRuntime: YouTubeApiRuntime = defaultYouTubeApiRuntime
   ) {
     this.oauthSessions = oauthSessions ?? new YouTubeOAuthSessionManager({
       openExternal: this.openExternal,
@@ -387,7 +398,7 @@ export class YouTubeService {
       );
     }
     this.requireConfirmedBinding(secret);
-    const client = new (googleApis().google.auth.OAuth2)(secret.youtubeClientId, secret.youtubeClientSecret);
+    const client = this.apiRuntime.createOAuthClient(secret.youtubeClientId, secret.youtubeClientSecret);
     if (secret.youtubeRefreshToken || secret.youtubeAccessToken) {
       client.setCredentials({
         refresh_token: secret.youtubeRefreshToken,
@@ -717,7 +728,7 @@ export class YouTubeService {
     }
 
     const auth = await this.client();
-    const youtube = googleApis().google.youtube({ version: 'v3', auth });
+    const youtube = this.apiRuntime.createYouTubeClient(auth);
     if (existing?.video_id) {
       this.publications.assertCurrent(snapshot, publicationId, 'metadata');
       await youtube.videos.update({
