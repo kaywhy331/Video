@@ -147,6 +147,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 
 - development and release validation are explicitly qualified; release mode admits only a clean exact Git HEAD/tree and rechecks source plus runtime/claims inputs after all stages;
 - generated root status/acceptance receipts and `validation/results/*.json` are ignored artifacts rather than tracked claims about a later checkout;
+- representative external receipts and `validation/external-qualification/index.json` are also ignored, excluded from runtime/claims digests, and admitted only through exact-source size/hash and receipt-specific verification;
 - runtime and human release-claim inputs have separate deterministic per-file manifests without hashing their own generated provenance;
 - claim validation checks exact tags, commits, workflow runs, published-asset counts, signing/readiness state, and external-gate counts against the immutable historical index across every tracked claim document, while Git checks the recorded tag, trees, ancestry, and single-change index history;
 - Linux validation and Windows packaging retain the exact `${{ github.sha }}` artifact handoff, while manifest generation and verification reject dirty, development, stale commit/tree, or mismatched-input evidence;
@@ -158,7 +159,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 
 `npm run benchmark:catalog:responsiveness` additionally exercises the built worker with a Sheets-style row stream, file preview, atomic commit, cooperative cancellation, managed-output cleanup, `catalog:ping`, progress, final row count, and SQLite integrity. Against 26,000 rows, Sheets staging took 18,399.2 ms with a 26.513 ms heartbeat p99; preview took 10,764.847 ms with a 24.84 ms p99; and the intentionally atomic commit took 649,121.919 ms with a 32.161 ms p99. Ping p99 remained at or below 0.056 ms, cancellation was observed in 941.902 ms, all 26,000 assets were present, and integrity was `ok`. Acceptance uses p99 thresholds (250 ms heartbeat, 50 ms ping) and the receipt also preserves unqualified maxima, including a 1,777.997 ms commit heartbeat outlier paired with a 502.469 ms ping outlier on the contended host. The full receipt is [`VALIDATION_CATALOG_RESPONSIVENESS.json`](../VALIDATION_CATALOG_RESPONSIVENESS.json).
 
-Those measured service and main-process criteria pass. Full UI performance qualification remains false because the headless run does not measure Electron renderer startup under five seconds, actual scrolling/interaction and memory behavior, or responsiveness during background rendering.
+Those measured service and main-process criteria pass. A separate production-Electron target runner now measures renderer startup under five seconds, actual 26,000-row scrolling/interaction and memory behavior, and responsiveness during a concurrent background render on representative Windows x64 hardware. No qualifying target receipt is stored in source, so the current historical release remains unqualified on those gates; a generated receipt can close them only after the acceptance pipeline re-verifies its exact-source evidence index.
 
 ## Production qualification gates
 

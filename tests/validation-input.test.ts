@@ -21,11 +21,13 @@ describe('validation input digests and generated evidence lifecycle', () => {
     const root = mkdtempSync(join(tmpdir(), 'videofactory-validation-input-'));
     roots.push(root);
     mkdirSync(resolve(root, 'validation', 'results'), { recursive: true });
+    mkdirSync(resolve(root, 'validation', 'external-qualification'), { recursive: true });
     mkdirSync(resolve(root, 'docs', 'release-evidence'), { recursive: true });
     writeFileSync(resolve(root, 'package.json'), '{"version":"1.0.0"}\n');
     writeFileSync(resolve(root, 'README.md'), 'claim one\n');
     writeFileSync(resolve(root, 'docs', 'release-evidence', 'v1.json'), '{"historical":true}\n');
     writeFileSync(resolve(root, 'validation', 'results', 'pipeline.json'), '{"generated":true}\n');
+    writeFileSync(resolve(root, 'validation', 'external-qualification', 'index.json'), '{"generated":true}\n');
 
     const first = validationInputDigests(root);
     expect(first.runtime.files.map(file => file.path)).toEqual(['package.json']);
@@ -45,6 +47,7 @@ describe('validation input digests and generated evidence lifecycle', () => {
     expect(runtimeChanged.claims.sha256).toBe(claimsChanged.claims.sha256);
 
     writeFileSync(resolve(root, 'validation', 'results', 'pipeline.json'), '{"generated":false}\n');
+    writeFileSync(resolve(root, 'validation', 'external-qualification', 'index.json'), '{"generated":false}\n');
     expect(validationInputDigests(root)).toEqual(runtimeChanged);
   });
 
@@ -93,7 +96,8 @@ describe('validation input digests and generated evidence lifecycle', () => {
       'VALIDATION_STATUS.json',
       'validation/results/pipeline.json',
       'validation/results/electron-performance.json',
-      'validation/results/electron-performance-playwright.json'
+      'validation/results/electron-performance-playwright.json',
+      'validation/external-qualification/index.json'
     ]) {
       const ignored = spawnSync('git', ['check-ignore', '--quiet', path], { cwd: repositoryRoot });
       expect(ignored.status).toBe(0);

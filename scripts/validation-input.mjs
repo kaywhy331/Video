@@ -55,7 +55,12 @@ export const CLAIMS_INPUTS = Object.freeze([
 
 function filesUnder(root, path, output) {
   const relativePath = relative(root, path).replaceAll('\\', '/');
-  if (relativePath === 'validation/results' || relativePath.startsWith('validation/results/')) return;
+  if (
+    relativePath === 'validation/results'
+    || relativePath.startsWith('validation/results/')
+    || relativePath === 'validation/external-qualification'
+    || relativePath.startsWith('validation/external-qualification/')
+  ) return;
   const entries = readdirSync(path, { withFileTypes: true })
     .sort((left, right) => left.name.localeCompare(right.name));
   for (const entry of entries) {

@@ -5,6 +5,11 @@ import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { validationInputDigests } from '../scripts/validation-input.mjs';
+import {
+  ELECTRON_PERFORMANCE_RECEIPT_PATH,
+  EXTERNAL_QUALIFICATION_INDEX_PATH,
+  writeElectronPerformanceQualificationIndex
+} from '../scripts/external-qualification-evidence.mjs';
 
 const repositoryRoot = process.cwd();
 const script = resolve(repositoryRoot, 'scripts', 'generate-release-manifest.mjs');
@@ -26,6 +31,7 @@ function fixtureRoot(): string {
   writeFileSync(resolve(root, '.gitignore'), [
     '/release/',
     '/validation/results/',
+    '/validation/external-qualification/',
     '/VALIDATION_STATUS.json',
     '/VALIDATION_ACCEPTANCE_RECEIPT.json',
     ''
@@ -137,18 +143,49 @@ function writeValidationEvidence(root: string, options: EvidenceOptions = {}): v
     runtimeInput: evidence(runtimePath),
     claimsInput: evidence(claimsPath)
   };
+  const externalQualificationEvidence = { index: null, receipts: [], qualifiedIds: [] };
+  const summary = {
+    total: 2,
+    passedLocalValidation: 1,
+    qualifiedExternal: 0,
+    externalPending: 1,
+    productionQualified: false
+  };
+  const cases = [{
+    id: 'AUTO-001',
+    classification: 'automated',
+    result: 'passed_local_validation',
+    artifacts: ['tests/fixture.test.ts']
+  }, {
+    id: 'E2E-001',
+    classification: 'external',
+    result: 'external_pending',
+    pendingReason: 'Representative operator evidence is required.',
+    artifacts: ['docs/prd/06-ACCEPTANCE-TESTS.md']
+  }];
   writeFileSync(resolve(root, 'VALIDATION_STATUS.json'), JSON.stringify({
     ...common,
     release: '9.8.7-alpha.1',
     pipeline: { status: 'passed' },
     evidence: evidenceFiles,
+    externalQualificationEvidence,
+    acceptance: { receipt: 'VALIDATION_ACCEPTANCE_RECEIPT.json', ...summary },
+    externalQualification: [{
+      id: 'E2E-001',
+      status: 'pending',
+      reason: 'Representative operator evidence is required.',
+      artifacts: ['docs/prd/06-ACCEPTANCE-TESTS.md']
+    }],
     production_ready: false
   }));
   writeFileSync(resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json'), JSON.stringify({
     ...common,
     appVersion: '9.8.7-alpha.1',
     evidence: evidenceFiles,
-    testReports: { vitest: evidence(vitestPath), playwright: evidence(playwrightPath) }
+    testReports: { vitest: evidence(vitestPath), playwright: evidence(playwrightPath) },
+    externalQualificationEvidence,
+    summary,
+    cases
   }));
 }
 
@@ -174,6 +211,109 @@ function evidence(path: string) {
     sizeBytes: statSync(path).size,
     sha256: createHash('sha256').update(readFileSync(path)).digest('hex')
   };
+}
+
+function writeQualifiedElectronEvidence(root: string): void {
+  const identity = gitIdentity(root);
+  const source = {
+    commit: identity.commit,
+    tree: identity.tree,
+    ref: 'refs/tags/v9.8.7-alpha.1',
+    repository: 'fixture/video',
+    workflowCommit: identity.commit,
+    runId: '1',
+    runAttempt: '1',
+    dirty: false
+  };
+  const fast = [20, 22, 24, 26, 28, 30, 32, 34, 36, 38];
+  const receipt = {
+    schemaVersion: 1,
+    generatedAt: '2026-08-26T12:00:00.000Z',
+    harness: 'videofactory-electron-performance',
+    mode: 'qualification',
+    source,
+    environment: {
+      platform: 'win32', release: '10.0.26100', architecture: 'x64', node: 'v22.22.0',
+      electron: '43.2.0', cpuModel: 'Qualification CPU', logicalCpuCount: 16,
+      totalMemoryBytes: 32 * 1024 ** 3, ci: false, productionBuild: true,
+      deviceClass: 'Windows 11 production workstation'
+    },
+    fixture: { requestedRows: 26_000, xlsxSha256: 'c'.repeat(64), xlsxBytes: 4_000_000 },
+    measurements: {
+      import: {
+        previewRows: 26_000, insertedRows: 26_000, committedRows: 26_000, catalogRows: 26_000,
+        integrity: 'ok', progressEvents: 20, previewObservedActive: true, commitObservedActive: true,
+        previewHeartbeatGapsMs: fast, commitHeartbeatGapsMs: fast,
+        previewNavigationSamplesMs: fast, commitNavigationSamplesMs: fast
+      },
+      startup: { usableMs: 1_900, electronLaunchMs: 1_000, rendererReadyMs: 900 },
+      catalog: {
+        totalRows: 26_000, domRows: 50, searchSamplesMs: fast,
+        uiInteractionSamplesMs: fast, scrollFrameSamplesMs: fast,
+        rendererWorkingSetKb: 180_000
+      },
+      backgroundRender: {
+        engine: 'ffmpeg-static/libx264', workload: 'draft-1080p30-veryfast',
+        resourcePolicy: 'interactive-reserve-v1', threadCount: 8,
+        observedRunning: true, observedFrameProgress: true,
+        elapsedMs: 8_000, heartbeatGapsMs: fast, navigationSamplesMs: fast,
+        searchSamplesMs: fast, rendererWorkingSetKb: 220_000
+      }
+    }
+  };
+  mkdirSync(resolve(root, 'validation', 'results'), { recursive: true });
+  writeFileSync(resolve(root, ELECTRON_PERFORMANCE_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+  const admitted = writeElectronPerformanceQualificationIndex({
+    root,
+    source,
+    now: new Date('2026-08-26T12:01:00.000Z')
+  });
+  const projection = {
+    index: admitted.index,
+    receipts: admitted.receipts.map(item => ({
+      kind: item.kind,
+      evidence: item.evidence,
+      qualifiedIds: item.qualifiedIds
+    })),
+    qualifiedIds: admitted.qualifiedIds
+  };
+  const receiptPath = resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
+  const acceptance = JSON.parse(readFileSync(receiptPath, 'utf8'));
+  const qualifiedCases = admitted.qualifiedIds.map(id => ({
+    id,
+    classification: 'external',
+    result: 'passed_external_qualification',
+    artifacts: [EXTERNAL_QUALIFICATION_INDEX_PATH, ELECTRON_PERFORMANCE_RECEIPT_PATH],
+    externalEvidence: {
+      kind: 'electron_performance',
+      index: admitted.index,
+      receipt: admitted.qualifiedById[id]!.evidence
+    }
+  }));
+  const summary = {
+    total: 6,
+    passedLocalValidation: 1,
+    qualifiedExternal: 5,
+    externalPending: 0,
+    productionQualified: true
+  };
+  acceptance.cases = [acceptance.cases[0], ...qualifiedCases];
+  acceptance.summary = summary;
+  acceptance.externalQualificationEvidence = projection;
+  writeFileSync(receiptPath, JSON.stringify(acceptance));
+
+  const statusPath = resolve(root, 'VALIDATION_STATUS.json');
+  const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+  status.acceptance = { receipt: 'VALIDATION_ACCEPTANCE_RECEIPT.json', ...summary };
+  status.externalQualificationEvidence = projection;
+  status.externalQualification = qualifiedCases.map(item => ({
+    id: item.id,
+    status: 'qualified',
+    artifacts: item.artifacts,
+    evidence: item.externalEvidence
+  }));
+  status.production_ready = true;
+  writeFileSync(statusPath, JSON.stringify(status));
 }
 
 function writePackageSmokeEvidence(root: string, status: 'passed' | 'failed' = 'passed'): void {
@@ -250,6 +390,32 @@ describe('release artifact provenance', () => {
     expect(manifest.inputs.claims.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(manifest.inputs.runtime.sourceCommit).toBe(manifest.source.commit);
     expect(manifest.inputs.claims.sourceCommit).toBe(manifest.source.commit);
+  });
+
+  it('rejects a production-ready boolean that does not reconcile with pending acceptance gates', () => {
+    const root = fixtureRoot();
+    writeValidationEvidence(root);
+    const statusPath = resolve(root, 'VALIDATION_STATUS.json');
+    const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+    status.production_ready = true;
+    writeFileSync(statusPath, JSON.stringify(status));
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('does not reconcile with pending acceptance gates');
+  });
+
+  it('admits a production-ready claim only with re-verifiable exact-source external attachments', () => {
+    const root = fixtureRoot();
+    writeValidationEvidence(root);
+    writeQualifiedElectronEvidence(root);
+    expect(run(root).status).toBe(0);
+    expect(run(root, ['--verify']).status).toBe(0);
+    const manifest = JSON.parse(readFileSync(resolve(root, 'release', 'RELEASE_PROVENANCE.json'), 'utf8'));
+    expect(manifest.validation.production_ready).toBe(true);
+    expect(manifest.artifacts.map((item: { name: string }) => item.name)).toEqual(expect.arrayContaining([
+      'EXTERNAL_QUALIFICATION_INDEX.json',
+      'EXTERNAL_ELECTRON_PERFORMANCE.json'
+    ]));
   });
 
   it('fails verification after a published artifact changes', () => {

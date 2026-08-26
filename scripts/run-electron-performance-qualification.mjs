@@ -10,6 +10,10 @@ import {
   ELECTRON_PERFORMANCE_THRESHOLDS,
   assessElectronPerformanceEvidence
 } from './electron-performance-evidence.mjs';
+import {
+  ELECTRON_PERFORMANCE_RECEIPT_PATH,
+  writeElectronPerformanceQualificationIndex
+} from './external-qualification-evidence.mjs';
 
 const args = process.argv.slice(2);
 const mode = option('mode', 'supporting');
@@ -38,6 +42,9 @@ if (mode === 'qualification') {
   if (ci) throw new Error('Qualification mode must run on representative operator hardware outside CI.');
   if (deviceClass.length < 8) {
     throw new Error('Qualification mode requires --device-class with a non-sensitive representative hardware description.');
+  }
+  if (output !== resolve(ELECTRON_PERFORMANCE_RECEIPT_PATH)) {
+    throw new Error(`Qualification mode must write ${ELECTRON_PERFORMANCE_RECEIPT_PATH}.`);
   }
 }
 
@@ -96,11 +103,15 @@ if (!assessed.smokeCriteriaPassed) {
 if (mode === 'qualification' && !assessed.externalQualificationPassed) {
   throw new Error('Electron performance target run did not satisfy every external qualification condition.');
 }
+const externalAdmission = mode === 'qualification'
+  ? writeElectronPerformanceQualificationIndex({ root: process.cwd(), source: admission.source })
+  : null;
 
 process.stdout.write(
   `Electron performance ${mode} run passed for ${rows.toLocaleString()} rows; `
   + `external qualification: ${assessed.externalQualificationPassed ? 'passed' : 'not claimed'}.\n`
   + `Receipt: ${output}\n`
+  + (externalAdmission?.index ? `Index: ${resolve(externalAdmission.index.path)}\n` : '')
 );
 
 function option(name, fallback) {

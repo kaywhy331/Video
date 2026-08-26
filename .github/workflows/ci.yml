@@ -48,6 +48,8 @@ jobs:
             validation/results/pipeline.json
             validation/results/runtime-input.json
             validation/results/claims-input.json
+            validation/results/electron-performance.json
+            validation/external-qualification/index.json
             release/videofactory-sbom.cdx.json
           if-no-files-found: error
           retention-days: 30
@@ -139,6 +141,17 @@ jobs:
           Copy-Item "$evidenceRoot/validation/results/vitest.json" release/VITEST_RESULTS.json
           Copy-Item "$evidenceRoot/validation/results/playwright.json" release/PLAYWRIGHT_RESULTS.json
           Copy-Item "$evidenceRoot/release/videofactory-sbom.cdx.json" release/videofactory-sbom.cdx.json
+          $externalIndex = "$evidenceRoot/validation/external-qualification/index.json"
+          $externalReceipt = "$evidenceRoot/validation/results/electron-performance.json"
+          if ((Test-Path $externalIndex) -xor (Test-Path $externalReceipt)) {
+            throw 'Downloaded external qualification evidence is incomplete.'
+          }
+          if (Test-Path $externalIndex) {
+            New-Item -ItemType Directory -Force validation/external-qualification | Out-Null
+            New-Item -ItemType Directory -Force validation/results | Out-Null
+            Copy-Item $externalIndex validation/external-qualification/index.json
+            Copy-Item $externalReceipt validation/results/electron-performance.json
+          }
           npm.cmd run release:manifest -- --require-validation --require-package-smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm.cmd run release:verify

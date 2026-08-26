@@ -1,6 +1,6 @@
 # Production Hardening and Release Gates
 
-Updated 2026-08-26 for clean exact-HEAD/tree release admission, separate runtime/claims digests, machine-verifiable claim projection, untracked generated receipts, and the alpha.7 historical evidence index.
+Updated 2026-08-26 for clean exact-HEAD/tree release admission, separate runtime/claims digests, machine-verifiable claim projection, untracked generated receipts, the alpha.7 historical evidence index, and fail-closed admission of representative external qualification evidence.
 
 Alpha.7 carries forward the alpha.6 durability, security, rendering, backup, publishing, and hosted ZIP/NSIS lifecycle-smoke evidence while rolling the final publication receipts into the versioned documentation. It adds no runtime behavior and changes no qualification status. Its immutable publication facts are in the [historical evidence index](release-evidence/v0.1.0-alpha.7.json); that later documentation receipt does not validate the current checkout or move the alpha.7 tag. Canonical validation resolves that tag and the recorded trees/history in Git and rejects conflicting machine-checkable statements across the tracked claim documents. Current release evidence must come from a clean `npm run validate:release` run or the matching exact-workflow-SHA CI artifact.
 
@@ -18,6 +18,8 @@ Schema upgrades now fail closed as one pending-migration transaction after an in
 - Rehearse representative Windows SAPI and configured HTTP TTS runs for place pronunciation, native/provider timing, auth, quota, malformed timing, and changed-section cache reuse.
 - Perform ingest, render, upload, and restore interruption drills on representative data.
 - Record an Electron renderer run for startup, 26K catalog scrolling/interaction and memory, and responsiveness during a concurrent background render. The worker/main-loop import boundary has a separate passing local harness and is not a substitute for this UI run.
+
+The renderer gate has a canonical target runner. From a clean exact Windows x64 commit on representative non-CI hardware, run `npm run qualify:electron-performance -- --mode=qualification --device-class="<non-sensitive hardware class>"`, then run `npm run validate:release` without changing HEAD or the tree. The target runner writes an ignored receipt and SHA-256 index; acceptance validation re-verifies the measurements, target eligibility, canonical paths, byte sizes, hashes, and exact source before qualifying only `CAT-001`, `CAT-009`, and `PERF-001` through `PERF-003`. Release provenance carries and independently re-admits those attachments. An absent index leaves the gates pending, while an invalid or unsupported index blocks validation. This evidence does not waive any other external gate.
 
 ## Release engineering
 
@@ -47,4 +49,4 @@ Schema upgrades now fail closed as one pending-migration transaction after an in
 
 ## Truthful release rule
 
-CI success, a generated Windows installer, the hosted packaged-app smoke, and local automated tests are necessary but do not set `production_ready` to `true`. That flag changes only after the external qualification gates above have evidence attached to a release.
+CI success, a generated Windows installer, the hosted packaged-app smoke, and local automated tests are necessary but do not set `production_ready` to `true`. Acceptance computes that flag from its case results; it can become true only when every external gate is qualified by an attached, supported, exact-source receipt and none remain pending. Release provenance rejects a Boolean that does not reconcile with those cases and attachments.
