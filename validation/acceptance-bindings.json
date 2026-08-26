@@ -471,6 +471,12 @@
       "file": "tests/render-recovery.test.ts",
       "title": "requeues the prior-process job, releases its lock, and closes only stale running render attempts"
     },
+    {
+      "ids": ["REN-015"],
+      "runner": "vitest",
+      "file": "tests/active-final-service.test.ts",
+      "title": "[REN-015] rejects missing, cross-project, failed, missing-file, unmanaged, and hash-mismatched active finals"
+    },
 
     {
       "ids": ["AUD-004"],
@@ -562,7 +568,7 @@
       "ids": ["YT-004"],
       "runner": "vitest",
       "file": "tests/youtube-upload-policy.test.ts",
-      "title": "[YT-004] reuses only the owning project receipt and rejects a duplicate final upload identity"
+      "title": "[YT-004][YT-011] isolates same-content publication identities by project, channel, and active render"
     },
     {
       "ids": ["YT-004"],
@@ -605,6 +611,30 @@
       "runner": "vitest",
       "file": "tests/youtube-channel-binding.test.ts",
       "title": "[YT-010] keeps candidate credentials pending and requires explicit confirmed replacement identity"
+    },
+    {
+      "ids": ["YT-011"],
+      "runner": "vitest",
+      "file": "tests/active-final-service.test.ts",
+      "title": "[YT-011] snapshots the explicitly active older final instead of the newest succeeded render"
+    },
+    {
+      "ids": ["YT-011", "JOB-013"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[YT-011][JOB-013] reconciles a resumable upload only by its full active-final snapshot"
+    },
+    {
+      "ids": ["YT-012"],
+      "runner": "vitest",
+      "file": "tests/active-final-service.test.ts",
+      "title": "[YT-012] revalidates pointer, missing-file, and hash changes at every publication side-effect boundary"
+    },
+    {
+      "ids": ["YT-012"],
+      "runner": "vitest",
+      "file": "tests/youtube-approval.test.ts",
+      "title": "[YT-012] resets the remote video to private when the active final changes during publish"
     },
 
     {

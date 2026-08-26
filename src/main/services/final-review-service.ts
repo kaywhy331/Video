@@ -11,6 +11,10 @@ import { approvalFingerprint } from '@shared/approval';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { captionPathFromManifest } from '../media-protocol';
+import {
+  ActiveFinalService,
+  invalidatePublicationSnapshots
+} from './active-final-service';
 
 function fileSha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -69,17 +73,23 @@ export class FinalReviewService {
   constructor(
     private readonly db: AppDatabase,
     private readonly projects: ProjectService,
-    private readonly projectFolder: () => string | null = () => null
+    private readonly projectFolder: () => string | null = () => null,
+    private readonly activeFinal = new ActiveFinalService(db, () => projectFolder() ?? process.cwd())
   ) {}
 
   get(projectId: string): FinalReview {
     const project = this.projects.get(projectId);
-    const selectedPackage = project.packaging.find(candidate => candidate.selected)
-      ?? project.packaging[0]
-      ?? null;
-    const finalRender = project.finalRenderId
-      ? project.renders.find(render => render.id === project.finalRenderId && render.kind === 'final' && render.state === 'SUCCEEDED')
-      : undefined;
+    const selectedPackage = project.packaging.find(candidate => candidate.selected) ?? null;
+    const selectedPackageReady = Boolean(
+      selectedPackage?.thumbnailPath && existsSync(selectedPackage.thumbnailPath)
+      && selectedPackage.riskStatus !== 'blocked'
+    );
+    let finalRender: ReturnType<ActiveFinalService['requireActiveFinal']> | undefined;
+    try {
+      finalRender = this.activeFinal.requireActiveFinal(projectId);
+    } catch {
+      finalRender = undefined;
+    }
     const relevantQc = finalRender
       ? project.qc.filter(item => item.renderId === finalRender.id)
       : project.qc;
@@ -92,7 +102,7 @@ export class FinalReviewService {
     );
     const publication = this.db.raw.prepare(`
       SELECT approval_hash, processing_status, caption_id, thumbnail_uploaded,
-        approved_at, privacy_status
+        approved_at, privacy_status, final_render_id, final_sha256, snapshot_status
       FROM publication_records
       WHERE project_id = ? AND video_id = ? ORDER BY created_at DESC LIMIT 1
     `).get(projectId, project.youtubeVideoId) as {
@@ -102,9 +112,15 @@ export class FinalReviewService {
       thumbnail_uploaded: number;
       approved_at: string | null;
       privacy_status: string;
+      final_render_id: string | null;
+      final_sha256: string;
+      snapshot_status: string;
     } | undefined;
     const publicationReady = Boolean(
-      publication?.processing_status === 'succeeded'
+      publication?.snapshot_status === 'current'
+      && publication.final_render_id === finalRender?.id
+      && publication.final_sha256 === finalRender?.sha256
+      && publication.processing_status === 'succeeded'
       && publication.caption_id
       && publication.thumbnail_uploaded
     );
@@ -125,7 +141,7 @@ export class FinalReviewService {
     )));
     const gates = finalReviewGates({
       hasFinalRender: Boolean(finalRender),
-      hasSelectedPackage: Boolean(selectedPackage),
+      hasSelectedPackage: selectedPackageReady,
       blockerCount: blockers.length,
       state: project.state,
       hasYoutubeVideo: Boolean(project.youtubeVideoId),
@@ -218,10 +234,13 @@ export class FinalReviewService {
         automatic ? 'in_progress' : 'requested',
         now
       );
-      this.db.raw.prepare(`
-        UPDATE publication_records SET approval_hash = NULL, approved_at = NULL, updated_at = ?
-        WHERE project_id = ?
-      `).run(now, input.projectId);
+      invalidatePublicationSnapshots(
+        this.db,
+        input.projectId,
+        'A final-review revision changed the active publication snapshot. The prior upload must remain private.',
+        'final_review_revision',
+        now
+      );
       if (input.category !== 'packaging') {
         this.db.raw.prepare(`
           UPDATE projects SET final_render_id = NULL, youtube_video_id = NULL, updated_at = ?

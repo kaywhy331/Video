@@ -37,6 +37,7 @@ import {
 } from '@shared/color-policy';
 import { canTransitionProject } from '@shared/state-machine';
 import { differenceHash } from '@shared/perceptual-hash';
+import { invalidatePublicationSnapshots } from './active-final-service';
 
 interface ProbeStream {
   codec_type?: string;
@@ -477,9 +478,13 @@ export class MediaService {
         UPDATE projects SET final_render_id = NULL, youtube_video_id = NULL, updated_at = ? WHERE id = ?
       `).run(now, projectId);
       this.db.raw.prepare(`UPDATE packaging_candidates SET risk_status = 'blocked' WHERE project_id = ?`).run(projectId);
-      this.db.raw.prepare(`
-        UPDATE publication_records SET approval_hash = NULL, approved_at = NULL, updated_at = ? WHERE project_id = ?
-      `).run(now, projectId);
+      invalidatePublicationSnapshots(
+        this.db,
+        projectId,
+        'A selected source file changed after rendering. The prior private publication snapshot is stale.',
+        'media_pipeline_refresh',
+        now
+      );
       this.db.raw.prepare(`
         INSERT INTO audit_log(project_id, action, actor, entity_type, entity_id, after_json, metadata_json, created_at)
         VALUES(?, 'media.pipeline_refreshed', 'system', 'asset_file', ?, ?, ?, ?)

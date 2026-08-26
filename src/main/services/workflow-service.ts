@@ -8,6 +8,7 @@ import type { NarrationService } from './narration-service';
 import type { RenderService } from './render-service';
 import type { FinalReviewService } from './final-review-service';
 import type { YouTubeService } from './youtube-service';
+import { StalePublicationSnapshotError, type PublicationSnapshot } from './active-final-service';
 
 const AUTOMATIC_STATES: readonly ProjectState[] = [
   'FINALIZING_SCRIPT',
@@ -99,17 +100,18 @@ export class WorkflowService {
     if (!review.canUpload) {
       throw new Error('Final render, selected package, and blocker-free QC are required before private upload.');
     }
+    const snapshot = this.uploadIdentity(projectId);
     const outcome = await this.runStageJob(
       'workflow_upload_private',
       projectId,
-      this.uploadIdentity(projectId),
-      () => this.youtube.uploadPrivate(projectId)
+      snapshot,
+      () => this.youtube.uploadPrivate(projectId, snapshot)
     );
     if (outcome.state === 'deferred') {
       throw new Error('Private upload is already running or the project is busy with another state-mutating workflow. Try again after the active job completes.');
     }
     if (outcome.output) return outcome.output;
-    return this.completedUploadReceipt(projectId);
+    return this.completedUploadReceipt(snapshot);
   }
 
   private async run(projectId: string): Promise<ProjectDetail> {
@@ -200,8 +202,9 @@ export class WorkflowService {
   }
 
   private async runUploadJob(projectId: string): Promise<StageResult> {
-    const outcome = await this.runStageJob('workflow_upload_private', projectId, this.uploadIdentity(projectId), async () => {
-      await this.youtube.uploadPrivate(projectId);
+    const snapshot = this.uploadIdentity(projectId);
+    const outcome = await this.runStageJob('workflow_upload_private', projectId, snapshot, async () => {
+      await this.youtube.uploadPrivate(projectId, snapshot);
     });
     return outcome.state;
   }
@@ -209,7 +212,7 @@ export class WorkflowService {
   private async runStageJob<T>(
     type: string,
     projectId: string,
-    identity: Record<string, unknown>,
+    identity: unknown,
     work: () => Promise<T>
   ): Promise<StageOutcome<T>> {
     const job = this.jobs.create(type, projectId, identity, 3);
@@ -277,29 +280,26 @@ export class WorkflowService {
     return { projectId, scriptVersionId: project.script_version_id, scenes, revision };
   }
 
-  private uploadIdentity(projectId: string): Record<string, unknown> {
-    const render = this.db.raw.prepare(`
-      SELECT id, sha256, artifact_version FROM renders
-      WHERE project_id = ? AND kind = 'final' AND state = 'SUCCEEDED'
-      ORDER BY completed_at DESC LIMIT 1
-    `).get(projectId);
-    const packaging = this.db.raw.prepare(`
-      SELECT id, title, description, chapters, tags_json, thumbnail_path
-      FROM packaging_candidates WHERE project_id = ? AND selected = 1 LIMIT 1
-    `).get(projectId);
-    const publication = this.db.raw.prepare(`
-      SELECT id, video_id, processing_status, final_sha256 FROM publication_records
-      WHERE project_id = ? ORDER BY created_at DESC LIMIT 1
-    `).get(projectId);
-    return { projectId, render, packaging, publication };
+  private uploadIdentity(projectId: string): PublicationSnapshot {
+    return this.youtube.createUploadSnapshot(projectId);
   }
 
-  private completedUploadReceipt(projectId: string): PrivateUploadReceipt {
+  private completedUploadReceipt(snapshot: PublicationSnapshot): PrivateUploadReceipt {
     const publication = this.db.raw.prepare(`
       SELECT video_id FROM publication_records
-      WHERE project_id = ? AND video_id IS NOT NULL
+      WHERE project_id = ? AND channel_id = ? AND final_render_id = ? AND final_sha256 = ?
+        AND selected_package_id = ? AND approval_hash = ? AND snapshot_version = ?
+        AND snapshot_status = 'current' AND video_id IS NOT NULL
       ORDER BY created_at DESC LIMIT 1
-    `).get(projectId) as { video_id: string } | undefined;
+    `).get(
+      snapshot.projectId,
+      snapshot.confirmedChannelId,
+      snapshot.finalRenderId,
+      snapshot.finalSha256,
+      snapshot.selectedPackageId,
+      snapshot.approvalHash,
+      snapshot.snapshotVersion
+    ) as { video_id: string } | undefined;
     if (!publication?.video_id) {
       throw new Error('The private upload job completed without a durable YouTube video receipt.');
     }
@@ -320,6 +320,17 @@ export class WorkflowService {
     const current = this.projects.get(projectId);
     if (current.state === 'BLOCKED_EXCEPTION') return;
     const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof StalePublicationSnapshotError) {
+      this.block(
+        projectId,
+        'STALE_PUBLICATION_SNAPSHOT',
+        'The private YouTube upload is stale',
+        message,
+        { state, boundary: error.boundary },
+        'Review the active final, upload its current package privately, then remove the stale private video in YouTube Studio.'
+      );
+      return;
+    }
     this.block(
       projectId,
       state === 'QC_FINAL' || state === 'UPLOADING_PRIVATE' || state === 'WAITING_YOUTUBE_PROCESSING'
@@ -338,7 +349,8 @@ export class WorkflowService {
     code: string,
     title: string,
     message: string,
-    evidence: Record<string, unknown>
+    evidence: Record<string, unknown>,
+    recommendedAction = 'Open Settings, repair the provider configuration, then resume the project.'
   ): void {
     const existing = this.db.raw.prepare(`
       SELECT id FROM exceptions WHERE project_id = ? AND code = ? AND status = 'OPEN' LIMIT 1
@@ -349,8 +361,11 @@ export class WorkflowService {
           id, project_id, severity, stage, code, title, message, evidence_json,
           recommended_action, status, created_at
         ) VALUES(?, ?, 'BLOCKER', 'publishing', ?, ?, ?, ?,
-          'Open Settings, repair the provider configuration, then resume the project.', 'OPEN', ?)
-      `).run(randomUUID(), projectId, code, title, message, JSON.stringify(evidence), new Date().toISOString());
+          ?, 'OPEN', ?)
+      `).run(
+        randomUUID(), projectId, code, title, message, JSON.stringify(evidence),
+        recommendedAction, new Date().toISOString()
+      );
     }
     const current = this.projects.get(projectId);
     if (current.state !== 'BLOCKED_EXCEPTION') {

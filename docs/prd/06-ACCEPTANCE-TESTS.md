@@ -451,6 +451,10 @@ Forced kill removes/ignores partial output and safely retries from manifest.
 
 Identical manifest/profile reuses validated render unless force is explicit.
 
+### REN-015 - Authoritative active-final validation
+
+The active-final resolver rejects a missing pointer, cross-project or failed render, missing or unmanaged output, and any output whose bytes no longer match its persisted SHA-256.
+
 ---
 
 ## 12. Voice, audio, and captions tests
@@ -562,6 +566,14 @@ Loopback OAuth accepts only the fixed callback route and method, requires an une
 ### YT-010 - Explicit YouTube channel confirmation
 
 OAuth credentials remain temporary until the operator confirms the exact returned channel; replacement shows both identities and requires a separate explicit confirmation.
+
+### YT-011 - Authoritative active-final publication identity
+
+Durable upload creation, resumable recovery, metadata synchronization, and approval use the explicitly active final render plus its project, hash, selected package, and confirmed channel snapshot; list ordering or a matching SHA alone cannot select it.
+
+### YT-012 - Stale publication fail-closed behavior
+
+Changing the active final or package at any upload, processing, or approval boundary invalidates approval, keeps or resets the remote video to private, stops publication, and creates one deduplicated actionable exception.
 
 ---
 

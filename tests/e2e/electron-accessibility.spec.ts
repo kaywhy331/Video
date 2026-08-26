@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -61,14 +62,17 @@ async function assertNoSeriousAxe(label: string, selector?: string): Promise<voi
   expect(violations, `${label} has serious or critical Axe violations`).toEqual([]);
 }
 
-function seedRepresentativeState(paths: { databasePath: string; projectFolder: string }): void {
+function seedRepresentativeState(paths: { databasePath: string; projectFolder: string; outputFolder: string }): void {
   const projectsRoot = paths.projectFolder;
   const reviewRoot = join(projectsRoot, 'e2e-review');
-  const reviewOutput = join(reviewRoot, 'final.mp4');
+  const reviewOutputRoot = join(paths.outputFolder, 'review');
+  const reviewOutput = join(reviewOutputRoot, 'final.mp4');
   const reviewCaptions = join(reviewRoot, 'final.vtt');
   const reviewManifest = join(reviewRoot, 'manifest.json');
   mkdirSync(reviewRoot, { recursive: true });
+  mkdirSync(reviewOutputRoot, { recursive: true });
   writeFileSync(reviewOutput, 'videofactory-e2e-render');
+  const reviewSha256 = createHash('sha256').update('videofactory-e2e-render').digest('hex');
   writeFileSync(reviewCaptions, 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nAccessible caption fixture.\n');
   writeFileSync(reviewManifest, JSON.stringify({ captions: { vttPath: reviewCaptions } }));
 
@@ -224,7 +228,7 @@ function seedRepresentativeState(paths: { databasePath: string; projectFolder: s
       ) VALUES(?, ?, 'final', 'landscape_1080p', 'SUCCEEDED', ?, ?, ?, 5000, 1920, 1080, NULL, ?, ?)
     `).run(
       'e2e-final-render', 'e2e-review', reviewManifest, reviewOutput,
-      'e2e-final-render-sha', now, now
+      reviewSha256, now, now
     );
     db.prepare(`
       INSERT INTO qc_results(
@@ -255,17 +259,18 @@ function seedRepresentativeState(paths: { databasePath: string; projectFolder: s
 
     const insertPublication = db.prepare(`
       INSERT INTO publication_records(
-        id, project_id, video_id, privacy_status, final_sha256, processing_status,
-        selected_package_id, caption_id, thumbnail_uploaded, error, created_at, updated_at
-      ) VALUES(?, ?, ?, 'private', ?, 'succeeded', ?, 'e2e-caption', 1, ?, ?, ?)
+        id, project_id, video_id, privacy_status, final_render_id, final_sha256,
+        snapshot_version, snapshot_status, processing_status, selected_package_id,
+        caption_id, thumbnail_uploaded, error, created_at, updated_at
+      ) VALUES(?, ?, ?, 'private', ?, ?, ?, ?, 'succeeded', ?, 'e2e-caption', 1, ?, ?, ?)
     `);
     insertPublication.run(
       'e2e-publication', 'e2e-project', 'e2e-workspace-video',
-      'e2e-workspace-publication-sha', 'e2e-package', null, now, now
+      null, 'e2e-workspace-publication-sha', 0, 'legacy_unbound', 'e2e-package', null, now, now
     );
     insertPublication.run(
       'e2e-review-publication', 'e2e-review', 'e2e-studio-video',
-      'e2e-review-publication-sha', 'e2e-review-package',
+      'e2e-final-render', reviewSha256, 1, 'current', 'e2e-review-package',
       'Publishing is restricted to the exact Studio editor.', now, now
     );
     db.prepare(`
@@ -353,7 +358,8 @@ test.beforeAll(async () => {
   dataRoot = mkdtempSync(join(tmpdir(), 'videofactory-electron-e2e-'));
   const paths = {
     databasePath: join(dataRoot, 'data', 'videofactory.sqlite'),
-    projectFolder: join(dataRoot, 'projects')
+    projectFolder: join(dataRoot, 'projects'),
+    outputFolder: join(dataRoot, 'output')
   };
   initializeDatabase(paths.databasePath);
   seedRepresentativeState(paths);

@@ -74,6 +74,7 @@ import type { SettingsPatch } from '@shared/types';
 import { assertAllowedExternalUrl, assertAuthorizedIpcSender, pathIsInside } from './security-policy';
 import { is } from '@electron-toolkit/utils';
 import { canTransitionProject } from '@shared/state-machine';
+import { invalidatePublicationSnapshots } from './services/active-final-service';
 
 function validateSender(
   event: Electron.IpcMainInvokeEvent,
@@ -672,16 +673,28 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   });
   handle(IPC.packagingSelect, (_event, payload) => {
     const request = PackageSelectSchema.parse(payload);
+    const now = new Date().toISOString();
     const transaction = context.db.raw.transaction(() => {
+      const candidate = context.db.raw.prepare(`
+        SELECT 1 FROM packaging_candidates WHERE id = ? AND project_id = ?
+      `).get(request.packageId, request.projectId);
+      if (!candidate) throw new Error('The publishing package does not belong to this project.');
+      const selected = context.db.raw.prepare(`
+        SELECT id FROM packaging_candidates WHERE project_id = ? AND selected = 1 LIMIT 1
+      `).get(request.projectId) as { id: string } | undefined;
+      if (selected?.id === request.packageId) return;
       context.db.raw.prepare(`UPDATE packaging_candidates SET selected = 0 WHERE project_id = ?`).run(request.projectId);
       context.db.raw.prepare(`UPDATE packaging_candidates SET selected = 1 WHERE id = ? AND project_id = ?`)
         .run(request.packageId, request.projectId);
+      invalidatePublicationSnapshots(
+        context.db,
+        request.projectId,
+        'The selected publishing package changed. The prior private upload snapshot is stale.',
+        'package_selection',
+        now
+      );
     });
     transaction();
-    context.db.raw.prepare(`
-      UPDATE publication_records SET approval_hash = NULL, approved_at = NULL, updated_at = ?
-      WHERE project_id = ?
-    `).run(new Date().toISOString(), request.projectId);
     context.emitState();
     return context.finalReview.get(request.projectId);
   });

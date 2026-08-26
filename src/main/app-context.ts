@@ -61,6 +61,7 @@ import { classifyOperationsHealth } from '@shared/operations-health';
 import { MediaToolService } from './services/media-tool-service';
 import { installMediaToolResolver } from './tool-paths';
 import { installProcessLaunchGuard } from './services/process-utils';
+import { ActiveFinalService } from './services/active-final-service';
 
 export class AppContext {
   readonly db: AppDatabase;
@@ -85,6 +86,7 @@ export class AppContext {
   readonly tts: TtsService;
   readonly narration: NarrationService;
   readonly renders: RenderService;
+  readonly activeFinal: ActiveFinalService;
   readonly youtube: YouTubeService;
   readonly finalReview: FinalReviewService;
   readonly exceptions: ExceptionService;
@@ -255,6 +257,7 @@ export class AppContext {
       }
     );
     this.renders.recoverInterrupted();
+    this.activeFinal = new ActiveFinalService(this.db, () => this.settingsValue.outputFolder);
     this.youtube = new YouTubeService(
       this.db,
       () => this.settingsValue,
@@ -269,9 +272,18 @@ export class AppContext {
           phase: 'upload',
           message
         });
-      }
+      },
+      undefined,
+      undefined,
+      undefined,
+      this.activeFinal
     );
-    this.finalReview = new FinalReviewService(this.db, this.projects, () => this.settingsValue.projectFolder);
+    this.finalReview = new FinalReviewService(
+      this.db,
+      this.projects,
+      () => this.settingsValue.projectFolder,
+      this.activeFinal
+    );
     this.workflow = new WorkflowService(
       this.db,
       this.jobs,

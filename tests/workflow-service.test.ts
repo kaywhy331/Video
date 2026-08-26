@@ -8,6 +8,7 @@ import { ProjectStateService } from '@main/services/project-state-service';
 import { WorkflowService } from '@main/services/workflow-service';
 import { JobResourceBusyError } from '@main/services/job-service';
 import type { ProjectDetail, ProjectState } from '@shared/types';
+import { StalePublicationSnapshotError, type PublicationSnapshot } from '@main/services/active-final-service';
 
 const roots: string[] = [];
 
@@ -43,6 +44,26 @@ function fixture(state: ProjectState) {
   return { db, get, states };
 }
 
+function uploadSnapshot(): PublicationSnapshot {
+  return {
+    snapshotVersion: 1,
+    projectId: 'project-1',
+    finalRenderId: 'final-1',
+    finalSha256: 'final-sha',
+    finalOutputPath: '/managed/final.mp4',
+    finalManifestPath: '/managed/final.json',
+    selectedPackageId: 'package-1',
+    title: 'Title',
+    description: 'Description',
+    chapters: '00:00 Opening',
+    tags: ['travel'],
+    thumbnailPath: '/managed/thumbnail.jpg',
+    thumbnailSha256: 'thumbnail-sha',
+    approvalHash: 'approval-hash',
+    confirmedChannelId: 'UC-confirmed'
+  };
+}
+
 describe('durable automatic workflow continuation', () => {
   it('runs the clean post-acquisition stages once and stops at the final human gate', async () => {
     const { db, get, states } = fixture('FINALIZING_SCRIPT');
@@ -76,6 +97,7 @@ describe('durable automatic workflow continuation', () => {
       { get: () => ({ canUpload: true }), completeAutomaticRevisions: vi.fn() } as never,
       {
         uploadReadiness: () => ({ ready: true }),
+        createUploadSnapshot: uploadSnapshot,
         uploadPrivate: async () => {
           calls.push('upload');
           db.raw.prepare(`UPDATE projects SET state = 'WAITING_FINAL_APPROVAL', youtube_video_id = 'video-1' WHERE id = 'project-1'`).run();
@@ -129,6 +151,37 @@ describe('durable automatic workflow continuation', () => {
     expect(db.raw.prepare(`SELECT count(*) AS count FROM exceptions WHERE project_id = 'project-1'`).get())
       .toEqual({ count: 1 });
     expect(emit).toHaveBeenCalled();
+    db.close();
+  });
+
+  it('[YT-012] blocks a stale upload with one publication-specific actionable exception', async () => {
+    const { db, get, states } = fixture('QC_FINAL');
+    const service = new WorkflowService(
+      db,
+      new JobService(db),
+      { get, states } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { get: () => ({ canUpload: true }) } as never,
+      {
+        uploadReadiness: () => ({ ready: true }),
+        createUploadSnapshot: uploadSnapshot,
+        uploadPrivate: async () => {
+          throw new StalePublicationSnapshotError('upload_create', 'The active final changed.');
+        }
+      } as never,
+      () => undefined,
+      () => undefined
+    );
+
+    expect((await service.advance('project-1')).state).toBe('BLOCKED_EXCEPTION');
+    expect(db.raw.prepare(`
+      SELECT code, recommended_action FROM exceptions WHERE project_id = 'project-1'
+    `).all()).toEqual([{
+      code: 'STALE_PUBLICATION_SNAPSHOT',
+      recommended_action: 'Review the active final, upload its current package privately, then remove the stale private video in YouTube Studio.'
+    }]);
     db.close();
   });
 
@@ -220,7 +273,7 @@ describe('durable automatic workflow continuation', () => {
       {} as never,
       {} as never,
       { get: () => ({ canUpload: true }) } as never,
-      { uploadPrivate } as never,
+      { createUploadSnapshot: uploadSnapshot, uploadPrivate } as never,
       () => undefined,
       () => undefined
     );
@@ -234,8 +287,20 @@ describe('durable automatic workflow continuation', () => {
       url: 'https://www.youtube.com/watch?v=video-manual'
     });
     expect(uploadPrivate).toHaveBeenCalledOnce();
-    expect(db.raw.prepare(`SELECT type, state FROM jobs WHERE project_id = 'project-1'`).all())
-      .toEqual([{ type: 'workflow_upload_private', state: 'SUCCEEDED' }]);
+    expect(uploadPrivate).toHaveBeenCalledWith('project-1', uploadSnapshot());
+    const job = db.raw.prepare(`
+      SELECT type, state, input_json FROM jobs WHERE project_id = 'project-1'
+    `).get() as { type: string; state: string; input_json: string };
+    expect({ type: job.type, state: job.state }).toEqual({
+      type: 'workflow_upload_private', state: 'SUCCEEDED'
+    });
+    expect(JSON.parse(job.input_json)).toMatchObject({
+      projectId: 'project-1',
+      finalRenderId: 'final-1',
+      finalSha256: 'final-sha',
+      selectedPackageId: 'package-1',
+      confirmedChannelId: 'UC-confirmed'
+    });
     db.close();
   });
 
@@ -253,7 +318,7 @@ describe('durable automatic workflow continuation', () => {
       {} as never,
       {} as never,
       { get: () => ({ canUpload: true }) } as never,
-      { uploadPrivate } as never,
+      { createUploadSnapshot: uploadSnapshot, uploadPrivate } as never,
       () => undefined,
       () => undefined
     );

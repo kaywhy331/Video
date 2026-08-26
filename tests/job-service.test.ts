@@ -30,7 +30,10 @@ function fixture() {
     );
     CREATE TABLE publication_records(
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, video_id TEXT, upload_session_uri TEXT,
-      final_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
+      channel_id TEXT, final_render_id TEXT, final_sha256 TEXT NOT NULL,
+      snapshot_version INTEGER NOT NULL DEFAULT 0,
+      snapshot_status TEXT NOT NULL DEFAULT 'legacy_unbound', selected_package_id TEXT,
+      approval_hash TEXT, created_at TEXT NOT NULL
     );
     CREATE TABLE job_retry_reconciliations(
       id TEXT PRIMARY KEY, job_id TEXT NOT NULL, job_transition_version INTEGER NOT NULL,
@@ -398,6 +401,56 @@ describe('durable job engine', () => {
     expect(blocked.outcome).toBe('reconciliation_required');
     expect(raw.prepare(`SELECT state, transition_version FROM jobs WHERE id = ?`).get(stale.id))
       .toEqual({ state: 'FAILED_RETRYABLE', transition_version: staleFailure.transitionVersion });
+    raw.close();
+  });
+
+  it('[YT-011][JOB-013] reconciles a resumable upload only by its full active-final snapshot', () => {
+    const { raw, service } = fixture();
+    raw.prepare(`
+      INSERT INTO publication_records(
+        id, project_id, video_id, upload_session_uri, channel_id, final_render_id,
+        final_sha256, snapshot_version, snapshot_status, selected_package_id,
+        approval_hash, created_at
+      ) VALUES('snapshot-target', 'p1', NULL, 'https://upload.youtube.com/target',
+        'UC-target', 'render-target', 'same-sha', 1, 'current', 'package-target',
+        'approval-target', '2026-08-24T00:00:00.000Z')
+    `).run();
+    raw.prepare(`
+      INSERT INTO publication_records(
+        id, project_id, video_id, upload_session_uri, channel_id, final_render_id,
+        final_sha256, snapshot_version, snapshot_status, selected_package_id,
+        approval_hash, created_at
+      ) VALUES('newer-wrong-snapshot', 'p1', 'wrong-video', NULL,
+        'UC-other', 'render-other', 'same-sha', 1, 'current', 'package-other',
+        'approval-other', '2026-08-25T00:00:00.000Z')
+    `).run();
+    const job = service.create('workflow_upload_private', 'p1', {
+      snapshotVersion: 1,
+      projectId: 'p1',
+      finalRenderId: 'render-target',
+      finalSha256: 'same-sha',
+      selectedPackageId: 'package-target',
+      approvalHash: 'approval-target',
+      confirmedChannelId: 'UC-target'
+    });
+    raw.prepare(`
+      UPDATE jobs SET state = 'FAILED_RETRYABLE', transition_version = transition_version + 1
+      WHERE id = ?
+    `).run(job.id);
+    const failed = service.list('p1').find(candidate => candidate.id === job.id)!;
+
+    expect(service.retry({
+      jobId: job.id,
+      expectedState: failed.state,
+      expectedVersion: failed.transitionVersion
+    }).outcome).toBe('retry_started');
+    expect(raw.prepare(`
+      SELECT outcome, publication_id, video_id FROM job_retry_reconciliations WHERE job_id = ?
+    `).get(job.id)).toEqual({
+      outcome: 'remote_session_reused',
+      publication_id: 'snapshot-target',
+      video_id: null
+    });
     raw.close();
   });
 

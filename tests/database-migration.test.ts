@@ -40,7 +40,8 @@ describe('application database migrations', () => {
       { version: 19, name: 'youtube_channel_binding' },
       { version: 20, name: 'provider_endpoint_trust' },
       { version: 21, name: 'state_safe_job_retry' },
-      { version: 22, name: 'media_tool_trust' }
+      { version: 22, name: 'media_tool_trust' },
+      { version: 23, name: 'active_final_publication' }
     ]);
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('projects') WHERE name = 'resume_state'
@@ -165,6 +166,12 @@ describe('application database migrations', () => {
     expect(database.raw.prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'media_tool_trust'
     `).get()).toEqual({ name: 'media_tool_trust' });
+    expect(database.raw.prepare(`
+      SELECT name FROM pragma_table_info('publication_records') WHERE name = 'final_render_id'
+    `).get()).toEqual({ name: 'final_render_id' });
+    expect(database.raw.prepare(`
+      SELECT name FROM pragma_table_info('publication_records') WHERE name = 'snapshot_status'
+    `).get()).toEqual({ name: 'snapshot_status' });
     const now = new Date().toISOString();
     database.raw.prepare(`INSERT INTO projects(id, sequence, slug, title, topic, state, progress, envato_project_name, target_duration_ms, created_at, updated_at) VALUES('claim-project', 99, 'claim-project', 'Claims', 'Claims', 'CREATED', 0, 'YT-CLAIMS', 1000, ?, ?)`).run(now, now);
     database.raw.prepare(`
@@ -185,7 +192,7 @@ describe('application database migrations', () => {
 
     const reopened = new AppDatabase(join(root, 'videofactory.sqlite'));
     expect(reopened.raw.prepare('SELECT count(*) AS count FROM schema_migrations').get())
-      .toEqual({ count: 22 });
+      .toEqual({ count: 23 });
     expect(reopened.integrityCheck()).toBe('ok');
     reopened.close();
   });
@@ -212,6 +219,40 @@ describe('application database migrations', () => {
       ) VALUES('legacy-project', 1, 'legacy-project', 'Legacy', 'Legacy', 'CREATED', 0,
         'YT-LEGACY', 60000, ?, ?)
     `).run(now, now);
+    for (const [id, profile, sha256] of [
+      ['legacy-unique-render', 'final_1080p', 'unique-sha'],
+      ['legacy-stale-render', 'final_1080p', 'stale-sha'],
+      ['legacy-ambiguous-a', 'final_1080p', 'ambiguous-sha'],
+      ['legacy-ambiguous-b', 'final_4k', 'ambiguous-sha']
+    ] as const) {
+      legacy.prepare(`
+        INSERT INTO renders(
+          id, project_id, kind, profile, state, output_path, sha256, created_at, completed_at
+        ) VALUES(?, 'legacy-project', 'final', ?, 'SUCCEEDED', ?, ?, ?, ?)
+      `).run(id, profile, join(root, `${id}.mp4`), sha256, now, now);
+    }
+    legacy.prepare(`UPDATE projects SET final_render_id = 'legacy-unique-render' WHERE id = 'legacy-project'`).run();
+    legacy.prepare(`
+      INSERT INTO publication_records(
+        id, project_id, channel_id, video_id, privacy_status, final_sha256,
+        approval_hash, approved_at, created_at, updated_at
+      ) VALUES('legacy-unique-publication', 'legacy-project', 'legacy-channel', 'unique-video',
+        'private', 'unique-sha', 'unique-approval', ?, ?, ?)
+    `).run(now, now, now);
+    legacy.prepare(`
+      INSERT INTO publication_records(
+        id, project_id, channel_id, video_id, privacy_status, final_sha256,
+        approval_hash, approved_at, scheduled_at, published_at, created_at, updated_at
+      ) VALUES('legacy-stale-publication', 'legacy-project', 'legacy-channel', 'stale-video',
+        'public', 'stale-sha', 'stale-approval', ?, ?, ?, ?, ?)
+    `).run(now, now, now, now, now);
+    legacy.prepare(`
+      INSERT INTO publication_records(
+        id, project_id, channel_id, video_id, privacy_status, final_sha256,
+        approval_hash, approved_at, created_at, updated_at
+      ) VALUES('legacy-ambiguous-publication', 'legacy-project', 'legacy-channel', 'ambiguous-video',
+        'private', 'ambiguous-sha', 'ambiguous-approval', ?, ?, ?)
+    `).run(now, now, now);
     legacy.prepare(`
       INSERT INTO provider_health(provider, status, status_code, message, checked_at, metadata_json)
       VALUES('tavily', 'auth_invalid', 401, 'Legacy invalid credential', ?, '{}')
@@ -222,13 +263,46 @@ describe('application database migrations', () => {
     expect(upgraded.raw.prepare(`SELECT title FROM projects WHERE id = 'legacy-project'`).get())
       .toEqual({ title: 'Legacy' });
     expect(upgraded.raw.prepare(`SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1`).get())
-      .toEqual({ version: 22, name: 'media_tool_trust' });
+      .toEqual({ version: 23, name: 'active_final_publication' });
     expect(upgraded.raw.prepare(`SELECT count(*) AS count FROM youtube_connection_binding`).get())
       .toEqual({ count: 0 });
     expect(upgraded.raw.prepare(`SELECT count(*) AS count FROM provider_endpoint_bindings`).get())
       .toEqual({ count: 0 });
     expect(upgraded.raw.prepare(`SELECT status, status_code FROM provider_health WHERE provider = 'tavily'`).get())
       .toEqual({ status: 'auth_invalid', status_code: 401 });
+    expect(upgraded.raw.prepare(`
+      SELECT final_render_id, snapshot_version, snapshot_status, approval_hash
+      FROM publication_records WHERE id = 'legacy-unique-publication'
+    `).get()).toEqual({
+      final_render_id: 'legacy-unique-render',
+      snapshot_version: 1,
+      snapshot_status: 'current',
+      approval_hash: 'unique-approval'
+    });
+    expect(upgraded.raw.prepare(`
+      SELECT final_render_id, snapshot_status, privacy_status, approval_hash,
+        approved_at, scheduled_at, published_at, error
+      FROM publication_records WHERE id = 'legacy-stale-publication'
+    `).get()).toEqual({
+      final_render_id: 'legacy-stale-render',
+      snapshot_status: 'stale',
+      privacy_status: 'private',
+      approval_hash: null,
+      approved_at: null,
+      scheduled_at: null,
+      published_at: null,
+      error: 'Legacy publication targets a non-active final render; private re-upload and review are required.'
+    });
+    expect(upgraded.raw.prepare(`
+      SELECT final_render_id, snapshot_version, snapshot_status, approval_hash, error
+      FROM publication_records WHERE id = 'legacy-ambiguous-publication'
+    `).get()).toEqual({
+      final_render_id: null,
+      snapshot_version: 0,
+      snapshot_status: 'legacy_unbound',
+      approval_hash: null,
+      error: 'Legacy publication could not be bound to one final render; private re-upload and review are required.'
+    });
     expect(upgraded.integrityCheck()).toBe('ok');
     upgraded.close();
   });

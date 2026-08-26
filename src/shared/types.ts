@@ -1162,8 +1162,14 @@ export interface ProjectLicenseDetail {
 
 export interface ProjectPublicationDetail {
   id: string;
+  channelId: string | null;
   videoId: string | null;
   privacyStatus: string;
+  finalRenderId: string | null;
+  finalSha256: string;
+  snapshotVersion: number;
+  snapshotStatus: 'current' | 'stale' | 'legacy_unbound';
+  staleRemote: boolean;
   processingStatus: string | null;
   selectedPackageId: string | null;
   captionId: string | null;

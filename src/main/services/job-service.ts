@@ -612,19 +612,52 @@ export class JobService {
       : null;
     const expectedPublicationId = typeof expectedPublication?.id === 'string' ? expectedPublication.id : null;
     const expectedProjectId = typeof input.projectId === 'string' ? input.projectId : null;
-    const expectedFinalSha = typeof expectedPublication?.final_sha256 === 'string'
+    const expectedFinalRenderId = typeof input.finalRenderId === 'string'
+      ? input.finalRenderId
+      : typeof expectedRender?.id === 'string'
+        ? expectedRender.id
+        : null;
+    const expectedFinalSha = typeof input.finalSha256 === 'string'
+      ? input.finalSha256
+      : typeof expectedPublication?.final_sha256 === 'string'
       ? expectedPublication.final_sha256
       : typeof expectedRender?.sha256 === 'string'
         ? expectedRender.sha256
         : null;
-    const publication = job.project_id ? this.db.raw.prepare(`
-      SELECT id, video_id, upload_session_uri, final_sha256
-      FROM publication_records WHERE project_id = ? ORDER BY created_at DESC LIMIT 1
-    `).get(job.project_id) as {
+    const expectedChannelId = typeof input.confirmedChannelId === 'string' ? input.confirmedChannelId : null;
+    const expectedPackageId = typeof input.selectedPackageId === 'string' ? input.selectedPackageId : null;
+    const expectedApprovalHash = typeof input.approvalHash === 'string' ? input.approvalHash : null;
+    const expectedSnapshotVersion = typeof input.snapshotVersion === 'number' ? input.snapshotVersion : null;
+    const snapshotIdentity = Boolean(expectedFinalRenderId && expectedChannelId);
+    const publication = job.project_id ? (snapshotIdentity
+      ? this.db.raw.prepare(`
+          SELECT id, video_id, upload_session_uri, final_render_id, final_sha256,
+            channel_id, selected_package_id, approval_hash, snapshot_version, snapshot_status
+          FROM publication_records
+          WHERE project_id = ? AND channel_id = ? AND final_render_id = ? AND final_sha256 = ?
+          ORDER BY created_at DESC LIMIT 1
+        `).get(job.project_id, expectedChannelId, expectedFinalRenderId, expectedFinalSha)
+      : expectedPublicationId
+        ? this.db.raw.prepare(`
+            SELECT id, video_id, upload_session_uri, final_render_id, final_sha256,
+              channel_id, selected_package_id, approval_hash, snapshot_version, snapshot_status
+            FROM publication_records WHERE project_id = ? AND id = ? LIMIT 1
+          `).get(job.project_id, expectedPublicationId)
+        : this.db.raw.prepare(`
+            SELECT id, video_id, upload_session_uri, final_render_id, final_sha256,
+              channel_id, selected_package_id, approval_hash, snapshot_version, snapshot_status
+            FROM publication_records WHERE project_id = ? ORDER BY created_at DESC LIMIT 1
+          `).get(job.project_id)) as {
       id: string;
       video_id: string | null;
       upload_session_uri: string | null;
+      final_render_id: string | null;
       final_sha256: string;
+      channel_id: string | null;
+      selected_package_id: string | null;
+      approval_hash: string | null;
+      snapshot_version: number;
+      snapshot_status: string;
     } | undefined : undefined;
 
     const identityMismatch = Boolean(
@@ -633,6 +666,14 @@ export class JobService {
       || !expectedFinalSha
       || (expectedPublicationId && publication?.id !== expectedPublicationId)
       || (expectedFinalSha && publication && publication.final_sha256 !== expectedFinalSha)
+      || (snapshotIdentity && publication && (
+        publication.final_render_id !== expectedFinalRenderId
+        || publication.channel_id !== expectedChannelId
+        || publication.selected_package_id !== expectedPackageId
+        || publication.approval_hash !== expectedApprovalHash
+        || publication.snapshot_version !== expectedSnapshotVersion
+        || publication.snapshot_status !== 'current'
+      ))
     );
     const outcome: RetryReconciliation['outcome'] = identityMismatch
       ? 'identity_mismatch'
@@ -661,7 +702,12 @@ export class JobService {
         trigger,
         expectedProjectId,
         expectedPublicationId,
+        expectedFinalRenderId,
         expectedFinalSha,
+        expectedChannelId,
+        expectedPackageId,
+        expectedApprovalHash,
+        expectedSnapshotVersion,
         hasStoredUploadSession: Boolean(publication?.upload_session_uri)
       }),
       now
