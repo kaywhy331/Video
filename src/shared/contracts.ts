@@ -133,6 +133,34 @@ export const CreateAutopilotProjectSchema = z.object({
 
 export const IdSchema = z.string().min(1).max(200);
 
+export const JobStateSchema = z.enum([
+  'QUEUED',
+  'READY',
+  'RUNNING',
+  'WAITING_EXTERNAL',
+  'WAITING_HUMAN',
+  'RETRY_SCHEDULED',
+  'SUCCEEDED',
+  'FAILED_RETRYABLE',
+  'FAILED_PERMANENT',
+  'CANCELLED'
+]);
+
+export const JobRetryCapabilitySchema = z.object({ jobId: IdSchema }).strict();
+
+export const JobRetrySchema = z.object({
+  jobId: IdSchema,
+  expectedState: JobStateSchema,
+  expectedVersion: z.number().int().min(0),
+  operatorReason: z.string().trim().min(8).max(2_000).optional(),
+  grantAttempt: z.boolean().optional()
+}).strict();
+
+export const JobExpediteSchema = z.object({
+  jobId: IdSchema,
+  expectedVersion: z.number().int().min(0)
+}).strict();
+
 export const ProjectExportSchema = z.object({
   projectId: IdSchema,
   destinationPath: FilePathSchema.optional(),

@@ -28,7 +28,12 @@ import type {
   FinalReview,
   FinalReviewRevisionRequest,
   FourKBlocker,
+  JobExpediteRequest,
+  JobExpediteResult,
   JobRecord,
+  JobRetryCapability,
+  JobRetryRequest,
+  JobRetryResult,
   LearningRecommendation,
   MusicTrack,
   ProjectMusicSelection,
@@ -415,7 +420,10 @@ const api = {
   },
   jobs: {
     list: (projectId?: string): Promise<JobRecord[]> => ipcRenderer.invoke(IPC.jobsList, projectId),
-    retry: (id: string): Promise<JobRecord> => ipcRenderer.invoke(IPC.jobsRetry, id)
+    retryCapability: (jobId: string): Promise<JobRetryCapability> =>
+      ipcRenderer.invoke(IPC.jobsRetryCapability, { jobId }),
+    retry: (request: JobRetryRequest): Promise<JobRetryResult> => ipcRenderer.invoke(IPC.jobsRetry, request),
+    expedite: (request: JobExpediteRequest): Promise<JobExpediteResult> => ipcRenderer.invoke(IPC.jobsExpedite, request)
   },
   system: {
     openPath: (path: string): Promise<boolean> => ipcRenderer.invoke(IPC.mediaOpenPath, path),

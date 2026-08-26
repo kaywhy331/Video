@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { AppDatabase } from '../database/database';
-import type { JobRecord } from '@shared/types';
+import { redactSecrets } from '../logger';
+import type {
+  JobExpediteRequest,
+  JobExpediteResult,
+  JobRecord,
+  JobRetryCapability,
+  JobRetryOutcome,
+  JobRetryRequest,
+  JobRetryResult,
+  JobState
+} from '@shared/types';
 
 export interface JobStartOptions {
   resourceKey?: string;
@@ -23,7 +33,32 @@ export class JobResourceBusyError extends Error {
   }
 }
 
-function toJob(row: Record<string, unknown>): JobRecord {
+type JobRow = Record<string, unknown> & {
+  id: string;
+  project_id: string | null;
+  type: string;
+  state: JobState;
+  input_json: string;
+  input_hash: string;
+  attempt: number;
+  max_attempts: number;
+  manual_attempt_grants: number;
+  transition_version: number;
+  error: string | null;
+};
+
+type RetryReconciliation = {
+  id: string;
+  outcome: 'no_remote_effect' | 'remote_session_reused' | 'remote_effect_reused' | 'identity_mismatch';
+  publicationId: string | null;
+  videoId: string | null;
+  safeToRun: boolean;
+  message: string;
+};
+
+const SIDE_EFFECT_JOB_TYPES = new Set(['workflow_upload_private']);
+
+function toJob(row: JobRow, retryCapability: JobRetryCapability): JobRecord {
   return {
     id: String(row.id),
     projectId: row.project_id ? String(row.project_id) : null,
@@ -33,11 +68,14 @@ function toJob(row: Record<string, unknown>): JobRecord {
     phase: row.phase ? String(row.phase) : null,
     attempt: Number(row.attempt),
     maxAttempts: Number(row.max_attempts),
+    manualAttemptGrants: Number(row.manual_attempt_grants),
+    transitionVersion: Number(row.transition_version),
     availableAt: String(row.available_at),
     leaseUntil: row.lease_until ? String(row.lease_until) : null,
     error: row.error ? String(row.error) : null,
     createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at)
+    updatedAt: String(row.updated_at),
+    retryCapability
   };
 }
 
@@ -54,12 +92,30 @@ export class JobService {
     const now = new Date().toISOString();
     const currentOwner = `desktop-${process.pid}`;
     this.db.raw.transaction(() => {
-      this.db.raw.prepare(`
-        UPDATE jobs SET state = 'QUEUED', lease_owner = NULL, lease_until = NULL,
-          phase = 'Recovered after restart', updated_at = ?
+      const interrupted = this.db.raw.prepare(`
+        SELECT * FROM jobs
         WHERE state = 'RUNNING'
           AND (lease_owner IS NULL OR lease_owner <> ? OR lease_until IS NULL OR lease_until <= ?)
-      `).run(now, currentOwner, now);
+      `).all(currentOwner, now) as JobRow[];
+      for (const job of interrupted) {
+        let nextState: JobState = 'QUEUED';
+        let phase = 'Recovered after restart';
+        if (SIDE_EFFECT_JOB_TYPES.has(job.type)) {
+          const reconciliation = this.reconcileSideEffect(job, 'startup_recovery', now);
+          if (!reconciliation.safeToRun) {
+            nextState = Number(job.attempt) < Number(job.max_attempts) ? 'FAILED_RETRYABLE' : 'FAILED_PERMANENT';
+            phase = 'Remote side effect requires operator reconciliation';
+          } else {
+            phase = `Recovered after ${reconciliation.outcome.replaceAll('_', ' ')}`;
+          }
+        }
+        const changed = this.db.raw.prepare(`
+          UPDATE jobs SET state = ?, lease_owner = NULL, lease_until = NULL,
+            phase = ?, transition_version = transition_version + 1, updated_at = ?
+          WHERE id = ? AND state = 'RUNNING' AND transition_version = ?
+        `).run(nextState, phase, now, job.id, job.transition_version);
+        if (Number(changed.changes) === 1) this.releaseLocks(job.id, now);
+      }
       this.db.raw.prepare(`
         UPDATE projects SET locked_by_job_id = NULL, updated_at = ?
         WHERE locked_by_job_id IN (SELECT id FROM jobs WHERE state <> 'RUNNING')
@@ -93,19 +149,24 @@ export class JobService {
   reschedule(id: string, availableAt: string, phase: string): JobRecord {
     const parsed = new Date(availableAt);
     if (!Number.isFinite(parsed.getTime())) throw new Error('A valid job availability time is required.');
-    const row = this.db.raw.prepare(`SELECT state FROM jobs WHERE id = ?`).get(id) as
-      | { state: JobRecord['state'] }
+    const row = this.db.raw.prepare(`SELECT state, transition_version FROM jobs WHERE id = ?`).get(id) as
+      | { state: JobRecord['state']; transition_version: number }
       | undefined;
     if (!row) throw new Error('Job not found.');
     if (!['QUEUED', 'READY', 'RETRY_SCHEDULED', 'WAITING_EXTERNAL'].includes(row.state)) {
       throw new Error(`Job ${id} cannot be rescheduled from ${row.state}.`);
     }
-    this.db.raw.prepare(`
-      UPDATE jobs SET state = 'QUEUED', available_at = ?, phase = ?, error = NULL,
-        lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?
-    `).run(parsed.toISOString(), phase, new Date().toISOString(), id);
-    this.releaseLocks(id, new Date().toISOString());
-    return toJob(this.db.raw.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as Record<string, unknown>);
+    const now = new Date().toISOString();
+    return this.db.raw.transaction(() => {
+      const changed = this.db.raw.prepare(`
+        UPDATE jobs SET state = 'QUEUED', available_at = ?, phase = ?, error = NULL,
+          lease_owner = NULL, lease_until = NULL, transition_version = transition_version + 1,
+          updated_at = ? WHERE id = ? AND state = ? AND transition_version = ?
+      `).run(parsed.toISOString(), phase, now, id, row.state, row.transition_version);
+      if (Number(changed.changes) !== 1) throw new Error(`Job ${id} changed while it was being rescheduled.`);
+      this.releaseLocks(id, now);
+      return this.jobById(id);
+    })();
   }
 
   private createAvailable(
@@ -123,7 +184,7 @@ export class JobService {
       WHERE type = ? AND input_hash = ? AND state <> 'CANCELLED'
       ORDER BY created_at DESC LIMIT 1
     `).get(type, inputHash) as Record<string, unknown> | undefined;
-    if (existing) return toJob(existing);
+    if (existing) return this.mapJob(existing as JobRow);
 
     const id = randomUUID();
     this.db.raw.prepare(`
@@ -132,7 +193,7 @@ export class JobService {
         attempt, max_attempts, available_at, created_at, updated_at
       ) VALUES(?, ?, ?, 'QUEUED', 0, ?, ?, 0, ?, ?, ?, ?)
     `).run(id, projectId, type, inputJson, inputHash, maxAttempts, availableAt, now, now);
-    return toJob(this.db.raw.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as Record<string, unknown>);
+    return this.jobById(id);
   }
 
   start(id: string, phase: string, options: JobStartOptions = {}): JobStartResult {
@@ -168,7 +229,8 @@ export class JobService {
           const retryAt = new Date(now.getTime() + (options.resourceRetryMs ?? 5_000)).toISOString();
           this.db.raw.prepare(`
             UPDATE jobs SET state = 'RETRY_SCHEDULED', available_at = ?,
-              phase = ?, error = NULL, lease_owner = NULL, lease_until = NULL, updated_at = ?
+              phase = ?, error = NULL, lease_owner = NULL, lease_until = NULL,
+              transition_version = transition_version + 1, updated_at = ?
             WHERE id = ?
           `).run(retryAt, `Waiting for ${options.resourceKey} capacity`, nowIso, id);
           return { state: 'deferred', reason: 'resource_busy', resourceKey: options.resourceKey, retryAt };
@@ -188,7 +250,8 @@ export class JobService {
       }
       this.db.raw.prepare(`
         UPDATE jobs SET state = 'RUNNING', phase = ?, attempt = attempt + 1,
-          lease_owner = ?, lease_until = ?, updated_at = ? WHERE id = ?
+          lease_owner = ?, lease_until = ?, transition_version = transition_version + 1,
+          updated_at = ? WHERE id = ?
       `).run(phase, leaseOwner, lease, nowIso, id);
       return { state: 'started' };
     })();
@@ -227,7 +290,8 @@ export class JobService {
     this.db.raw.transaction(() => {
       this.db.raw.prepare(`
         UPDATE jobs SET state = 'SUCCEEDED', progress = 1, output_json = ?,
-          lease_owner = NULL, lease_until = NULL, completed_at = ?, updated_at = ?
+          lease_owner = NULL, lease_until = NULL, completed_at = ?,
+          transition_version = transition_version + 1, updated_at = ?
         WHERE id = ?
       `).run(JSON.stringify(output), now, now, id);
       this.releaseLocks(id, now);
@@ -246,7 +310,7 @@ export class JobService {
     this.db.raw.transaction(() => {
       this.db.raw.prepare(`
         UPDATE jobs SET state = ?, error = ?, available_at = ?, lease_owner = NULL,
-          lease_until = NULL, updated_at = ?
+          lease_until = NULL, transition_version = transition_version + 1, updated_at = ?
         WHERE id = ?
       `).run(
         retry ? 'RETRY_SCHEDULED' : 'FAILED_PERMANENT',
@@ -266,19 +330,152 @@ export class JobService {
       ${projectId ? 'WHERE project_id = ?' : ''}
       ORDER BY created_at DESC LIMIT 250
     `).all(...(projectId ? [projectId] : [])) as Array<Record<string, unknown>>;
-    return rows.map(toJob);
+    return rows.map(row => this.mapJob(row as JobRow));
   }
 
-  retry(id: string): JobRecord {
+  retryCapability(id: string): JobRetryCapability {
+    const row = this.rowById(id);
+    if (!row) throw new Error('Job not found.');
+    return this.capabilityForRow(row);
+  }
+
+  retry(request: JobRetryRequest): JobRetryResult {
     const now = new Date().toISOString();
-    this.db.raw.transaction(() => {
-      this.db.raw.prepare(`
-        UPDATE jobs SET state = 'QUEUED', error = NULL, available_at = ?,
-          lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE id = ?
-      `).run(now, now, id);
-      this.releaseLocks(id, now);
+    return this.db.raw.transaction((): JobRetryResult => {
+      const row = this.rowById(request.jobId);
+      if (!row) {
+        const message = 'Job not found.';
+        this.auditRetry(null, request, 'invalid_state', message, null, 0, null, now);
+        return { outcome: 'invalid_state', job: null, capability: null, message };
+      }
+
+      if (row.state !== request.expectedState || Number(row.transition_version) !== request.expectedVersion) {
+        const message = 'The job changed after this retry action was presented. Refresh and review its current state.';
+        this.auditRetry(row, request, 'concurrent_change', message, row, 0, null, now);
+        const job = this.mapJob(row);
+        return { outcome: 'concurrent_change', job, capability: job.retryCapability, message };
+      }
+
+      const capability = this.capabilityForRow(row);
+      if (row.state === 'RETRY_SCHEDULED') {
+        const message = 'This job already has a scheduled retry. Expedite it only when immediate execution is intentional.';
+        this.auditRetry(row, request, 'already_scheduled', message, row, 0, null, now);
+        const job = this.mapJob(row);
+        return { outcome: 'already_scheduled', job, capability: job.retryCapability, message };
+      }
+
+      if (!capability.canRetry) {
+        const outcome: JobRetryOutcome = capability.reconciliationRequired
+          ? 'reconciliation_required'
+          : 'invalid_state';
+        this.auditRetry(row, request, outcome, capability.message, row, 0, null, now);
+        const job = this.mapJob(row);
+        return { outcome, job, capability: job.retryCapability, message: capability.message };
+      }
+
+      const permanent = row.state === 'FAILED_PERMANENT';
+      const operatorReason = request.operatorReason?.trim() ?? '';
+      if (permanent && (operatorReason.length < 8 || request.grantAttempt !== true)) {
+        const message = 'A permanent failure requires an operator reason and one explicitly granted attempt.';
+        this.auditRetry(row, request, 'invalid_state', message, row, 0, null, now);
+        const job = this.mapJob(row);
+        return { outcome: 'invalid_state', job, capability: job.retryCapability, message };
+      }
+
+      let reconciliation: RetryReconciliation | null = null;
+      if (SIDE_EFFECT_JOB_TYPES.has(row.type)) {
+        reconciliation = this.reconcileSideEffect(row, 'manual_retry', now);
+        if (!reconciliation.safeToRun) {
+          const message = reconciliation.message;
+          this.auditRetry(row, request, 'reconciliation_required', message, row, 0, reconciliation, now);
+          const job = this.mapJob(row);
+          return { outcome: 'reconciliation_required', job, capability: job.retryCapability, message };
+        }
+      }
+
+      const grantedAttempts = permanent ? 1 : 0;
+      const changed = this.db.raw.prepare(`
+        UPDATE jobs SET state = 'QUEUED', progress = 0, phase = 'Manual retry queued',
+          error = NULL, available_at = ?, lease_owner = NULL, lease_until = NULL,
+          completed_at = NULL, max_attempts = max_attempts + ?,
+          manual_attempt_grants = manual_attempt_grants + ?,
+          transition_version = transition_version + 1, updated_at = ?
+        WHERE id = ? AND state = ? AND transition_version = ?
+      `).run(
+        now,
+        grantedAttempts,
+        grantedAttempts,
+        now,
+        row.id,
+        request.expectedState,
+        request.expectedVersion
+      );
+      if (Number(changed.changes) !== 1) {
+        const current = this.rowById(row.id);
+        const message = 'The job changed while the retry was being committed. Refresh and review its current state.';
+        this.auditRetry(row, request, 'concurrent_change', message, current ?? null, 0, reconciliation, now);
+        const job = current ? this.mapJob(current) : null;
+        return { outcome: 'concurrent_change', job, capability: job?.retryCapability ?? null, message };
+      }
+
+      this.releaseLocks(row.id, now);
+      const resulting = this.rowById(row.id);
+      if (!resulting) throw new Error('Retried job disappeared during its transaction.');
+      const message = reconciliation
+        ? `Retry queued after ${reconciliation.outcome.replaceAll('_', ' ')} reconciliation.`
+        : 'Retry queued.';
+      this.auditRetry(row, request, 'retry_started', message, resulting, grantedAttempts, reconciliation, now);
+      const job = this.mapJob(resulting);
+      return { outcome: 'retry_started', job, capability: job.retryCapability, message };
     })();
-    return toJob(this.db.raw.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as Record<string, unknown>);
+  }
+
+  expedite(request: JobExpediteRequest): JobExpediteResult {
+    const now = new Date().toISOString();
+    return this.db.raw.transaction((): JobExpediteResult => {
+      const auditRequest: JobRetryRequest = {
+        jobId: request.jobId,
+        expectedState: 'RETRY_SCHEDULED',
+        expectedVersion: request.expectedVersion
+      };
+      const row = this.rowById(request.jobId);
+      if (!row) {
+        const message = 'Job not found.';
+        this.auditRetry(null, auditRequest, 'invalid_state', message, null, 0, null, now, 'job.retry_expedited');
+        return { outcome: 'invalid_state', job: null, capability: null, message };
+      }
+      if (Number(row.transition_version) !== request.expectedVersion) {
+        const message = 'The job changed after this expedite action was presented.';
+        this.auditRetry(row, auditRequest, 'concurrent_change', message, row, 0, null, now, 'job.retry_expedited');
+        const job = this.mapJob(row);
+        return { outcome: 'concurrent_change', job, capability: job.retryCapability, message };
+      }
+      if (row.state !== 'RETRY_SCHEDULED') {
+        const message = `A job in ${row.state} cannot be expedited.`;
+        this.auditRetry(row, auditRequest, 'invalid_state', message, row, 0, null, now, 'job.retry_expedited');
+        const job = this.mapJob(row);
+        return { outcome: 'invalid_state', job, capability: job.retryCapability, message };
+      }
+      const changed = this.db.raw.prepare(`
+        UPDATE jobs SET state = 'QUEUED', available_at = ?, phase = 'Scheduled retry expedited',
+          transition_version = transition_version + 1, updated_at = ?
+        WHERE id = ? AND state = 'RETRY_SCHEDULED' AND transition_version = ?
+      `).run(now, now, row.id, request.expectedVersion);
+      if (Number(changed.changes) !== 1) {
+        const current = this.rowById(row.id);
+        const message = 'The job changed while the expedite action was being committed.';
+        this.auditRetry(row, auditRequest, 'concurrent_change', message, current ?? null, 0, null, now, 'job.retry_expedited');
+        const job = current ? this.mapJob(current) : null;
+        return { outcome: 'concurrent_change', job, capability: job?.retryCapability ?? null, message };
+      }
+      this.releaseLocks(row.id, now);
+      const resulting = this.rowById(row.id);
+      if (!resulting) throw new Error('Expedited job disappeared during its transaction.');
+      const message = 'Scheduled retry expedited without consuming an attempt.';
+      this.auditRetry(row, auditRequest, 'retry_started', message, resulting, 0, null, now, 'job.retry_expedited');
+      const job = this.mapJob(resulting);
+      return { outcome: 'expedited', job, capability: job.retryCapability, message };
+    })();
   }
 
   waitForHuman(id: string, phase: string): void {
@@ -287,7 +484,8 @@ export class JobService {
     this.db.raw.transaction(() => {
       this.db.raw.prepare(`
         UPDATE jobs SET state = 'WAITING_HUMAN', phase = ?, lease_owner = NULL,
-          lease_until = NULL, updated_at = ? WHERE id = ?
+          lease_until = NULL, transition_version = transition_version + 1,
+          updated_at = ? WHERE id = ?
       `).run(phase, now, id);
       this.releaseLocks(id, now);
     })();
@@ -307,6 +505,229 @@ export class JobService {
     this.db.raw.prepare(`
       INSERT OR IGNORE INTO job_dependencies(job_id, depends_on_job_id) VALUES(?, ?)
     `).run(jobId, dependsOnJobId);
+  }
+
+  private rowById(id: string): JobRow | undefined {
+    return this.db.raw.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow | undefined;
+  }
+
+  private jobById(id: string): JobRecord {
+    const row = this.rowById(id);
+    if (!row) throw new Error('Job not found.');
+    return this.mapJob(row);
+  }
+
+  private mapJob(row: JobRow): JobRecord {
+    return toJob(row, this.capabilityForRow(row));
+  }
+
+  private capabilityForRow(row: JobRow): JobRetryCapability {
+    const state = row.state;
+    const base = {
+      jobId: String(row.id),
+      currentState: state,
+      transitionVersion: Number(row.transition_version),
+      requiresReason: false,
+      requiresAttemptGrant: false,
+      reconciliationRequired: false
+    };
+    if (state === 'RETRY_SCHEDULED') {
+      return {
+        ...base,
+        action: 'expedite',
+        canRetry: true,
+        message: 'A retry is already scheduled; it may be expedited without consuming an attempt.'
+      };
+    }
+    if (state === 'WAITING_EXTERNAL' || state === 'WAITING_HUMAN') {
+      return {
+        ...base,
+        action: 'none',
+        canRetry: false,
+        reconciliationRequired: true,
+        message: state === 'WAITING_EXTERNAL'
+          ? 'Resolve or reconcile the external wait before retrying.'
+          : 'Record the required operator decision before continuing.'
+      };
+    }
+    if (state !== 'FAILED_RETRYABLE' && state !== 'FAILED_PERMANENT') {
+      return {
+        ...base,
+        action: 'none',
+        canRetry: false,
+        message: `A job in ${state} is not eligible for manual retry.`
+      };
+    }
+    const unsatisfied = this.db.raw.prepare(`
+      SELECT count(*) AS count FROM job_dependencies d
+      JOIN jobs upstream ON upstream.id = d.depends_on_job_id
+      WHERE d.job_id = ? AND upstream.state <> 'SUCCEEDED'
+    `).get(row.id) as { count: number };
+    if (Number(unsatisfied.count) > 0) {
+      return {
+        ...base,
+        action: 'none',
+        canRetry: false,
+        message: 'Upstream job dependencies must succeed before this job can be retried.'
+      };
+    }
+    if (state === 'FAILED_RETRYABLE' && Number(row.attempt) >= Number(row.max_attempts)) {
+      return {
+        ...base,
+        action: 'none',
+        canRetry: false,
+        message: 'This retryable failure has no remaining configured attempt budget.'
+      };
+    }
+    const sideEffect = SIDE_EFFECT_JOB_TYPES.has(row.type);
+    const permanent = state === 'FAILED_PERMANENT';
+    return {
+      ...base,
+      action: sideEffect ? 'reconcile_and_retry' : permanent ? 'retry_with_reason' : 'retry',
+      canRetry: true,
+      requiresReason: permanent,
+      requiresAttemptGrant: permanent,
+      reconciliationRequired: sideEffect,
+      message: sideEffect
+        ? 'The existing upload receipt and idempotency identity will be reconciled before this job can run.'
+        : permanent
+          ? 'Retry requires an operator reason and one explicitly granted attempt.'
+          : 'This failure is eligible for a manual retry within its configured attempt budget.'
+    };
+  }
+
+  private reconcileSideEffect(job: JobRow, trigger: 'manual_retry' | 'startup_recovery', now: string): RetryReconciliation {
+    let input: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(String(job.input_json)) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed as Record<string, unknown>;
+    } catch {
+      // An invalid persisted identity is treated as a mismatch below.
+    }
+    const expectedPublication = input.publication && typeof input.publication === 'object'
+      ? input.publication as Record<string, unknown>
+      : null;
+    const expectedRender = input.render && typeof input.render === 'object'
+      ? input.render as Record<string, unknown>
+      : null;
+    const expectedPublicationId = typeof expectedPublication?.id === 'string' ? expectedPublication.id : null;
+    const expectedProjectId = typeof input.projectId === 'string' ? input.projectId : null;
+    const expectedFinalSha = typeof expectedPublication?.final_sha256 === 'string'
+      ? expectedPublication.final_sha256
+      : typeof expectedRender?.sha256 === 'string'
+        ? expectedRender.sha256
+        : null;
+    const publication = job.project_id ? this.db.raw.prepare(`
+      SELECT id, video_id, upload_session_uri, final_sha256
+      FROM publication_records WHERE project_id = ? ORDER BY created_at DESC LIMIT 1
+    `).get(job.project_id) as {
+      id: string;
+      video_id: string | null;
+      upload_session_uri: string | null;
+      final_sha256: string;
+    } | undefined : undefined;
+
+    const identityMismatch = Boolean(
+      !job.project_id
+      || expectedProjectId !== job.project_id
+      || !expectedFinalSha
+      || (expectedPublicationId && publication?.id !== expectedPublicationId)
+      || (expectedFinalSha && publication && publication.final_sha256 !== expectedFinalSha)
+    );
+    const outcome: RetryReconciliation['outcome'] = identityMismatch
+      ? 'identity_mismatch'
+      : publication?.video_id
+        ? 'remote_effect_reused'
+        : publication?.upload_session_uri
+          ? 'remote_session_reused'
+          : 'no_remote_effect';
+    const safeToRun = outcome !== 'identity_mismatch';
+    const id = randomUUID();
+    this.db.raw.prepare(`
+      INSERT INTO job_retry_reconciliations(
+        id, job_id, job_transition_version, job_type, outcome, publication_id,
+        video_id, input_hash, metadata_json, created_at
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      job.id,
+      Number(job.transition_version),
+      job.type,
+      outcome,
+      publication?.id ?? null,
+      publication?.video_id ?? null,
+      job.input_hash,
+      JSON.stringify({
+        trigger,
+        expectedProjectId,
+        expectedPublicationId,
+        expectedFinalSha,
+        hasStoredUploadSession: Boolean(publication?.upload_session_uri)
+      }),
+      now
+    );
+    return {
+      id,
+      outcome,
+      publicationId: publication?.id ?? null,
+      videoId: publication?.video_id ?? null,
+      safeToRun,
+      message: safeToRun
+        ? `Side effect reconciled as ${outcome.replaceAll('_', ' ')}.`
+        : 'The persisted upload identity no longer matches the current publication; dedicated reconciliation is required.'
+    };
+  }
+
+  private auditRetry(
+    before: JobRow | null,
+    request: JobRetryRequest,
+    outcome: JobRetryOutcome,
+    message: string,
+    after: JobRow | null,
+    grantedAttempts: number,
+    reconciliation: RetryReconciliation | null,
+    now: string,
+    action = 'job.manual_retry'
+  ): void {
+    const safeText = (value: unknown): string | null => value === null || value === undefined
+      ? null
+      : redactSecrets(value).slice(0, 4_000);
+    this.db.raw.prepare(`
+      INSERT INTO audit_log(
+        project_id, action, actor, entity_type, entity_id,
+        before_json, after_json, metadata_json, created_at
+      ) VALUES(?, ?, 'operator', 'job', ?, ?, ?, ?, ?)
+    `).run(
+      before?.project_id ?? after?.project_id ?? null,
+      action,
+      request.jobId,
+      before ? JSON.stringify({
+        state: before.state,
+        transitionVersion: Number(before.transition_version),
+        attempt: Number(before.attempt),
+        maxAttempts: Number(before.max_attempts),
+        priorError: safeText(before.error)
+      }) : null,
+      after ? JSON.stringify({
+        state: after.state,
+        transitionVersion: Number(after.transition_version),
+        attempt: Number(after.attempt),
+        maxAttempts: Number(after.max_attempts)
+      }) : null,
+      JSON.stringify({
+        expectedState: request.expectedState,
+        expectedVersion: request.expectedVersion,
+        actualState: before?.state ?? null,
+        actualVersion: before ? Number(before.transition_version) : null,
+        outcome,
+        message,
+        operatorReason: safeText(request.operatorReason),
+        grantedAttempts,
+        reconciliationId: reconciliation?.id ?? null,
+        reconciliationOutcome: reconciliation?.outcome ?? null
+      }),
+      now
+    );
   }
 
   private releaseLocks(jobId: string, now: string): void {

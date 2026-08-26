@@ -1,6 +1,6 @@
 import type { Dispatch, JSX, SetStateAction } from 'react';
 import { Archive, Ban, ExternalLink, FileCheck2, Music2, Pause, Play, RotateCcw, Wrench } from 'lucide-react';
-import type { FourKBlocker, MusicTrack, ProjectDetail, ProjectMusicSelection } from '@shared/types';
+import type { FourKBlocker, JobRecord, MusicTrack, ProjectDetail, ProjectMusicSelection } from '@shared/types';
 import { canTransitionProject } from '@shared/state-machine';
 import { StoryboardRecoveryEditor } from './StoryboardRecoveryEditor';
 import { Button, ProgressBar, StatusPill } from './ui';
@@ -18,7 +18,16 @@ export const PROJECT_TABS = [
 ] as const;
 
 export type ProjectTab = typeof PROJECT_TABS[number][0];
-export type ProjectWorkspaceBusyAction = 'export' | 'rebuild' | 'music' | 'pause' | 'resume' | 'cancel' | 'archive' | null;
+export type ProjectWorkspaceBusyAction =
+  | 'export'
+  | 'rebuild'
+  | 'music'
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+  | 'archive'
+  | `job:${string}`
+  | null;
 
 interface ProjectTabPanelProps {
   tab: ProjectTab;
@@ -26,12 +35,14 @@ interface ProjectTabPanelProps {
   fourKBlockers: FourKBlocker[];
   musicTracks: MusicTrack[];
   musicSelection: ProjectMusicSelection | null;
+  jobs: JobRecord[];
   selectedMusicId: string;
   busy: ProjectWorkspaceBusyAction;
   setSelectedMusicId: Dispatch<SetStateAction<string>>;
   selectMusic: () => Promise<void>;
   lifecycle: (kind: 'pause' | 'resume' | 'cancel' | 'archive') => Promise<void>;
   run: (kind: 'export' | 'rebuild') => Promise<void>;
+  retryJob: (job: JobRecord) => Promise<void>;
   setError: (message: string | null) => void;
   onStoryboardChanged: (project: ProjectDetail) => Promise<void>;
 }
@@ -231,12 +242,42 @@ function PublishingPanel({ project }: Pick<ProjectTabPanelProps, 'project'>): JS
   </>;
 }
 
-function AuditPanel({ project }: Pick<ProjectTabPanelProps, 'project'>): JSX.Element {
-  return <section><h3>Immutable audit trail ({project.auditLog.length})</h3>
-    {project.auditLog.length ? <div className="workspace-list audit-workspace-list">{project.auditLog.map(item => (
-      <article key={item.id} className="workspace-row"><FileCheck2 size={15} /><div><strong>{item.action.replaceAll('_', ' ')}</strong><span>{item.actor} · {item.entityType ?? 'project'} {item.entityId ?? ''} · {dateTime(item.createdAt)}</span></div><Evidence value={{ before: item.before, after: item.after, metadata: item.metadata }} /></article>
-    ))}</div> : <EmptyTab>No audit event has been recorded.</EmptyTab>}
-  </section>;
+function AuditPanel({ project, jobs, busy, retryJob }: Pick<ProjectTabPanelProps,
+  'project' | 'jobs' | 'busy' | 'retryJob'>): JSX.Element {
+  return <>
+    <section><h3>Durable jobs ({jobs.length})</h3>
+      {jobs.length ? <div className="workspace-list">{jobs.map(job => {
+        const capability = job.retryCapability;
+        const label = capability.action === 'expedite'
+          ? 'Expedite scheduled retry'
+          : capability.requiresReason
+            ? 'Grant one attempt & retry'
+            : capability.action === 'reconcile_and_retry'
+              ? 'Reconcile & retry'
+              : 'Retry job';
+        return <article key={job.id} className="workspace-row">
+          <RotateCcw size={15} />
+          <div><strong>{job.type.replaceAll('_', ' ')}</strong>
+            <span>attempt {job.attempt}/{job.maxAttempts} · version {job.transitionVersion} · updated {dateTime(job.updatedAt)}</span>
+            <p>{job.error ?? capability.message}</p>
+            {job.error ? <span>{capability.message}</span> : null}
+          </div>
+          <div className="workspace-statuses">
+            <StatusPill value={job.state} />
+            {capability.action !== 'none' ? <Button variant="secondary"
+              busy={busy === `job:${job.id}`}
+              disabled={busy !== null && busy !== `job:${job.id}`}
+              onClick={() => void retryJob(job)}>{label}</Button> : null}
+          </div>
+        </article>;
+      })}</div> : <EmptyTab>No durable job has been created for this project.</EmptyTab>}
+    </section>
+    <section><h3>Immutable audit trail ({project.auditLog.length})</h3>
+      {project.auditLog.length ? <div className="workspace-list audit-workspace-list">{project.auditLog.map(item => (
+        <article key={item.id} className="workspace-row"><FileCheck2 size={15} /><div><strong>{item.action.replaceAll('_', ' ')}</strong><span>{item.actor} · {item.entityType ?? 'project'} {item.entityId ?? ''} · {dateTime(item.createdAt)}</span></div><Evidence value={{ before: item.before, after: item.after, metadata: item.metadata }} /></article>
+      ))}</div> : <EmptyTab>No audit event has been recorded.</EmptyTab>}
+    </section>
+  </>;
 }
 
 export function ProjectTabPanel(props: ProjectTabPanelProps): JSX.Element {
@@ -249,6 +290,6 @@ export function ProjectTabPanel(props: ProjectTabPanelProps): JSX.Element {
     case 'voice': return <VoicePanel {...props} />;
     case 'renders': return <RendersPanel project={props.project} />;
     case 'publishing': return <PublishingPanel project={props.project} />;
-    case 'audit': return <AuditPanel project={props.project} />;
+    case 'audit': return <AuditPanel {...props} />;
   }
 }

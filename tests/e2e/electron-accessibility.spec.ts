@@ -269,6 +269,17 @@ function seedRepresentativeState(paths: { databasePath: string; projectFolder: s
       'Publishing is restricted to the exact Studio editor.', now, now
     );
     db.prepare(`
+      INSERT INTO jobs(
+        id, project_id, type, state, progress, phase, input_json, input_hash,
+        attempt, max_attempts, available_at, lease_owner, lease_until, error,
+        transition_version, created_at, updated_at
+      ) VALUES(?, ?, 'workflow_generate_voice', 'FAILED_RETRYABLE', 0.4, ?, '{}', ?,
+        1, 3, ?, NULL, NULL, ?, 4, ?, ?)
+    `).run(
+      'e2e-failed-job', 'e2e-project', 'Voice provider temporarily unavailable',
+      'e2e-failed-job-input-hash', now, 'Temporary voice provider timeout', now, now
+    );
+    db.prepare(`
       INSERT INTO analytics_snapshots(
         id, project_id, video_id, snapshot_day, metrics_json, retention_json,
         collected_at, captured_at, source, source_hash
@@ -456,6 +467,37 @@ test('[UX-002][PERF-004] exposes deferred pause state and accessible evidence on
     activeJobId: 'e2e-running-job',
     applyAt: 'next_job_checkpoint'
   });
+});
+
+test('[JOB-011] exposes backend retry capability and commits the retry through the project audit workspace', async () => {
+  await page.getByRole('button', { name: 'Autopilot', exact: true }).click();
+  await page.getByRole('button', { name: /E2E accessible project/i }).click();
+  await page.getByRole('tab', { name: 'Audit log' }).click();
+  const jobRow = page.getByText('workflow generate voice', { exact: true }).locator('..').locator('..');
+  await expect(jobRow.getByText('FAILED RETRYABLE', { exact: true })).toBeVisible();
+  await expect(jobRow.getByRole('button', { name: 'Retry job' })).toBeVisible();
+  await jobRow.getByRole('button', { name: 'Retry job' }).click();
+  await expect(page.getByText('workflow generate voice', { exact: true }).locator('..').locator('..')
+    .getByText('QUEUED', { exact: true })).toBeVisible();
+  await expect(page.getByText('job.manual retry', { exact: true })).toBeVisible();
+  await assertNoSeriousAxe('job retry audit workspace', '[aria-label="Project detail workspace"]');
+
+  const receipt = await page.evaluate(async () => {
+    const jobs = await window.videoFactory.jobs.list('e2e-project');
+    const project = await window.videoFactory.projects.get('e2e-project');
+    return {
+      job: jobs.find(item => item.id === 'e2e-failed-job'),
+      audit: project.auditLog.find(item => item.entityId === 'e2e-failed-job' && item.action === 'job.manual_retry')
+    };
+  });
+  expect(receipt.job).toMatchObject({ state: 'QUEUED', attempt: 1, maxAttempts: 3, transitionVersion: 5 });
+  expect(receipt.audit?.metadata).toMatchObject({
+    expectedState: 'FAILED_RETRYABLE',
+    expectedVersion: 4,
+    outcome: 'retry_started',
+    grantedAttempts: 0
+  });
+  await page.getByRole('button', { name: 'Close project details' }).click();
 });
 
 test('resolves and overrides permitted exceptions through the UI with immutable audit receipts', async () => {

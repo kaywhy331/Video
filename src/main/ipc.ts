@@ -31,6 +31,9 @@ import {
   IdSchema,
   ImportRequestSchema,
   IPC,
+  JobExpediteSchema,
+  JobRetryCapabilitySchema,
+  JobRetrySchema,
   OpenPathSchema,
   PackageSelectSchema,
   PathChoiceRequestSchema,
@@ -775,7 +778,20 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     }
   });
   handle(IPC.jobsList, (_event, payload) => context.jobs.list(payload ? IdSchema.parse(payload) : undefined));
-  handle(IPC.jobsRetry, (_event, payload) => context.jobs.retry(IdSchema.parse(payload)));
+  handle(IPC.jobsRetryCapability, (_event, payload) => {
+    const request = JobRetryCapabilitySchema.parse(payload);
+    return context.jobs.retryCapability(request.jobId);
+  });
+  handle(IPC.jobsRetry, (_event, payload) => {
+    const result = context.jobs.retry(JobRetrySchema.parse(payload));
+    context.emitState();
+    return result;
+  });
+  handle(IPC.jobsExpedite, (_event, payload) => {
+    const result = context.jobs.expedite(JobExpediteSchema.parse(payload));
+    context.emitState();
+    return result;
+  });
 
   handle(IPC.mediaOpenPath, async (_event, payload) => {
     const path = OpenPathSchema.parse(payload);

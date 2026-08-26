@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v3",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v4",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -172,10 +172,13 @@
     {
       "ids": [
         "JOB-001", "JOB-002", "JOB-003", "JOB-004", "JOB-005", "JOB-006",
-        "JOB-007", "JOB-008", "JOB-009", "JOB-010"
+        "JOB-007", "JOB-008", "JOB-009", "JOB-010", "JOB-011", "JOB-012",
+        "JOB-013"
       ],
       "evidence": [
         "tests/job-service.test.ts",
+        "tests/contracts.test.ts",
+        "tests/e2e/electron-accessibility.spec.ts",
         "tests/provider-endpoint-policy.test.ts",
         "tests/provider-policy.test.ts",
         "tests/render-recovery.test.ts",

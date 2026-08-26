@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX, type KeyboardEvent } from 'react';
 import { X } from 'lucide-react';
-import type { FourKBlocker, MusicTrack, ProjectDetail, ProjectMusicSelection } from '@shared/types';
+import type { FourKBlocker, JobRecord, MusicTrack, ProjectDetail, ProjectMusicSelection } from '@shared/types';
 import {
   PROJECT_TABS,
   ProjectTabPanel,
@@ -18,23 +18,65 @@ export function ProjectDrawer({ projectId, onClose, onRefresh, setError }: {
   const [fourKBlockers, setFourKBlockers] = useState<FourKBlocker[]>([]);
   const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
   const [musicSelection, setMusicSelection] = useState<ProjectMusicSelection | null>(null);
+  const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [selectedMusicId, setSelectedMusicId] = useState('');
   const [busy, setBusy] = useState<ProjectWorkspaceBusyAction>(null);
   const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
 
   const refresh = async (): Promise<void> => {
     if (!projectId) return;
-    const [nextProject, blockers, tracks, selection] = await Promise.all([
+    const [nextProject, blockers, tracks, selection, nextJobs] = await Promise.all([
       window.videoFactory.projects.get(projectId),
       window.videoFactory.renders.fourKBlockers(projectId),
       window.videoFactory.music.list(),
-      window.videoFactory.music.selection(projectId)
+      window.videoFactory.music.selection(projectId),
+      window.videoFactory.jobs.list(projectId)
     ]);
     setProject(nextProject);
     setFourKBlockers(blockers);
     setMusicTracks(tracks);
     setMusicSelection(selection);
+    setJobs(nextJobs);
     setSelectedMusicId(selection?.musicTrackId ?? tracks[0]?.id ?? '');
+  };
+
+  const retryJob = async (job: JobRecord): Promise<void> => {
+    const capability = job.retryCapability;
+    if (capability.action === 'none') return;
+    let operatorReason: string | undefined;
+    if (capability.requiresReason) {
+      const entered = window.prompt(
+        'Why is one additional attempt safe now? This reason will be written to the immutable audit trail.'
+      );
+      if (entered === null) return;
+      operatorReason = entered.trim();
+      if (operatorReason.length < 8) {
+        setError('A permanent-failure retry reason must contain at least 8 characters.');
+        return;
+      }
+    }
+    setBusy(`job:${job.id}`);
+    setError(null);
+    try {
+      const result = capability.action === 'expedite'
+        ? await window.videoFactory.jobs.expedite({
+            jobId: job.id,
+            expectedVersion: capability.transitionVersion
+          })
+        : await window.videoFactory.jobs.retry({
+            jobId: job.id,
+            expectedState: capability.currentState,
+            expectedVersion: capability.transitionVersion,
+            operatorReason,
+            grantAttempt: capability.requiresAttemptGrant || undefined
+          });
+      if (result.outcome !== 'retry_started' && result.outcome !== 'expedited') setError(result.message);
+      await Promise.all([refresh(), onRefresh()]);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const selectMusic = async (): Promise<void> => {
@@ -93,6 +135,7 @@ export function ProjectDrawer({ projectId, onClose, onRefresh, setError }: {
       setFourKBlockers([]);
       setMusicTracks([]);
       setMusicSelection(null);
+      setJobs([]);
       setSelectedMusicId('');
       return;
     }
@@ -137,12 +180,14 @@ export function ProjectDrawer({ projectId, onClose, onRefresh, setError }: {
                 fourKBlockers={fourKBlockers}
                 musicTracks={musicTracks}
                 musicSelection={musicSelection}
+                jobs={jobs}
                 selectedMusicId={selectedMusicId}
                 busy={busy}
                 setSelectedMusicId={setSelectedMusicId}
                 selectMusic={selectMusic}
                 lifecycle={lifecycle}
                 run={run}
+                retryJob={retryJob}
                 setError={setError}
                 onStoryboardChanged={async nextProject => {
                   setProject(nextProject);
