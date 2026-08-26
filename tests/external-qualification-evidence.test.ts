@@ -8,8 +8,10 @@ import {
   ELECTRON_PERFORMANCE_RECEIPT_PATH,
   EXTERNAL_QUALIFICATION_INDEX_KIND,
   EXTERNAL_QUALIFICATION_INDEX_PATH,
+  WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
   admitExternalQualificationEvidence,
-  writeElectronPerformanceQualificationIndex
+  writeElectronPerformanceQualificationIndex,
+  writeWindowsPackageRuntimeQualificationIndex
 } from '../scripts/external-qualification-evidence.mjs';
 import type { ValidationSource } from '../scripts/validation-source.mjs';
 
@@ -93,6 +95,61 @@ function fixture(receipt = evidence()) {
   return { root, index, receiptBytes };
 }
 
+function writeWindowsReceipt(root: string): void {
+  const eventValues = [
+    ['qualification_started', { packaged: true }],
+    ['tray_ready', { available: true }],
+    ['power_blocker_started', { blockerId: 4, started: true, mode: 'prevent-app-suspension' }],
+    ['window_hidden_to_tray', { visible: false, destroyed: false }],
+    ['power_blocker_stopped', { blockerId: 4, wasStarted: true, reason: 'operation_complete' }],
+    ['shutdown_started', {}],
+    ['shutdown_completed', {}]
+  ];
+  const runtimeChecks = Object.fromEntries([
+    'trayReady', 'catalogWorkerObservedActive', 'powerBlockerObservedStarted',
+    'windowCloseHiddenToTray', 'processAliveAfterWindowClose',
+    'catalogWorkerObservedActiveWhileHidden', 'catalogWorkerCompletedWhileHidden',
+    'powerBlockerObservedStopped', 'powerBlockerCoveredWork', 'shutdownStarted',
+    'shutdownCompleted', 'orderlyQuit', 'eventSequenceValid'
+  ].map(name => [name, true]));
+  const receipt = {
+    receiptVersion: 3,
+    status: 'passed',
+    generatedAt: '2026-08-26T12:02:00.000Z',
+    appVersion: '0.1.0-alpha.7',
+    source,
+    runner: { platform: 'win32', architecture: 'x64' },
+    qualification: {
+      validation: 'release', scope: 'hosted_windows_package_smoke', cleanMachine: false,
+      developerToolingPresent: true, productionQualification: false,
+      windowsRuntimeLifecycle: { status: 'passed', qualifiedGateIds: ['SYS-005', 'SYS-006'] }
+    },
+    checks: {
+      archiveLaunch: { status: 'passed' },
+      installerInstall: { status: 'passed' },
+      installedLaunch: {
+        status: 'passed', kind: 'installed', app: { isPackaged: true }, lifecycle: { orderlyQuit: true },
+        runtimeQualification: {
+          schemaVersion: 1, status: 'passed',
+          workload: {
+            kind: 'catalog_preview', operationId: 'runtime', source: 'catalog.xlsx', sourceSizeBytes: 100,
+            requestedRows: 26_000, completedRows: 26_000
+          },
+          checks: runtimeChecks,
+          events: eventValues.map(([event, details], index) => ({
+            schemaVersion: 1, sequence: index + 1,
+            at: new Date(Date.parse('2026-08-26T12:02:01.000Z') + index * 100).toISOString(),
+            event, pid: 50, details
+          }))
+        }
+      },
+      uninstall: { status: 'passed' }
+    }
+  };
+  mkdirSync(resolve(root, 'release'), { recursive: true });
+  writeFileSync(resolve(root, WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+}
+
 describe('external qualification evidence admission', () => {
   it('keeps an absent index pending without weakening validation', () => {
     const root = mkdtempSync(join(tmpdir(), 'videofactory-external-qualification-empty-'));
@@ -131,6 +188,24 @@ describe('external qualification evidence admission', () => {
     expect(admitted.present).toBe(true);
     expect(admitted.qualifiedIds).toHaveLength(5);
     expect(admitted.index?.path).toBe(EXTERNAL_QUALIFICATION_INDEX_PATH);
+  });
+
+  it('[SYS-005][SYS-006] preserves an existing receipt while indexing Windows runtime evidence', () => {
+    const { root } = fixture();
+    writeWindowsReceipt(root);
+    const admitted = writeWindowsPackageRuntimeQualificationIndex({
+      root,
+      source,
+      now: new Date('2026-08-26T12:03:00.000Z')
+    });
+    expect(admitted.qualifiedIds).toEqual([
+      'CAT-001', 'CAT-009', 'PERF-001', 'PERF-002', 'PERF-003', 'SYS-005', 'SYS-006'
+    ]);
+    expect(admitted.receipts.map(receipt => receipt.kind)).toEqual([
+      'electron_performance',
+      'windows_package_runtime'
+    ]);
+    expect(admitted.qualifiedById['SYS-006']?.kind).toBe('windows_package_runtime');
   });
 
   it('fails closed for tampered bytes, source drift, ineligible runs, and disallowed coverage', () => {

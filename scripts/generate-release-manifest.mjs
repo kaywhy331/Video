@@ -24,8 +24,14 @@ import { admitValidationSource, assertValidationSource } from './validation-sour
 import {
   ELECTRON_PERFORMANCE_RECEIPT_PATH,
   EXTERNAL_QUALIFICATION_INDEX_PATH,
+  WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
+  WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
   admitExternalQualificationEvidence
 } from './external-qualification-evidence.mjs';
+import {
+  WINDOWS_PACKAGE_RUNTIME_RECEIPT_VERSION,
+  assessWindowsPackageRuntimeEvidence
+} from './windows-package-runtime-evidence.mjs';
 
 const root = process.cwd();
 const releaseDirectory = resolve(root, 'release');
@@ -235,19 +241,39 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'videofactory-release-qualification-'));
   try {
     const stagedIndex = resolve(temporaryRoot, EXTERNAL_QUALIFICATION_INDEX_PATH);
-    const stagedReceipt = resolve(temporaryRoot, ELECTRON_PERFORMANCE_RECEIPT_PATH);
     mkdirSync(resolve(stagedIndex, '..'), { recursive: true });
-    mkdirSync(resolve(stagedReceipt, '..'), { recursive: true });
     copyFileSync(externalQualificationIndexPath, stagedIndex);
-    const electronReceipt = projection.receipts.find(item => item.kind === 'electron_performance');
-    if (!electronReceipt || projection.receipts.length !== 1) {
-      throw new Error('Release contains an unsupported external qualification receipt set.');
+    const attachments = {
+      electron_performance: {
+        canonicalPath: ELECTRON_PERFORMANCE_RECEIPT_PATH,
+        releasePath: electronPerformanceReceiptPath,
+        label: 'electron performance receipt'
+      },
+      [WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND]: {
+        canonicalPath: WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+        releasePath: smokePath,
+        label: 'Windows package runtime receipt'
+      }
+    };
+    const referencedKinds = new Set();
+    for (const receipt of projection.receipts) {
+      const attachment = attachments[receipt.kind];
+      if (!attachment) throw new Error(`Release contains unsupported external receipt kind ${receipt.kind}.`);
+      if (referencedKinds.has(receipt.kind)) {
+        throw new Error(`Release repeats external receipt kind ${receipt.kind}.`);
+      }
+      referencedKinds.add(receipt.kind);
+      if (receipt.evidence?.path !== attachment.canonicalPath) {
+        throw new Error(`${attachment.label} has a non-canonical evidence path.`);
+      }
+      assertEvidenceFile(receipt.evidence, attachment.releasePath, attachment.label);
+      const stagedReceipt = resolve(temporaryRoot, attachment.canonicalPath);
+      mkdirSync(resolve(stagedReceipt, '..'), { recursive: true });
+      copyFileSync(attachment.releasePath, stagedReceipt);
     }
-    if (electronReceipt.evidence?.path !== ELECTRON_PERFORMANCE_RECEIPT_PATH) {
-      throw new Error('Electron performance receipt has a non-canonical evidence path.');
+    if (existsSync(electronPerformanceReceiptPath) && !referencedKinds.has('electron_performance')) {
+      throw new Error('Release contains an unreferenced electron performance attachment.');
     }
-    assertEvidenceFile(electronReceipt.evidence, electronPerformanceReceiptPath, 'electron performance receipt');
-    copyFileSync(electronPerformanceReceiptPath, stagedReceipt);
     const admitted = admitExternalQualificationEvidence({
       root: temporaryRoot,
       source: validation.source,
@@ -357,7 +383,7 @@ function assertPackageSmokeEvidence(smoke, packageJson, source, artifacts) {
   if (smoke?.status !== 'passed') {
     throw new Error('The installed Windows package smoke test did not pass.');
   }
-  if (smoke.receiptVersion !== 2) {
+  if (smoke.receiptVersion !== WINDOWS_PACKAGE_RUNTIME_RECEIPT_VERSION) {
     throw new Error('The installed Windows package smoke receipt version is invalid.');
   }
   if (smoke.appVersion !== packageJson.version) {
@@ -380,6 +406,10 @@ function assertPackageSmokeEvidence(smoke, packageJson, source, artifacts) {
   }
   if (smoke.qualification?.validation !== 'release') {
     throw new Error('The installed Windows package smoke receipt is not release-qualified evidence.');
+  }
+  const runtimeAssessment = assessWindowsPackageRuntimeEvidence(smoke);
+  if (!runtimeAssessment.externalQualificationPassed) {
+    throw new Error('The installed Windows package smoke did not qualify its tray/power runtime lifecycle.');
   }
 
   const requiredChecks = ['archiveLaunch', 'installerInstall', 'installedLaunch', 'uninstall'];

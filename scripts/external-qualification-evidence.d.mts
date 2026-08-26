@@ -1,7 +1,8 @@
 import type { ElectronPerformanceEvidence } from './electron-performance-evidence.mjs';
 import type { ValidationSource } from './validation-source.mjs';
+import type { WindowsPackageRuntimeAssessment } from './windows-package-runtime-evidence.mjs';
 
-export type ExternalQualificationReceiptKind = 'electron_performance';
+export type ExternalQualificationReceiptKind = 'electron_performance' | 'windows_package_runtime';
 
 export interface FileEvidence {
   path: string;
@@ -31,7 +32,7 @@ export interface ExternalQualificationAdmission {
     kind: ExternalQualificationReceiptKind;
     evidence: FileEvidence;
     qualifiedIds: string[];
-    assessment: ElectronPerformanceEvidence;
+    assessment: ElectronPerformanceEvidence | WindowsPackageRuntimeAssessment;
   }>;
   qualifiedIds: string[];
   qualifiedById: Record<string, {
@@ -45,8 +46,19 @@ export const EXTERNAL_QUALIFICATION_INDEX_KIND: 'videofactory-external-qualifica
 export const EXTERNAL_QUALIFICATION_INDEX_PATH: 'validation/external-qualification/index.json';
 export const ELECTRON_PERFORMANCE_RECEIPT_KIND: 'electron_performance';
 export const ELECTRON_PERFORMANCE_RECEIPT_PATH: 'validation/results/electron-performance.json';
+export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND: 'windows_package_runtime';
+export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH: 'release/WINDOWS_PACKAGE_SMOKE.json';
+export const EXTERNAL_QUALIFICATION_GATE_IDS: readonly string[];
 
 export function writeElectronPerformanceQualificationIndex(options?: {
+  root?: string;
+  source?: ValidationSource;
+  receiptPath?: string;
+  indexPath?: string;
+  now?: Date;
+}): ExternalQualificationAdmission;
+
+export function writeWindowsPackageRuntimeQualificationIndex(options?: {
   root?: string;
   source?: ValidationSource;
   receiptPath?: string;

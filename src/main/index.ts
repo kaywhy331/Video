@@ -8,6 +8,8 @@ import { registerIpc } from './ipc';
 import { resolveMediaRequest } from './media-protocol';
 import { ShutdownCoordinator } from './shutdown-coordinator';
 import { installNavigationGuards } from './window-security';
+import { defaultDataRoot } from './app-paths';
+import { PackageRuntimeQualificationRecorder } from './package-runtime-qualification';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -26,6 +28,7 @@ let mainWindow: BrowserWindow | null = null;
 let context: AppContext | null = null;
 let tray: Tray | null = null;
 let blockerId: number | null = null;
+let runtimeQualification: PackageRuntimeQualificationRecorder | null = null;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -120,6 +123,23 @@ function setupTray(): void {
   tray.setToolTip('VideoFactory Desktop');
   updateTrayMenu();
   tray.on('double-click', () => mainWindow?.show());
+  runtimeQualification?.record('tray_ready', {
+    available: true,
+    imageEmpty: icon.isEmpty()
+  });
+}
+
+function stopPowerBlocker(reason: 'operation_complete' | 'shutdown'): void {
+  if (blockerId === null) return;
+  const stoppedId = blockerId;
+  const wasStarted = powerSaveBlocker.isStarted(stoppedId);
+  if (wasStarted) powerSaveBlocker.stop(stoppedId);
+  blockerId = null;
+  runtimeQualification?.record('power_blocker_stopped', {
+    blockerId: stoppedId,
+    wasStarted,
+    reason
+  });
 }
 
 const shutdown = new ShutdownCoordinator({
@@ -127,13 +147,14 @@ const shutdown = new ShutdownCoordinator({
     await context?.stop();
   },
   completeQuit: () => {
-    if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
-      powerSaveBlocker.stop(blockerId);
-      blockerId = null;
-    }
+    stopPowerBlocker('shutdown');
+    runtimeQualification?.record('shutdown_completed');
     app.quit();
   },
-  onBegin: () => updateTrayMenu(false),
+  onBegin: () => {
+    runtimeQualification?.record('shutdown_started');
+    updateTrayMenu(false);
+  },
   onPending: () => {
     const labels = context?.pendingOperations().map(operation => operation.label) ?? [];
     const detail = labels.length ? ` Active: ${labels.slice(0, 3).join(', ')}.` : '';
@@ -187,14 +208,24 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   app.on('browser-window-created', (_event, window) => optimizer.watchWindowShortcuts(window));
   setupMediaProtocol();
 
+  runtimeQualification = new PackageRuntimeQualificationRecorder({
+    dataRoot: defaultDataRoot(),
+    isPackaged: app.isPackaged,
+    environmentFlag: process.env.VIDEOFACTORY_PACKAGE_RUNTIME_QUALIFICATION
+  });
+
   mainWindow = createWindow();
   context = new AppContext(() => mainWindow);
   context.setPowerBlockerHandler(active => {
     if (active && (blockerId === null || !powerSaveBlocker.isStarted(blockerId))) {
       blockerId = powerSaveBlocker.start('prevent-app-suspension');
-    } else if (!active && blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
-      powerSaveBlocker.stop(blockerId);
-      blockerId = null;
+      runtimeQualification?.record('power_blocker_started', {
+        blockerId,
+        started: powerSaveBlocker.isStarted(blockerId),
+        mode: 'prevent-app-suspension'
+      });
+    } else if (!active) {
+      stopPowerBlocker('operation_complete');
     }
   });
   registerIpc(context, () => mainWindow);
@@ -207,7 +238,12 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   mainWindow.on('close', event => {
     if (!shutdown.isQuitting) {
       event.preventDefault();
-      mainWindow?.hide();
+      const window = mainWindow;
+      window?.hide();
+      runtimeQualification?.record('window_hidden_to_tray', {
+        visible: window?.isVisible() ?? false,
+        destroyed: window?.isDestroyed() ?? true
+      });
     }
   });
 }).catch(error => {

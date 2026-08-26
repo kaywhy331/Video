@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v8",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v9",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -308,8 +308,16 @@
     },
     {
       "ids": ["SYS-005", "SYS-006"],
-      "reason": "Requires packaged Windows tray, close-window, suspend-prevention, and blocker-release observation.",
-      "evidence": ["tests/shutdown-coordinator.test.ts", "src/main/index.ts"]
+      "reason": "Requires an exact-source installed Windows package receipt proving a real 26K worker remains active after close-to-tray, suspend protection spans the work, and safe quit releases it.",
+      "evidence": [
+        "scripts/windows-package-runtime-evidence.mjs",
+        "scripts/windows/smoke-packaged-app.mjs",
+        "scripts/windows/test-packaged-app.ps1",
+        "src/main/index.ts",
+        "tests/long-operation-power-guard.test.ts",
+        "tests/shutdown-coordinator.test.ts",
+        "tests/windows-package-runtime-evidence.test.ts"
+      ]
     },
     {
       "ids": ["CAT-001", "CAT-009"],

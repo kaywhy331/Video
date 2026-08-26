@@ -12,6 +12,10 @@ import {
   ELECTRON_PERFORMANCE_GATE_IDS,
   assessElectronPerformanceEvidence
 } from './electron-performance-evidence.mjs';
+import {
+  WINDOWS_PACKAGE_RUNTIME_GATE_IDS,
+  assessWindowsPackageRuntimeEvidence
+} from './windows-package-runtime-evidence.mjs';
 import { assertValidationSource, captureValidationSource } from './validation-source.mjs';
 
 export const EXTERNAL_QUALIFICATION_INDEX_SCHEMA_VERSION = 1;
@@ -19,6 +23,13 @@ export const EXTERNAL_QUALIFICATION_INDEX_KIND = 'videofactory-external-qualific
 export const EXTERNAL_QUALIFICATION_INDEX_PATH = 'validation/external-qualification/index.json';
 export const ELECTRON_PERFORMANCE_RECEIPT_KIND = 'electron_performance';
 export const ELECTRON_PERFORMANCE_RECEIPT_PATH = 'validation/results/electron-performance.json';
+export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND = 'windows_package_runtime';
+export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH = 'release/WINDOWS_PACKAGE_SMOKE.json';
+
+export const EXTERNAL_QUALIFICATION_GATE_IDS = Object.freeze([
+  ...ELECTRON_PERFORMANCE_GATE_IDS,
+  ...WINDOWS_PACKAGE_RUNTIME_GATE_IDS
+]);
 
 const MAXIMUM_RECEIPTS = 20;
 
@@ -29,50 +40,34 @@ export function writeElectronPerformanceQualificationIndex({
   indexPath = EXTERNAL_QUALIFICATION_INDEX_PATH,
   now = new Date()
 } = {}) {
-  const normalizedRoot = resolve(root);
-  const admittedSource = source ?? captureValidationSource(normalizedRoot);
-  assertValidationSource(admittedSource, 'release', 'External qualification index source');
-  const normalizedReceiptPath = evidencePath(receiptPath, 'Electron performance receipt path');
-  if (normalizedReceiptPath !== ELECTRON_PERFORMANCE_RECEIPT_PATH) {
-    throw new Error(
-      `Electron performance qualification evidence must use ${ELECTRON_PERFORMANCE_RECEIPT_PATH}.`
-    );
-  }
-  const normalizedIndexPath = evidencePath(indexPath, 'External qualification index path');
-  const resolvedReceiptPath = resolveInside(
-    normalizedRoot,
-    normalizedReceiptPath,
-    'Electron performance receipt path'
-  );
-  if (!existsSync(resolvedReceiptPath)) {
-    throw new Error(`Electron performance qualification receipt is missing: ${normalizedReceiptPath}.`);
-  }
-  const receiptBytes = readFileSync(resolvedReceiptPath);
-  const generatedAt = now instanceof Date ? now.toISOString() : String(now);
-  isoTimestamp(generatedAt, 'External qualification index generatedAt');
-  const index = {
-    schemaVersion: EXTERNAL_QUALIFICATION_INDEX_SCHEMA_VERSION,
-    evidenceKind: EXTERNAL_QUALIFICATION_INDEX_KIND,
-    generatedAt,
-    qualification: 'release',
-    source: admittedSource,
-    receipts: [{
-      kind: ELECTRON_PERFORMANCE_RECEIPT_KIND,
-      path: normalizedReceiptPath,
-      sha256: sha256(receiptBytes),
-      sizeBytes: receiptBytes.length
-    }]
-  };
-  const resolvedIndexPath = resolveInside(normalizedRoot, normalizedIndexPath, 'External qualification index path');
-  const temporaryPath = `${resolvedIndexPath}.tmp`;
-  mkdirSync(dirname(resolvedIndexPath), { recursive: true });
-  writeFileSync(temporaryPath, `${JSON.stringify(index, null, 2)}\n`);
-  renameSync(temporaryPath, resolvedIndexPath);
-  return admitExternalQualificationEvidence({
-    root: normalizedRoot,
-    indexPath: normalizedIndexPath,
-    source: admittedSource,
-    allowedIds: ELECTRON_PERFORMANCE_GATE_IDS
+  return writeQualificationIndex({
+    root,
+    source,
+    receiptPath,
+    indexPath,
+    now,
+    kind: ELECTRON_PERFORMANCE_RECEIPT_KIND,
+    canonicalReceiptPath: ELECTRON_PERFORMANCE_RECEIPT_PATH,
+    label: 'Electron performance'
+  });
+}
+
+export function writeWindowsPackageRuntimeQualificationIndex({
+  root = process.cwd(),
+  source,
+  receiptPath = WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+  indexPath = EXTERNAL_QUALIFICATION_INDEX_PATH,
+  now = new Date()
+} = {}) {
+  return writeQualificationIndex({
+    root,
+    source,
+    receiptPath,
+    indexPath,
+    now,
+    kind: WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
+    canonicalReceiptPath: WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+    label: 'Windows package runtime'
   });
 }
 
@@ -80,7 +75,7 @@ export function admitExternalQualificationEvidence({
   root = process.cwd(),
   indexPath = EXTERNAL_QUALIFICATION_INDEX_PATH,
   source,
-  allowedIds = ELECTRON_PERFORMANCE_GATE_IDS
+  allowedIds = EXTERNAL_QUALIFICATION_GATE_IDS
 } = {}) {
   const normalizedRoot = resolve(root);
   const normalizedIndexPath = evidencePath(indexPath, 'External qualification index path');
@@ -171,6 +166,24 @@ export function admitExternalQualificationEvidence({
           throw new Error(`Electron performance receipt did not qualify ${id}.`);
         }
       }
+    } else if (kind === WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND) {
+      if (path !== WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH) {
+        throw new Error(
+          `Windows package runtime qualification evidence must use ${WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH}.`
+        );
+      }
+      assessed = assessWindowsPackageRuntimeEvidence(parseJson(receiptBytes, 'Windows package runtime receipt'));
+      assertValidationSource(assessed.source, 'release', 'Windows package runtime receipt source');
+      assertSameExactSource(assessed.source, index.source, 'Windows package runtime receipt');
+      if (assessed.externalQualificationPassed !== true) {
+        throw new Error('Windows package runtime receipt is not eligible external qualification evidence.');
+      }
+      gateIds = WINDOWS_PACKAGE_RUNTIME_GATE_IDS;
+      for (const id of gateIds) {
+        if (assessed.acceptance[id] !== 'qualified') {
+          throw new Error(`Windows package runtime receipt did not qualify ${id}.`);
+        }
+      }
     } else {
       throw new Error(`External qualification index contains unknown receipt kind: ${kind}.`);
     }
@@ -196,6 +209,73 @@ export function admitExternalQualificationEvidence({
     qualifiedIds: [...qualifiedIds].sort(),
     qualifiedById
   };
+}
+
+function writeQualificationIndex({
+  root,
+  source,
+  receiptPath,
+  indexPath,
+  now,
+  kind,
+  canonicalReceiptPath,
+  label
+}) {
+  const normalizedRoot = resolve(root);
+  const admittedSource = source ?? captureValidationSource(normalizedRoot);
+  assertValidationSource(admittedSource, 'release', 'External qualification index source');
+  const normalizedReceiptPath = evidencePath(receiptPath, `${label} receipt path`);
+  if (normalizedReceiptPath !== canonicalReceiptPath) {
+    throw new Error(`${label} qualification evidence must use ${canonicalReceiptPath}.`);
+  }
+  const normalizedIndexPath = evidencePath(indexPath, 'External qualification index path');
+  const resolvedReceiptPath = resolveInside(normalizedRoot, normalizedReceiptPath, `${label} receipt path`);
+  if (!existsSync(resolvedReceiptPath)) {
+    throw new Error(`${label} qualification receipt is missing: ${normalizedReceiptPath}.`);
+  }
+  const receiptBytes = readFileSync(resolvedReceiptPath);
+  const descriptor = {
+    kind,
+    path: normalizedReceiptPath,
+    sha256: sha256(receiptBytes),
+    sizeBytes: receiptBytes.length
+  };
+  const resolvedIndexPath = resolveInside(normalizedRoot, normalizedIndexPath, 'External qualification index path');
+  let receipts = [];
+  if (existsSync(resolvedIndexPath)) {
+    admitExternalQualificationEvidence({
+      root: normalizedRoot,
+      indexPath: normalizedIndexPath,
+      source: admittedSource,
+      allowedIds: EXTERNAL_QUALIFICATION_GATE_IDS
+    });
+    const existing = parseJson(readFileSync(resolvedIndexPath), 'External qualification index');
+    receipts = existing.receipts.filter(item => item.kind !== kind);
+  }
+  receipts.push(descriptor);
+  const kindOrder = [ELECTRON_PERFORMANCE_RECEIPT_KIND, WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND];
+  receipts.sort((left, right) => kindOrder.indexOf(left.kind) - kindOrder.indexOf(right.kind));
+
+  const generatedAt = now instanceof Date ? now.toISOString() : String(now);
+  isoTimestamp(generatedAt, 'External qualification index generatedAt');
+  const index = {
+    schemaVersion: EXTERNAL_QUALIFICATION_INDEX_SCHEMA_VERSION,
+    evidenceKind: EXTERNAL_QUALIFICATION_INDEX_KIND,
+    generatedAt,
+    qualification: 'release',
+    source: admittedSource,
+    receipts
+  };
+  const temporaryPath = `${resolvedIndexPath}.tmp`;
+  mkdirSync(dirname(resolvedIndexPath), { recursive: true });
+  writeFileSync(temporaryPath, `${JSON.stringify(index, null, 2)}\n`);
+  renameSync(temporaryPath, resolvedIndexPath);
+  return admitExternalQualificationEvidence({
+    root: normalizedRoot,
+    indexPath: normalizedIndexPath,
+    source: admittedSource,
+    allowedIds: EXTERNAL_QUALIFICATION_GATE_IDS
+  });
 }
 
 function emptyAdmission(indexPath) {

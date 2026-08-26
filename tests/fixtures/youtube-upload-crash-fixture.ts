@@ -286,7 +286,7 @@ export function openUploadCrashFixture(
     { get: () => ({ canUpload: true }) } as never,
     youtube,
     () => undefined,
-    () => undefined
+    () => () => undefined
   );
   return {
     db,

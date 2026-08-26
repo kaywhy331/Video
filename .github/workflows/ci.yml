@@ -133,13 +133,12 @@ jobs:
           if ($pipeline.source.dirty -ne $false -or $pipeline.source.tree -notmatch '^[a-fA-F0-9]{40}$') {
             throw 'Downloaded validation evidence is dirty or has no exact source tree.'
           }
-          Copy-Item "$evidenceRoot/VALIDATION_ACCEPTANCE_RECEIPT.json" release/VALIDATION_ACCEPTANCE_RECEIPT.json
-          Copy-Item "$evidenceRoot/VALIDATION_STATUS.json" release/VALIDATION_STATUS.json
-          Copy-Item "$evidenceRoot/validation/results/pipeline.json" release/VALIDATION_PIPELINE.json
-          Copy-Item "$evidenceRoot/validation/results/runtime-input.json" release/RUNTIME_INPUTS.json
-          Copy-Item "$evidenceRoot/validation/results/claims-input.json" release/CLAIMS_INPUTS.json
-          Copy-Item "$evidenceRoot/validation/results/vitest.json" release/VITEST_RESULTS.json
-          Copy-Item "$evidenceRoot/validation/results/playwright.json" release/PLAYWRIGHT_RESULTS.json
+          New-Item -ItemType Directory -Force validation/results | Out-Null
+          Copy-Item "$evidenceRoot/validation/results/pipeline.json" validation/results/pipeline.json
+          Copy-Item "$evidenceRoot/validation/results/runtime-input.json" validation/results/runtime-input.json
+          Copy-Item "$evidenceRoot/validation/results/claims-input.json" validation/results/claims-input.json
+          Copy-Item "$evidenceRoot/validation/results/vitest.json" validation/results/vitest.json
+          Copy-Item "$evidenceRoot/validation/results/playwright.json" validation/results/playwright.json
           Copy-Item "$evidenceRoot/release/videofactory-sbom.cdx.json" release/videofactory-sbom.cdx.json
           $externalIndex = "$evidenceRoot/validation/external-qualification/index.json"
           $externalReceipt = "$evidenceRoot/validation/results/electron-performance.json"
@@ -152,6 +151,18 @@ jobs:
             Copy-Item $externalIndex validation/external-qualification/index.json
             Copy-Item $externalReceipt validation/results/electron-performance.json
           }
+          npm.cmd run qualify:index-windows-runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/validate-acceptance.mjs --record-validated
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          Copy-Item VALIDATION_ACCEPTANCE_RECEIPT.json release/VALIDATION_ACCEPTANCE_RECEIPT.json
+          Copy-Item VALIDATION_STATUS.json release/VALIDATION_STATUS.json
+          Copy-Item validation/results/pipeline.json release/VALIDATION_PIPELINE.json
+          Copy-Item validation/results/runtime-input.json release/RUNTIME_INPUTS.json
+          Copy-Item validation/results/claims-input.json release/CLAIMS_INPUTS.json
+          Copy-Item validation/results/vitest.json release/VITEST_RESULTS.json
+          Copy-Item validation/results/playwright.json release/PLAYWRIGHT_RESULTS.json
           npm.cmd run release:manifest -- --require-validation --require-package-smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm.cmd run release:verify

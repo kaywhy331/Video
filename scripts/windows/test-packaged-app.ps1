@@ -58,7 +58,7 @@ $sourceRepository = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) {
 }
 
 $receipt = [ordered]@{
-  receiptVersion = 2
+  receiptVersion = 3
   status = 'running'
   generatedAt = $null
   appVersion = $version
@@ -84,6 +84,10 @@ $receipt = [ordered]@{
     cleanMachine = $false
     developerToolingPresent = $true
     productionQualification = $false
+    windowsRuntimeLifecycle = [ordered]@{
+      status = 'pending'
+      qualifiedGateIds = @('SYS-005', 'SYS-006')
+    }
   }
   packages = [ordered]@{}
   checks = [ordered]@{}
@@ -218,6 +222,20 @@ try {
     -Kind 'installed' `
     -Executable $installedExecutable.FullName `
     -DataRoot $installedDataRoot
+  $runtimeQualification = $receipt['checks']['installedLaunch'].runtimeQualification
+  if ($null -eq $runtimeQualification -or $runtimeQualification.status -ne 'passed') {
+    throw 'The installed package did not pass its runtime tray/power lifecycle qualification.'
+  }
+  $failedRuntimeChecks = @($runtimeQualification.checks.PSObject.Properties | Where-Object { $_.Value -ne $true })
+  if ($failedRuntimeChecks.Count -ne 0) {
+    throw "The installed package runtime qualification has failed checks: $($failedRuntimeChecks.Name -join ', ')."
+  }
+  if ($runtimeQualification.workload.kind -ne 'catalog_preview' `
+      -or $runtimeQualification.workload.requestedRows -ne 26000 `
+      -or $runtimeQualification.workload.completedRows -ne 26000) {
+    throw 'The installed package runtime qualification did not complete the required 26K catalog worker.'
+  }
+  $receipt['qualification']['windowsRuntimeLifecycle']['status'] = 'passed'
 
   $uninstallStarted = Get-Date
   $uninstallExitCode = Invoke-Installer `

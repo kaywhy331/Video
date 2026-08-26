@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { validationInputDigests } from './validation-input.mjs';
 import { admitExternalQualificationEvidence } from './external-qualification-evidence.mjs';
 import {
@@ -10,6 +10,7 @@ import {
   assertValidationEvidenceDocument
 } from './validation-evidence.mjs';
 import { captureValidationSource } from './validation-source.mjs';
+import { normalizeValidationReportFile } from './validation-report-path.mjs';
 
 const root = process.cwd();
 const acceptancePath = resolve(root, 'docs/prd/06-ACCEPTANCE-TESTS.md');
@@ -40,7 +41,7 @@ function fail(messages) {
 }
 
 function normalizedFile(path) {
-  return relative(root, resolve(path)).replaceAll('\\', '/');
+  return normalizeValidationReportFile(path, root);
 }
 
 function fileEvidence(path) {
