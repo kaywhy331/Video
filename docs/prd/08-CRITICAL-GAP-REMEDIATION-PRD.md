@@ -93,12 +93,12 @@ This PRD makes all seven gaps release-blocking for the remediation milestone. It
 
 ### Cross-cutting completion criteria
 
-- [ ] Every new privileged IPC route has schema validation, sender validation, typed errors, and a negative test.
-- [ ] Every new database migration exists identically under `src/main/database` and `resources`.
-- [ ] Every new log and audit event passes secret-redaction tests.
-- [ ] Every new acceptance ID is mapped exactly once and bound to an exact passing assertion or an explicit external reason.
-- [ ] `npm run typecheck`, `npm run test`, `npm run build`, Electron E2E, audit, SBOM, and `npm run validate:acceptance` pass from a clean checkout.
-- [ ] No completion claim relies only on a renderer control being disabled or hidden.
+- [x] Every new privileged IPC route has schema validation, sender validation, typed errors, and a negative test.
+- [x] Every new database migration exists identically under `src/main/database` and `resources`.
+- [x] Every new log and audit event passes secret-redaction tests.
+- [x] Every new acceptance ID is mapped exactly once and bound to an exact passing assertion or an explicit external reason.
+- [x] `npm run typecheck`, `npm run test`, `npm run build`, Electron E2E, audit, SBOM, and `npm run validate:acceptance` pass from a clean checkout.
+- [x] No completion claim relies only on a renderer control being disabled or hidden.
 
 ---
 
@@ -683,11 +683,11 @@ The work should land as independently reviewable, revertible pull requests. Secu
 
 ### Delivery completion criteria
 
-- [ ] Each phase is represented by a focused PR with threat-model notes and exact acceptance evidence.
-- [ ] Settings and YouTube service overlap is sequenced without dropping another phase's protections.
-- [ ] Every merged phase passes post-merge CI before dependent work is promoted.
-- [ ] No phase moves or replaces an existing release tag.
-- [ ] The integration PR contains no unexplained acceptance, migration, or documentation drift.
+- [x] Each phase is represented by a focused PR with threat-model notes and exact acceptance evidence.
+- [x] Settings and YouTube service overlap is sequenced without dropping another phase's protections.
+- [x] Every merged phase passes post-merge CI before dependent work is promoted.
+- [x] No phase moves or replaces an existing release tag.
+- [x] The integration PR contains no unexplained acceptance, migration, or documentation drift.
 
 ---
 
@@ -717,11 +717,11 @@ Passing happy paths alone is insufficient. The release receipt must preserve exa
 
 ### Verification completion criteria
 
-- [ ] Every row in the matrix has the required evidence or an explicit retained external-gate reason.
-- [ ] Negative assertions are present in Vitest/Playwright reports and exact acceptance bindings.
-- [ ] CI uploads evidence from the exact tested head and Windows packaging consumes that same evidence.
-- [ ] The final release manifest verifies runtime digest, claims digest, package hashes, and package-smoke identity.
-- [ ] Live OAuth/provider/upload rehearsals do not replace automated negative tests.
+- [x] Every row in the matrix has the required evidence or an explicit retained external-gate reason.
+- [x] Negative assertions are present in Vitest/Playwright reports and exact acceptance bindings.
+- [x] CI uploads evidence from the exact tested head and Windows packaging consumes that same evidence.
+- [x] The final release manifest verifies runtime digest, claims digest, package hashes, and package-smoke identity.
+- [x] Live OAuth/provider/upload rehearsals do not replace automated negative tests.
 
 ---
 
@@ -774,37 +774,47 @@ The version-1 `security.privileged_rejected` contract records flow, operation, s
 
 The remediation milestone may be declared complete only when all criteria below are satisfied.
 
+The locally executable remediation gates were proven on exact `main` commit
+`7e61f04cb7e176145ad61166189c82ac6a728f7e` and tree
+`6b9b020b4c34979a5bebddf530fa9653031908ee` by hosted run
+[`32955278918`](https://github.com/kaywhy331/Video/actions/runs/32955278918).
+Linux validation artifact `9601765526` and Windows unsigned artifact `9601959475`
+preserve the same-source handoff, with 175 acceptance IDs classified as 160
+automated/local and 15 external. The all-seven-workstream criterion remains open
+solely because the live OAuth rehearsal is retained as an external qualification
+gate; the receipt therefore continues to report `production_ready: false`.
+
 ### 16.1 Code and acceptance
 
 - [ ] All seven workstream completion checklists are complete.
-- [ ] All proposed acceptance IDs have been added to `06-ACCEPTANCE-TESTS.md` with exactly one coverage classification.
-- [ ] Every automated ID has at least one exact assertion binding and fresh passing result.
-- [ ] All source and packaged migrations match and pass fresh-install plus schema-18 upgrade tests.
-- [ ] There are no open Critical or High defects in the remediation scope.
+- [x] All proposed acceptance IDs have been added to `06-ACCEPTANCE-TESTS.md` with exactly one coverage classification.
+- [x] Every automated ID has at least one exact assertion binding and fresh passing result.
+- [x] All source and packaged migrations match and pass fresh-install plus schema-18 upgrade tests.
+- [x] There are no open Critical or High defects in the remediation scope.
 
 ### 16.2 Validation and packaging
 
-- [ ] Full canonical validation passes from a clean exact-head checkout.
-- [ ] The receipt records release qualification, exact commit, tree hash, runtime digest, claims digest, toolchain, and `dirty: false`.
-- [ ] Hosted Windows ZIP and NSIS package lifecycle smoke passes for the same exact commit and package hashes.
-- [ ] Tampered, stale, dirty, mismatched, unsafe-name, extra-artifact, and missing-evidence fixtures all fail closed.
-- [ ] The published artifact inventory and SHA-256 values match locally verified release provenance.
+- [x] Full canonical validation passes from a clean exact-head checkout.
+- [x] The receipt records release qualification, exact commit, tree hash, runtime digest, claims digest, toolchain, and `dirty: false`.
+- [x] Hosted Windows ZIP and NSIS package lifecycle smoke passes for the same exact commit and package hashes.
+- [x] Tampered, stale, dirty, mismatched, unsafe-name, extra-artifact, and missing-evidence fixtures all fail closed.
+- [x] The published artifact inventory and SHA-256 values match locally verified release provenance.
 
 ### 16.3 Product and operator behavior
 
-- [ ] A YouTube connection cannot become active without state, PKCE, and explicit channel confirmation.
-- [ ] Provider credentials cannot cross an untrusted origin change.
-- [ ] Invalid manual retry cannot mutate a job or its locks/leases.
-- [ ] Upload and publication remain bound to one active final snapshot.
-- [ ] Portable profiles cannot install executable trust.
-- [ ] Release documentation claims match the immutable evidence index.
+- [x] A YouTube connection cannot become active without state, PKCE, and explicit channel confirmation.
+- [x] Provider credentials cannot cross an untrusted origin change.
+- [x] Invalid manual retry cannot mutate a job or its locks/leases.
+- [x] Upload and publication remain bound to one active final snapshot.
+- [x] Portable profiles cannot install executable trust.
+- [x] Release documentation claims match the immutable evidence index.
 
 ### 16.4 Qualification truthfulness
 
-- [ ] The application and release remain marked unsigned unless code signing is actually completed.
-- [ ] `production_ready` remains `false` while any existing external qualification gate is pending.
-- [ ] The external Windows, licensed-media, live-provider, forced-interruption, performance, cadence, and five-video pilot gates remain visible and are not recast as locally complete.
-- [ ] The prior alpha.7 tag and release remain immutable.
+- [x] The application and release remain marked unsigned unless code signing is actually completed.
+- [x] `production_ready` remains `false` while any existing external qualification gate is pending.
+- [x] The external Windows, licensed-media, live-provider, forced-interruption, performance, cadence, and five-video pilot gates remain visible and are not recast as locally complete.
+- [x] The prior alpha.7 tag and release remain immutable.
 
 ---
 
