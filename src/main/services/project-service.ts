@@ -514,8 +514,18 @@ export class ProjectService {
       SELECT * FROM publication_records WHERE project_id = ? ORDER BY created_at DESC
     `).all(projectId) as Array<Record<string, unknown>>).map(publication => ({
       id: String(publication.id),
+      channelId: publication.channel_id ? String(publication.channel_id) : null,
       videoId: publication.video_id ? String(publication.video_id) : null,
       privacyStatus: String(publication.privacy_status),
+      finalRenderId: publication.final_render_id ? String(publication.final_render_id) : null,
+      finalSha256: String(publication.final_sha256),
+      snapshotVersion: Number(publication.snapshot_version),
+      snapshotStatus: publication.snapshot_status as ProjectPublicationDetail['snapshotStatus'],
+      staleRemote: Boolean(
+        publication.video_id
+        && publication.privacy_status === 'private'
+        && publication.snapshot_status !== 'current'
+      ),
       processingStatus: publication.processing_status ? String(publication.processing_status) : null,
       selectedPackageId: publication.selected_package_id ? String(publication.selected_package_id) : null,
       captionId: publication.caption_id ? String(publication.caption_id) : null,

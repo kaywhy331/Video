@@ -463,14 +463,14 @@ Required tests:
 
 ### 9.6 Completion criteria
 
-- [ ] Final Review, upload, resumable lookup, approval, publish, and schedule all use one active-final resolver/snapshot.
-- [ ] Multiple-final tests prove list ordering cannot select the publication artifact.
-- [ ] Publication records persist both final render ID and final SHA-256.
-- [ ] A changed final or package cannot update or publish a stale private upload.
-- [ ] Stale remote uploads remain private and produce one actionable exception.
-- [ ] Legacy rows are safely backfilled or blocked without guessing.
-- [ ] Schema-18 upgrade and fresh-database migration tests pass for source and packaged migrations.
-- [ ] `YT-011`, `YT-012`, and `REN-015` have exact automated bindings.
+- [x] Final Review, upload, resumable lookup, approval, publish, and schedule all use one active-final resolver/snapshot.
+- [x] Multiple-final tests prove list ordering cannot select the publication artifact.
+- [x] Publication records persist both final render ID and final SHA-256.
+- [x] A changed final or package cannot update or publish a stale private upload.
+- [x] Stale remote uploads remain private and produce one actionable exception.
+- [x] Legacy rows are safely backfilled or blocked without guessing.
+- [x] Schema-18 upgrade and fresh-database migration tests pass for source and packaged migrations.
+- [x] `YT-011`, `YT-012`, and `REN-015` have exact automated bindings.
 
 ---
 

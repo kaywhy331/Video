@@ -123,7 +123,7 @@
       "ids": [
         "REN-001", "REN-002", "REN-003", "REN-004", "REN-005", "REN-006",
         "REN-007", "REN-008", "REN-009", "REN-010", "REN-011", "REN-012",
-        "REN-013", "REN-014"
+        "REN-013", "REN-014", "REN-015"
       ],
       "evidence": [
         "tests/color-policy.test.ts",
@@ -132,7 +132,8 @@
         "tests/output-profile.test.ts",
         "tests/render-pipeline.integration.test.ts",
         "tests/render-recovery.test.ts",
-        "tests/render-service-range.integration.test.ts"
+        "tests/render-service-range.integration.test.ts",
+        "tests/active-final-service.test.ts"
       ]
     },
     {
@@ -158,10 +159,11 @@
       ]
     },
     {
-      "ids": ["YT-001", "YT-002", "YT-003", "YT-004", "YT-005", "YT-006", "YT-007", "YT-008", "YT-009", "YT-010"],
+      "ids": ["YT-001", "YT-002", "YT-003", "YT-004", "YT-005", "YT-006", "YT-007", "YT-008", "YT-009", "YT-010", "YT-011", "YT-012"],
       "evidence": [
         "tests/final-review-service.test.ts",
         "tests/google-client-smoke.test.ts",
+        "tests/job-service.test.ts",
         "tests/secret-store.test.ts",
         "tests/security-policy.test.ts",
         "tests/workflow-service.test.ts",
@@ -170,7 +172,8 @@
         "tests/youtube-oauth-session.test.ts",
         "tests/youtube-processing.test.ts",
         "tests/youtube-upload-policy.test.ts",
-        "tests/youtube-resumable.test.ts"
+        "tests/youtube-resumable.test.ts",
+        "tests/active-final-service.test.ts"
       ]
     },
     {

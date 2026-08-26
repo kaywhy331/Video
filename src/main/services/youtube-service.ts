@@ -11,7 +11,6 @@ import type {
 } from '@shared/types';
 import type { SecretStore } from '../secret-store';
 import type { ProjectService } from './project-service';
-import { approvalFingerprint } from '@shared/approval';
 import {
   createGoogleYouTubeOAuthProvider,
   YouTubeOAuthSessionManager,
@@ -24,6 +23,13 @@ import {
   reusableEnglishCaptionId,
   resumableContentRange
 } from '@shared/youtube-resumable';
+import {
+  ActiveFinalService,
+  PublicationIdentityService,
+  StalePublicationSnapshotError,
+  invalidatePublicationSnapshots,
+  type PublicationSnapshot
+} from './active-final-service';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
@@ -33,10 +39,6 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets.readonly'
 ];
 
-function fileSha256(path: string): string {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
-}
-
 interface UploadRow {
   id: string;
   project_id: string;
@@ -45,6 +47,12 @@ interface UploadRow {
   caption_id: string | null;
   thumbnail_uploaded: number;
   channel_id: string | null;
+  final_render_id: string | null;
+  final_sha256: string;
+  selected_package_id: string | null;
+  approval_hash: string | null;
+  snapshot_version: number;
+  snapshot_status: string;
 }
 
 interface YouTubeBindingRow {
@@ -112,6 +120,7 @@ function validateUploadSession(value: string): string {
 }
 
 function isTransientUploadError(error: unknown): boolean {
+  if (error instanceof StalePublicationSnapshotError) return false;
   const candidate = error as { status?: number; response?: { status?: number } };
   const status = candidate.response?.status ?? candidate.status;
   return status === undefined || status === 408 || status === 429 || status >= 500;
@@ -191,6 +200,7 @@ export async function awaitUsableYouTubeProcessing(options: {
 
 export class YouTubeService {
   private readonly oauthSessions: YouTubeOAuthSessionPort;
+  private readonly publications: PublicationIdentityService;
   private legacyInspectionAttempted = false;
 
   constructor(
@@ -207,12 +217,19 @@ export class YouTubeService {
       return result.data.status ?? null;
     },
     private readonly openExternal: (url: string) => Promise<unknown> = url => shell.openExternal(url, { activate: true }),
-    oauthSessions?: YouTubeOAuthSessionPort
+    oauthSessions?: YouTubeOAuthSessionPort,
+    activeFinal = new ActiveFinalService(db, () => settings().outputFolder)
   ) {
     this.oauthSessions = oauthSessions ?? new YouTubeOAuthSessionManager({
       openExternal: this.openExternal,
       createProvider: input => createGoogleYouTubeOAuthProvider({ ...input, scopes: SCOPES })
     });
+    this.publications = new PublicationIdentityService(db, activeFinal);
+  }
+
+  createUploadSnapshot(projectId: string): PublicationSnapshot {
+    const binding = this.requireConfirmedBinding();
+    return this.publications.capture(projectId, binding.channel_id);
   }
 
   private binding(): YouTubeBindingRow | null {
@@ -431,6 +448,19 @@ export class YouTubeService {
               youtubeCredentialFingerprint(candidate.clientId, refreshToken),
               confirmedAt
             );
+            const staleProjects = this.db.raw.prepare(`
+              SELECT DISTINCT project_id FROM publication_records
+              WHERE snapshot_status = 'current' AND channel_id IS NOT ?
+            `).all(candidate.channelId) as Array<{ project_id: string }>;
+            for (const publication of staleProjects) {
+              invalidatePublicationSnapshots(
+                this.db,
+                publication.project_id,
+                'The confirmed YouTube channel changed. The prior private upload snapshot is stale.',
+                'youtube_channel_changed',
+                confirmedAt
+              );
+            }
             this.db.raw.prepare(`
               INSERT INTO audit_log(action, actor, entity_type, entity_id, metadata_json, created_at)
               VALUES('youtube.channel_confirmed', 'human', 'youtube_channel', ?, ?, ?)
@@ -465,88 +495,152 @@ export class YouTubeService {
     await this.oauthSessions.shutdown();
   }
 
-  async uploadPrivate(projectId: string): Promise<{ videoId: string; url: string }> {
+  async uploadPrivate(
+    projectId: string,
+    expectedSnapshot?: PublicationSnapshot
+  ): Promise<{ videoId: string; url: string }> {
     const project = this.projects.get(projectId);
     if (!['QC_FINAL', 'WAITING_FINAL_APPROVAL', 'WAITING_YOUTUBE_PROCESSING', 'UPLOADING_PRIVATE'].includes(project.state)) {
       throw new Error(`Private upload is not allowed from project state ${project.state}.`);
     }
-    const render = project.renders.find(item => item.kind === 'final' && item.state === 'SUCCEEDED');
-    if (!render?.outputPath || !render.sha256 || !existsSync(render.outputPath)) {
-      throw new Error('A validated final render is required before upload.');
-    }
-    const selected = project.packaging.find(candidate => candidate.selected) ?? project.packaging[0];
-    if (!selected) throw new Error('Packaging has not been generated.');
-    if (!selected.thumbnailPath || !existsSync(selected.thumbnailPath)) {
-      throw new Error('The selected publishing package requires a generated thumbnail before upload.');
-    }
     const binding = this.requireConfirmedBinding();
+    const snapshot = expectedSnapshot ?? this.publications.capture(projectId, binding.channel_id);
+    if (snapshot.projectId !== projectId || snapshot.confirmedChannelId !== binding.channel_id) {
+      throw new Error('The durable upload snapshot does not match the project and confirmed YouTube channel.');
+    }
+    this.publications.markSuperseded(snapshot);
 
     const existing = this.db.raw.prepare(`
-      SELECT id, project_id, video_id, upload_session_uri, caption_id, thumbnail_uploaded, channel_id
+      SELECT id, project_id, video_id, upload_session_uri, caption_id, thumbnail_uploaded,
+        channel_id, final_render_id, final_sha256, selected_package_id, approval_hash,
+        snapshot_version, snapshot_status
       FROM publication_records
-      WHERE final_sha256 = ?
+      WHERE project_id = ? AND channel_id = ? AND final_render_id = ? AND final_sha256 = ?
       ORDER BY created_at DESC LIMIT 1
-    `).get(render.sha256) as UploadRow | undefined;
-    assertPublicationUploadOwner(existing, projectId);
-    if (existing && (existing.video_id || existing.upload_session_uri)) {
-      assertPublicationChannelBinding(existing.channel_id, binding.channel_id);
-    } else if (existing?.channel_id && existing.channel_id !== binding.channel_id) {
-      assertPublicationChannelBinding(existing.channel_id, binding.channel_id);
-    } else if (existing && !existing.channel_id) {
+    `).get(
+      projectId,
+      binding.channel_id,
+      snapshot.finalRenderId,
+      snapshot.finalSha256
+    ) as UploadRow | undefined;
+
+    const publicationId = existing?.id ?? randomUUID();
+    const reusableSession = Boolean(
+      existing
+      && existing.snapshot_status === 'current'
+      && existing.snapshot_version === snapshot.snapshotVersion
+      && existing.selected_package_id === snapshot.selectedPackageId
+      && existing.approval_hash === snapshot.approvalHash
+    );
+    const preparedAt = new Date().toISOString();
+    if (existing) {
       this.db.raw.prepare(`
-        UPDATE publication_records SET channel_id = ?, updated_at = ? WHERE id = ?
-      `).run(binding.channel_id, new Date().toISOString(), existing.id);
-      existing.channel_id = binding.channel_id;
+        UPDATE publication_records SET snapshot_version = ?, snapshot_status = 'current',
+          selected_package_id = ?, approval_hash = ?, approved_at = NULL,
+          scheduled_at = NULL, published_at = NULL, privacy_status = 'private',
+          upload_session_uri = CASE WHEN ? THEN upload_session_uri ELSE NULL END,
+          caption_id = CASE WHEN video_id IS NOT NULL THEN caption_id ELSE NULL END,
+          thumbnail_uploaded = CASE WHEN video_id IS NOT NULL THEN thumbnail_uploaded ELSE 0 END,
+          processing_status = CASE WHEN video_id IS NOT NULL THEN processing_status ELSE 'initializing' END,
+          error = NULL, updated_at = ? WHERE id = ?
+      `).run(
+        snapshot.snapshotVersion,
+        snapshot.selectedPackageId,
+        snapshot.approvalHash,
+        Number(reusableSession),
+        preparedAt,
+        publicationId
+      );
+      existing.selected_package_id = snapshot.selectedPackageId;
+      existing.approval_hash = snapshot.approvalHash;
+      existing.snapshot_version = snapshot.snapshotVersion;
+      existing.snapshot_status = 'current';
+    } else {
+      this.db.raw.prepare(`
+        INSERT INTO publication_records(
+          id, project_id, channel_id, video_id, privacy_status, final_render_id,
+          final_sha256, snapshot_version, snapshot_status, processing_status,
+          selected_package_id, thumbnail_uploaded, approval_hash, synthetic_media,
+          created_at, updated_at
+        ) VALUES(?, ?, ?, NULL, 'private', ?, ?, ?, 'current', 'initializing', ?, 0, ?, ?, ?, ?)
+      `).run(
+        publicationId,
+        projectId,
+        binding.channel_id,
+        snapshot.finalRenderId,
+        snapshot.finalSha256,
+        snapshot.snapshotVersion,
+        snapshot.selectedPackageId,
+        snapshot.approvalHash,
+        Number(this.settings().youtubeSyntheticMediaDisclosure),
+        preparedAt,
+        preparedAt
+      );
+    }
+    this.publications.assertCurrent(snapshot, publicationId, 'job_start');
+
+    if (existing?.video_id && project.state === 'WAITING_FINAL_APPROVAL') {
+      this.projects.states.transition(projectId, 'UPLOADING_PRIVATE', {
+        progress: 0.93,
+        reason: 'Synchronizing changed metadata and thumbnail to the existing private upload',
+        prerequisites: { videoId: existing.video_id, packageId: snapshot.selectedPackageId }
+      });
+    } else if (!existing?.video_id) {
+      this.projects.states.transition(projectId, 'UPLOADING_PRIVATE', {
+        progress: 0.93,
+        reason: 'Operator or policy initiated private-first YouTube upload',
+        prerequisites: {
+          finalRenderId: snapshot.finalRenderId,
+          finalSha256: snapshot.finalSha256,
+          packageId: snapshot.selectedPackageId
+        }
+      });
     }
 
     const auth = await this.client();
     const youtube = google.youtube({ version: 'v3', auth });
     if (existing?.video_id) {
-      if (project.state === 'WAITING_FINAL_APPROVAL') {
-        this.projects.states.transition(projectId, 'UPLOADING_PRIVATE', {
-          progress: 0.93,
-          reason: 'Synchronizing changed metadata and thumbnail to the existing private upload',
-          prerequisites: { videoId: existing.video_id, packageId: selected.id }
-        });
-      }
+      this.publications.assertCurrent(snapshot, publicationId, 'metadata');
       await youtube.videos.update({
         part: ['snippet', 'status'],
         requestBody: {
           id: existing.video_id,
           snippet: {
-            title: selected.title,
-            description: selected.description,
-            tags: selected.tags,
+            title: snapshot.title,
+            description: snapshot.description,
+            tags: snapshot.tags,
             categoryId: this.settings().youtubeCategoryId,
             defaultLanguage: 'en'
           },
           status: privateVideoStatus(this.settings().youtubeSyntheticMediaDisclosure)
         }
       });
-      if (selected.thumbnailPath && existsSync(selected.thumbnailPath)) {
-        await youtube.thumbnails.set({
-          videoId: existing.video_id,
-          media: { mimeType: 'image/jpeg', body: createReadStream(selected.thumbnailPath) }
-        });
-      }
-      const captionId = await this.ensureCaption(youtube, existing.video_id, render.manifestPath, existing.caption_id);
-      await this.ensurePlaylist(youtube, existing.video_id);
-      const approvalHash = approvalFingerprint({
-        finalSha256: render.sha256,
-        packageId: selected.id,
-        title: selected.title,
-        description: selected.description,
-        chapters: selected.chapters,
-        tags: selected.tags,
-        thumbnailSha256: selected.thumbnailPath && existsSync(selected.thumbnailPath) ? fileSha256(selected.thumbnailPath) : null
+      this.publications.assertCurrent(snapshot, publicationId, 'thumbnail');
+      await youtube.thumbnails.set({
+        videoId: existing.video_id,
+        media: { mimeType: 'image/jpeg', body: createReadStream(snapshot.thumbnailPath) }
       });
+      this.publications.assertCurrent(snapshot, publicationId, 'caption');
+      const captionId = await this.ensureCaption(
+        youtube,
+        existing.video_id,
+        snapshot.finalManifestPath,
+        existing.caption_id,
+        () => this.publications.assertCurrent(snapshot, publicationId, 'caption')
+      );
+      this.publications.assertCurrent(snapshot, publicationId, 'playlist');
+      await this.ensurePlaylist(
+        youtube,
+        existing.video_id,
+        () => this.publications.assertCurrent(snapshot, publicationId, 'playlist')
+      );
+      this.publications.assertCurrent(snapshot, publicationId, 'processing');
       this.db.raw.prepare(`
         UPDATE publication_records SET selected_package_id = ?, approval_hash = ?,
           caption_id = ?, thumbnail_uploaded = ?, processing_status = 'uploaded',
           error = NULL, updated_at = ? WHERE id = ?
       `).run(
-        selected.id, approvalHash, captionId,
-        Number(!selected.thumbnailPath || existsSync(selected.thumbnailPath)),
+        snapshot.selectedPackageId, snapshot.approvalHash, captionId, 1,
         new Date().toISOString(), existing.id
       );
       this.projects.states.transition(projectId, 'WAITING_YOUTUBE_PROCESSING', {
@@ -555,87 +649,76 @@ export class YouTubeService {
         reason: 'Private upload package synchronized; processing state will be rechecked',
         prerequisites: { videoId: existing.video_id }
       });
-      await this.waitForProcessing(youtube, projectId, existing.video_id, existing.id);
+      await this.waitForProcessing(youtube, projectId, existing.video_id, existing.id, snapshot);
+      this.publications.assertCurrent(snapshot, publicationId, 'approval');
       this.projects.states.transition(projectId, 'WAITING_FINAL_APPROVAL', {
         progress: 0.96,
         reason: 'Changed private package is synchronized and ready for approval',
-        prerequisites: { videoId: existing.video_id, approvalHash }
+        prerequisites: { videoId: existing.video_id, approvalHash: snapshot.approvalHash }
       });
+      this.publications.resolveStaleException(projectId, publicationId);
       return { videoId: existing.video_id, url: `https://www.youtube.com/watch?v=${existing.video_id}` };
     }
-    this.projects.states.transition(projectId, 'UPLOADING_PRIVATE', {
-      progress: 0.93,
-      reason: 'Operator or policy initiated private-first YouTube upload',
-      prerequisites: { finalSha256: render.sha256, packageId: selected.id }
-    });
-
-    const publicationId = existing?.id ?? randomUUID();
-    const approvalHash = approvalFingerprint({
-      finalSha256: render.sha256,
-      packageId: selected.id,
-      title: selected.title,
-      description: selected.description,
-      chapters: selected.chapters,
-      tags: selected.tags,
-      thumbnailSha256: selected.thumbnailPath && existsSync(selected.thumbnailPath) ? fileSha256(selected.thumbnailPath) : null
-    });
-    if (!existing) {
-      const now = new Date().toISOString();
-      this.db.raw.prepare(`
-        INSERT INTO publication_records(
-          id, project_id, channel_id, video_id, privacy_status, final_sha256, processing_status,
-          selected_package_id, thumbnail_uploaded, approval_hash, synthetic_media,
-          created_at, updated_at
-        ) VALUES(?, ?, ?, NULL, 'private', ?, 'initializing', ?, 0, ?, ?, ?, ?)
-      `).run(
-        publicationId, projectId, binding.channel_id, render.sha256, selected.id, approvalHash,
-        Number(this.settings().youtubeSyntheticMediaDisclosure), now, now
-      );
-    }
-
     const videoId = await this.uploadResumable(
       auth,
       publicationId,
-      render.outputPath,
-      existing?.upload_session_uri ?? null,
+      snapshot.finalOutputPath,
+      reusableSession ? existing?.upload_session_uri ?? null : null,
       {
         snippet: {
-          title: selected.title,
-          description: selected.description,
-          tags: selected.tags,
+          title: snapshot.title,
+          description: snapshot.description,
+          tags: snapshot.tags,
           categoryId: this.settings().youtubeCategoryId,
           defaultLanguage: 'en'
         },
         status: privateVideoStatus(this.settings().youtubeSyntheticMediaDisclosure)
       },
-      projectId
+      projectId,
+      snapshot
     );
     if (!videoId) throw new Error('YouTube upload completed without a video ID.');
 
     const uploadedAt = new Date().toISOString();
     this.db.raw.prepare(`
-      UPDATE publication_records SET video_id = ?, processing_status = 'uploaded',
+      UPDATE publication_records SET video_id = ?, privacy_status = 'private', processing_status = 'uploaded',
         error = NULL, updated_at = ? WHERE id = ?
     `).run(videoId, uploadedAt, publicationId);
+    this.publications.assertCurrent(snapshot, publicationId, 'thumbnail');
     this.projects.states.transition(projectId, 'WAITING_YOUTUBE_PROCESSING', {
       progress: 0.95,
       youtubeVideoId: videoId,
       reason: 'Resumable private upload completed; attachments and processing will be confirmed',
-      prerequisites: { videoId, finalSha256: render.sha256 }
+      prerequisites: {
+        videoId,
+        finalRenderId: snapshot.finalRenderId,
+        finalSha256: snapshot.finalSha256
+      }
     });
 
-    if (selected.thumbnailPath && existsSync(selected.thumbnailPath)) {
-      await youtube.thumbnails.set({
-        videoId,
-        media: {
-          mimeType: 'image/jpeg',
-          body: createReadStream(selected.thumbnailPath)
-        }
-      });
-    }
+    await youtube.thumbnails.set({
+      videoId,
+      media: {
+        mimeType: 'image/jpeg',
+        body: createReadStream(snapshot.thumbnailPath)
+      }
+    });
 
-    const captionId = await this.ensureCaption(youtube, videoId, render.manifestPath, null);
-    await this.ensurePlaylist(youtube, videoId);
+    this.publications.assertCurrent(snapshot, publicationId, 'caption');
+    const captionId = await this.ensureCaption(
+      youtube,
+      videoId,
+      snapshot.finalManifestPath,
+      null,
+      () => this.publications.assertCurrent(snapshot, publicationId, 'caption')
+    );
+    this.publications.assertCurrent(snapshot, publicationId, 'playlist');
+    await this.ensurePlaylist(
+      youtube,
+      videoId,
+      () => this.publications.assertCurrent(snapshot, publicationId, 'playlist')
+    );
+    this.publications.assertCurrent(snapshot, publicationId, 'processing');
 
     const now = new Date().toISOString();
     this.db.raw.prepare(`
@@ -646,19 +729,21 @@ export class YouTubeService {
     `).run(
       binding.channel_id,
       videoId,
-      selected.id,
+      snapshot.selectedPackageId,
       captionId,
-      Number(Boolean(selected.thumbnailPath)),
-      approvalHash,
+      1,
+      snapshot.approvalHash,
       now,
       publicationId
     );
-    await this.waitForProcessing(youtube, projectId, videoId, publicationId);
+    await this.waitForProcessing(youtube, projectId, videoId, publicationId, snapshot);
+    this.publications.assertCurrent(snapshot, publicationId, 'approval');
     this.projects.states.transition(projectId, 'WAITING_FINAL_APPROVAL', {
       progress: 0.96,
       reason: 'YouTube reports a processed private video ready for operator review',
       prerequisites: { videoId }
     });
+    this.publications.resolveStaleException(projectId, publicationId);
     return { videoId, url: `https://www.youtube.com/watch?v=${videoId}` };
   }
 
@@ -668,7 +753,8 @@ export class YouTubeService {
     outputPath: string,
     storedSession: string | null,
     metadata: Record<string, unknown>,
-    projectId: string
+    projectId: string,
+    snapshot: PublicationSnapshot
   ): Promise<string> {
     const size = statSync(outputPath).size;
     if (size <= 0) throw new Error('The final render is empty.');
@@ -677,6 +763,7 @@ export class YouTubeService {
 
     if (session) {
       try {
+        this.publications.assertCurrent(snapshot, publicationId, 'upload_resume');
         const status = await auth.request<ResumableVideoResponse>({
           url: session,
           method: 'PUT',
@@ -701,6 +788,7 @@ export class YouTubeService {
     }
 
     if (!session) {
+      this.publications.assertCurrent(snapshot, publicationId, 'upload_create');
       const initiated = await auth.request<unknown>({
         url: 'https://www.googleapis.com/upload/youtube/v3/videos',
         method: 'POST',
@@ -720,10 +808,12 @@ export class YouTubeService {
         UPDATE publication_records SET upload_session_uri = ?, processing_status = 'uploading',
           error = NULL, updated_at = ? WHERE id = ?
       `).run(session, new Date().toISOString(), publicationId);
+      this.publications.assertCurrent(snapshot, publicationId, 'upload_create');
     }
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
+        this.publications.assertCurrent(snapshot, publicationId, 'upload_chunk');
         const result = await auth.request<ResumableVideoResponse>({
           url: session,
           method: 'PUT',
@@ -748,6 +838,7 @@ export class YouTubeService {
         `).run(error instanceof Error ? error.message : String(error), new Date().toISOString(), publicationId);
         if (!isTransientUploadError(error) || attempt === 4) throw error;
         await retryDelay(attempt);
+        this.publications.assertCurrent(snapshot, publicationId, 'upload_resume');
         const status = await auth.request<ResumableVideoResponse>({
           url: session,
           method: 'PUT',
@@ -769,7 +860,8 @@ export class YouTubeService {
     youtube: youtube_v3.Youtube,
     videoId: string,
     manifestPath: string | null,
-    existingCaptionId: string | null
+    existingCaptionId: string | null,
+    revalidate: () => void
   ): Promise<string | null> {
     if (existingCaptionId) return existingCaptionId;
     const captions = await youtube.captions.list({ part: ['id', 'snippet'], videoId });
@@ -779,6 +871,7 @@ export class YouTubeService {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { captions?: { srtPath?: string } };
     const srt = manifest.captions?.srtPath;
     if (!srt || !existsSync(srt)) throw new Error('Timed SRT caption track is missing.');
+    revalidate();
     const caption = await youtube.captions.insert({
       part: ['snippet'],
       requestBody: {
@@ -789,13 +882,18 @@ export class YouTubeService {
     return caption.data.id ?? null;
   }
 
-  private async ensurePlaylist(youtube: youtube_v3.Youtube, videoId: string): Promise<void> {
+  private async ensurePlaylist(
+    youtube: youtube_v3.Youtube,
+    videoId: string,
+    revalidate: () => void
+  ): Promise<void> {
     const playlistId = this.settings().youtubePlaylistId.trim();
     if (!playlistId) return;
     const existing = await youtube.playlistItems.list({
       part: ['id'], playlistId, videoId, maxResults: 1
     });
     if (existing.data.items?.length) return;
+    revalidate();
     await youtube.playlistItems.insert({
       part: ['snippet'],
       requestBody: {
@@ -811,12 +909,15 @@ export class YouTubeService {
     youtube: youtube_v3.Youtube,
     projectId: string,
     videoId: string,
-    publicationId: string
+    publicationId: string,
+    snapshot: PublicationSnapshot
   ): Promise<void> {
     try {
       await awaitUsableYouTubeProcessing({
         readStatus: async () => {
+          this.publications.assertCurrent(snapshot, publicationId, 'processing');
           const result = await youtube.videos.list({ part: ['processingDetails', 'status'], id: [videoId] });
+          this.publications.assertCurrent(snapshot, publicationId, 'processing');
           return result.data.items?.[0]?.processingDetails?.processingStatus;
         },
         onProgress: (attempt, status) => {
@@ -842,6 +943,34 @@ export class YouTubeService {
     }
   }
 
+  private async resetRemotePrivateAfterStale(
+    auth: Auth.OAuth2Client,
+    videoId: string,
+    publicationId: string,
+    action: 'publish' | 'schedule'
+  ): Promise<void> {
+    try {
+      await this.updatePublicationStatus(
+        auth,
+        videoId,
+        privateVideoStatus(this.settings().youtubeSyntheticMediaDisclosure)
+      );
+    } catch (resetError) {
+      const resetMessage = resetError instanceof Error ? resetError.message : String(resetError);
+      this.db.raw.prepare(`
+        UPDATE publication_records SET error = ?, updated_at = ? WHERE id = ?
+      `).run(
+        `Publication snapshot changed during ${action}; automatic private reset failed: ${resetMessage}`,
+        new Date().toISOString(),
+        publicationId
+      );
+      throw new StalePublicationSnapshotError(
+        'publish',
+        `The publication snapshot changed during ${action}, and YouTube private reset failed: ${resetMessage}`
+      );
+    }
+  }
+
   async approve(
     projectId: string,
     action: 'keep_private' | 'publish' | 'schedule',
@@ -855,32 +984,39 @@ export class YouTubeService {
       throw new Error('Project has not been uploaded to YouTube.');
     }
     const binding = this.requireConfirmedBinding();
-
-    const render = project.renders.find(item => item.kind === 'final' && item.state === 'SUCCEEDED');
-    const selected = project.packaging.find(candidate => candidate.selected) ?? project.packaging[0];
-    if (!render?.sha256 || !selected) throw new Error('Final render and packaging are required for approval.');
-    const currentApprovalHash = approvalFingerprint({
-      finalSha256: render.sha256,
-      packageId: selected.id,
-      title: selected.title,
-      description: selected.description,
-      chapters: selected.chapters,
-      tags: selected.tags,
-      thumbnailSha256: selected.thumbnailPath && existsSync(selected.thumbnailPath) ? fileSha256(selected.thumbnailPath) : null
-    });
     const publication = this.db.raw.prepare(`
-      SELECT approval_hash, processing_status, caption_id, thumbnail_uploaded, channel_id
+      SELECT id, approval_hash, processing_status, caption_id, thumbnail_uploaded, channel_id,
+        final_render_id, final_sha256, selected_package_id, snapshot_version, snapshot_status
       FROM publication_records WHERE project_id = ? AND video_id = ?
     `).get(projectId, project.youtubeVideoId) as {
+      id: string;
       approval_hash: string | null;
       processing_status: string | null;
       caption_id: string | null;
       thumbnail_uploaded: number;
       channel_id: string | null;
+      final_render_id: string | null;
+      final_sha256: string;
+      selected_package_id: string | null;
+      snapshot_version: number;
+      snapshot_status: string;
     } | undefined;
-    if (!publication?.approval_hash || publication.approval_hash !== currentApprovalHash) {
-      throw new Error('The final render or publishing package changed after upload. Upload the current package before approval.');
+    if (!publication) throw new Error('The private publication receipt is missing.');
+    let snapshot: PublicationSnapshot;
+    try {
+      snapshot = this.publications.capture(projectId, binding.channel_id);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.publications.markStale(
+        projectId,
+        publication.id,
+        'approval',
+        `${reason} The stale YouTube upload remains private and cannot be approved.`
+      );
+      throw new StalePublicationSnapshotError('approval', reason);
     }
+    this.publications.assertCurrent(snapshot, publication.id, 'approval');
+    const currentApprovalHash = snapshot.approvalHash;
     if (publication.processing_status !== 'succeeded' || !publication.caption_id || !publication.thumbnail_uploaded) {
       throw new Error('YouTube processing, thumbnail, and timed captions must all succeed before approval.');
     }
@@ -892,8 +1028,8 @@ export class YouTubeService {
         this.db.raw.prepare(`
           UPDATE publication_records SET privacy_status = 'private', approved_at = ?,
             approval_hash = ?, scheduled_at = NULL, published_at = NULL, updated_at = ?
-          WHERE project_id = ? AND video_id = ?
-        `).run(now, currentApprovalHash, now, projectId, project.youtubeVideoId);
+          WHERE id = ?
+        `).run(now, currentApprovalHash, now, publication.id);
         this.db.raw.prepare(`
           INSERT INTO audit_log(
             project_id, action, actor, entity_type, entity_id, metadata_json, created_at
@@ -916,7 +1052,15 @@ export class YouTubeService {
           publishAt: scheduledAt
         };
     try {
+      this.publications.assertCurrent(snapshot, publication.id, 'publish');
       const responseStatus = await this.updatePublicationStatus(auth, project.youtubeVideoId, status);
+      try {
+        this.publications.assertCurrent(snapshot, publication.id, 'publish');
+      } catch (error) {
+        if (!(error instanceof StalePublicationSnapshotError)) throw error;
+        await this.resetRemotePrivateAfterStale(auth, project.youtubeVideoId, publication.id, action);
+        throw error;
+      }
       const retainedPrivate = action === 'publish'
         && responseStatus?.privacyStatus !== undefined
         && responseStatus.privacyStatus !== 'public';
@@ -930,14 +1074,31 @@ export class YouTubeService {
         throw mismatch;
       }
     } catch (error) {
+      if (error instanceof StalePublicationSnapshotError) throw error;
+      try {
+        this.publications.assertCurrent(snapshot, publication.id, 'publish');
+      } catch (snapshotError) {
+        if (!(snapshotError instanceof StalePublicationSnapshotError)) throw snapshotError;
+        await this.resetRemotePrivateAfterStale(auth, project.youtubeVideoId, publication.id, action);
+        throw snapshotError;
+      }
       if (!isYouTubeStudioRestriction(error)) throw error;
-      return this.routeToStudio(projectId, project.youtubeVideoId, action, scheduledAt, currentApprovalHash, error);
+      return this.routeToStudio(
+        projectId,
+        publication.id,
+        project.youtubeVideoId,
+        action,
+        scheduledAt,
+        currentApprovalHash,
+        snapshot,
+        error
+      );
     }
     const now = new Date().toISOString();
     this.db.raw.prepare(`
       UPDATE publication_records SET privacy_status = ?, approved_at = ?, approval_hash = ?,
         scheduled_at = ?, published_at = ?, updated_at = ?
-      WHERE project_id = ? AND video_id = ?
+      WHERE id = ?
     `).run(
       action === 'publish' ? 'public' : 'private',
       now,
@@ -945,8 +1106,7 @@ export class YouTubeService {
       action === 'schedule' ? scheduledAt : null,
       action === 'publish' ? now : null,
       now,
-      projectId,
-      project.youtubeVideoId
+      publication.id
     );
     this.projects.states.transition(projectId, action === 'schedule' ? 'SCHEDULED' : 'PUBLISHED', {
       progress: 1,
@@ -959,35 +1119,38 @@ export class YouTubeService {
 
   private async routeToStudio(
     projectId: string,
+    publicationId: string,
     videoId: string,
     action: 'publish' | 'schedule',
     scheduledAt: string | undefined,
     approvalHash: string,
+    snapshot: PublicationSnapshot,
     error: unknown
   ): Promise<PublicationApprovalResult> {
     const url = studioVideoUrl(videoId);
     let opened = false;
     let openError: string | null = null;
+    this.publications.assertCurrent(snapshot, publicationId, 'publish');
     try {
       await this.openExternal(url);
       opened = true;
     } catch (cause) {
       openError = cause instanceof Error ? cause.message : String(cause);
     }
+    this.publications.assertCurrent(snapshot, publicationId, 'publish');
     const details = googleErrorDetails(error);
     const now = new Date().toISOString();
     this.db.raw.transaction(() => {
       this.db.raw.prepare(`
         UPDATE publication_records SET privacy_status = 'private', approved_at = ?,
           approval_hash = ?, scheduled_at = NULL, published_at = NULL, error = ?, updated_at = ?
-        WHERE project_id = ? AND video_id = ?
+        WHERE id = ?
       `).run(
         now,
         approvalHash,
         `API ${action} restriction; manual Studio action required.`,
         now,
-        projectId,
-        videoId
+        publicationId
       );
       this.db.raw.prepare(`
         INSERT INTO audit_log(

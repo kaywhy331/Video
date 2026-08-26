@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
@@ -24,33 +25,58 @@ function fixture() {
   roots.push(root);
   const db = new AppDatabase(join(root, 'db.sqlite'));
   const now = new Date().toISOString();
+  const outputPath = join(root, 'final.mp4');
+  const thumbnailPath = join(root, 'thumbnail.jpg');
+  writeFileSync(outputPath, 'final bytes');
+  writeFileSync(thumbnailPath, 'thumbnail bytes');
+  const finalSha = createHash('sha256').update('final bytes').digest('hex');
+  const thumbnailSha = createHash('sha256').update('thumbnail bytes').digest('hex');
   db.raw.prepare(`
     INSERT INTO projects(
       id, sequence, slug, title, topic, state, progress, envato_project_name,
-      target_duration_ms, youtube_video_id, created_at, updated_at
+      target_duration_ms, final_render_id, youtube_video_id, created_at, updated_at
     ) VALUES('project-1', 1, 'project-1', 'Project', 'Topic',
-      'WAITING_FINAL_APPROVAL', 0.96, 'YT-PROJECT-1', 60000, 'video_123', ?, ?)
+      'WAITING_FINAL_APPROVAL', 0.96, 'YT-PROJECT-1', 60000, 'final-1', 'video_123', ?, ?)
   `).run(now, now);
+  db.raw.prepare(`
+    INSERT INTO renders(
+      id, project_id, kind, profile, state, output_path, sha256, created_at, completed_at
+    ) VALUES('final-1', 'project-1', 'final', 'final_1080p', 'SUCCEEDED', ?, ?, ?, ?)
+  `).run(outputPath, finalSha, now, now);
   const packaging = {
     id: 'package-1', selected: true, title: 'Verified title', description: 'Verified description',
-    chapters: '0:00 Opening', tags: ['travel'], thumbnailPath: null
+    chapters: '0:00 Opening', tags: ['travel'], thumbnailPath
   };
+  db.raw.prepare(`
+    INSERT INTO packaging_candidates(
+      id, project_id, ordinal, title, angle, viewer_promise, thumbnail_path,
+      description, chapters, tags_json, risk_status, selected, created_at
+    ) VALUES('package-1', 'project-1', 1, ?, 'Angle', 'Promise', ?, ?, ?, ?, 'pass', 1, ?)
+  `).run(
+    packaging.title,
+    thumbnailPath,
+    packaging.description,
+    packaging.chapters,
+    JSON.stringify(packaging.tags),
+    now
+  );
   const approvalHash = approvalFingerprint({
-    finalSha256: 'final-sha',
+    finalSha256: finalSha,
     packageId: packaging.id,
     title: packaging.title,
     description: packaging.description,
     chapters: packaging.chapters,
     tags: packaging.tags,
-    thumbnailSha256: null
+    thumbnailSha256: thumbnailSha
   });
   db.raw.prepare(`
     INSERT INTO publication_records(
-      id, project_id, channel_id, video_id, privacy_status, final_sha256, processing_status,
+      id, project_id, channel_id, video_id, privacy_status, final_render_id, final_sha256,
+      snapshot_version, snapshot_status, processing_status, selected_package_id,
       caption_id, thumbnail_uploaded, approval_hash, created_at, updated_at
-    ) VALUES('publication-1', 'project-1', 'UC-confirmed', 'video_123', 'private', 'final-sha',
-      'succeeded', 'caption-1', 1, ?, ?, ?)
-  `).run(approvalHash, now, now);
+    ) VALUES('publication-1', 'project-1', 'UC-confirmed', 'video_123', 'private',
+      'final-1', ?, 1, 'current', 'succeeded', 'package-1', 'caption-1', 1, ?, ?, ?)
+  `).run(finalSha, approvalHash, now, now);
   db.raw.prepare(`
     INSERT INTO youtube_connection_binding(
       singleton_id, channel_id, channel_title, credential_fingerprint, confirmed_at
@@ -60,8 +86,9 @@ function fixture() {
   const project = {
     id: 'project-1',
     state: 'WAITING_FINAL_APPROVAL',
+    finalRenderId: 'final-1',
     youtubeVideoId: 'video_123',
-    renders: [{ kind: 'final', state: 'SUCCEEDED', sha256: 'final-sha' }],
+    renders: [{ id: 'final-1', kind: 'final', state: 'SUCCEEDED', outputPath, sha256: finalSha }],
     packaging: [packaging]
   } as unknown as ProjectDetail;
   const projects = { get: () => project, states: { transition } } as unknown as ProjectService;
@@ -70,7 +97,8 @@ function fixture() {
       youtubeClientId: 'client-id', youtubeClientSecret: 'client-secret', youtubeRefreshToken: 'refresh-token'
     })
   } as unknown as SecretStore;
-  return { db, projects, secrets, transition };
+  const settings = () => ({ outputFolder: root, youtubeSyntheticMediaDisclosure: false }) as never;
+  return { root, db, projects, secrets, transition, settings };
 }
 
 describe('YouTube publication approval', () => {
@@ -86,7 +114,7 @@ describe('YouTube publication approval', () => {
     const open = vi.fn().mockResolvedValue(undefined);
     const service = new YouTubeService(
       value.db,
-      () => ({}) as never,
+      value.settings,
       value.secrets,
       value.projects,
       vi.fn(),
@@ -128,7 +156,7 @@ describe('YouTube publication approval', () => {
     const invalid = fixture();
     const invalidUpdate = vi.fn();
     const invalidService = new YouTubeService(
-      invalid.db, () => ({}) as never, invalid.secrets, invalid.projects, vi.fn(), invalidUpdate, vi.fn()
+      invalid.db, invalid.settings, invalid.secrets, invalid.projects, vi.fn(), invalidUpdate, vi.fn()
     );
     await expect(invalidService.approve('project-1', 'schedule', '2020-01-01T00:00:00.000Z'))
       .rejects.toThrow(/valid future schedule time/i);
@@ -139,7 +167,7 @@ describe('YouTube publication approval', () => {
     const scheduledAt = new Date(Date.now() + 60 * 60_000).toISOString();
     const update = vi.fn().mockImplementation(async (_auth, _videoId, status) => status);
     const service = new YouTubeService(
-      valid.db, () => ({}) as never, valid.secrets, valid.projects, vi.fn(), update, vi.fn()
+      valid.db, valid.settings, valid.secrets, valid.projects, vi.fn(), update, vi.fn()
     );
     await expect(service.approve('project-1', 'schedule', scheduledAt)).resolves.toEqual({ outcome: 'scheduled' });
     expect(update).toHaveBeenCalledWith(expect.anything(), 'video_123', {
@@ -157,12 +185,93 @@ describe('YouTube publication approval', () => {
     value.db.raw.prepare(`UPDATE publication_records SET channel_id = 'UC-other' WHERE id = 'publication-1'`).run();
     const update = vi.fn();
     const service = new YouTubeService(
-      value.db, () => ({}) as never, value.secrets, value.projects, vi.fn(), update, vi.fn()
+      value.db, value.settings, value.secrets, value.projects, vi.fn(), update, vi.fn()
     );
-    await expect(service.approve('project-1', 'keep_private')).rejects.toThrow(/does not match/i);
+    await expect(service.approve('project-1', 'keep_private')).rejects.toThrow(/snapshot.*match/i);
     expect(update).not.toHaveBeenCalled();
     expect(value.db.raw.prepare(`SELECT privacy_status, approved_at FROM publication_records WHERE id = 'publication-1'`).get())
       .toEqual({ privacy_status: 'private', approved_at: null });
+    value.db.close();
+  });
+
+  it('[YT-012] resets the remote video to private when the active final changes during publish', async () => {
+    const value = fixture();
+    const replacementPath = join(value.root, 'replacement.mp4');
+    writeFileSync(replacementPath, 'replacement final bytes');
+    const replacementSha = createHash('sha256').update('replacement final bytes').digest('hex');
+    const now = new Date().toISOString();
+    value.db.raw.prepare(`
+      INSERT INTO renders(
+        id, project_id, kind, profile, state, output_path, sha256, created_at, completed_at
+      ) VALUES('final-2', 'project-1', 'final', 'final_1080p', 'SUCCEEDED', ?, ?, ?, ?)
+    `).run(replacementPath, replacementSha, now, now);
+    let calls = 0;
+    const update = vi.fn().mockImplementation(async (_auth, _videoId, status) => {
+      if (calls++ === 0) {
+        value.db.raw.prepare(`UPDATE projects SET final_render_id = 'final-2' WHERE id = 'project-1'`).run();
+      }
+      return status;
+    });
+    const service = new YouTubeService(
+      value.db, value.settings, value.secrets, value.projects, vi.fn(), update, vi.fn()
+    );
+
+    await expect(service.approve('project-1', 'publish')).rejects.toThrow(/stale|changed/i);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update.mock.calls[1]?.[2]).toMatchObject({ privacyStatus: 'private' });
+    expect(value.db.raw.prepare(`
+      SELECT privacy_status, snapshot_status, approval_hash, published_at
+      FROM publication_records WHERE id = 'publication-1'
+    `).get()).toEqual({
+      privacy_status: 'private',
+      snapshot_status: 'stale',
+      approval_hash: null,
+      published_at: null
+    });
+    expect(value.db.raw.prepare(`
+      SELECT count(*) AS count FROM exceptions
+      WHERE code = 'STALE_PUBLICATION_SNAPSHOT' AND status = 'OPEN'
+    `).get()).toEqual({ count: 1 });
+    value.db.close();
+  });
+
+  it('[YT-012] resets the remote video to private when publish has an uncertain response and the active final changed', async () => {
+    const value = fixture();
+    const replacementPath = join(value.root, 'replacement-uncertain.mp4');
+    writeFileSync(replacementPath, 'replacement after uncertain publish');
+    const replacementSha = createHash('sha256').update('replacement after uncertain publish').digest('hex');
+    const now = new Date().toISOString();
+    value.db.raw.prepare(`
+      INSERT INTO renders(
+        id, project_id, kind, profile, state, output_path, sha256, created_at, completed_at
+      ) VALUES('final-uncertain', 'project-1', 'final', 'final_1080p', 'SUCCEEDED', ?, ?, ?, ?)
+    `).run(replacementPath, replacementSha, now, now);
+    let calls = 0;
+    const update = vi.fn().mockImplementation(async (_auth, _videoId, status) => {
+      if (calls++ === 0) {
+        value.db.raw.prepare(`
+          UPDATE projects SET final_render_id = 'final-uncertain' WHERE id = 'project-1'
+        `).run();
+        throw new Error('The publish response was lost.');
+      }
+      return status;
+    });
+    const service = new YouTubeService(
+      value.db, value.settings, value.secrets, value.projects, vi.fn(), update, vi.fn()
+    );
+
+    await expect(service.approve('project-1', 'publish')).rejects.toThrow(/stale|changed/i);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update.mock.calls[1]?.[2]).toMatchObject({ privacyStatus: 'private' });
+    expect(value.db.raw.prepare(`
+      SELECT privacy_status, snapshot_status, approval_hash, published_at
+      FROM publication_records WHERE id = 'publication-1'
+    `).get()).toEqual({
+      privacy_status: 'private',
+      snapshot_status: 'stale',
+      approval_hash: null,
+      published_at: null
+    });
     value.db.close();
   });
 

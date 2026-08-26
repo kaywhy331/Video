@@ -1,6 +1,7 @@
 import type { ProjectState } from '@shared/types';
 import { assertProjectTransition } from '@shared/state-machine';
 import type { AppDatabase } from '../database/database';
+import { invalidatePublicationSnapshots } from './active-final-service';
 
 interface TransitionOptions {
   progress?: number;
@@ -16,8 +17,8 @@ export class ProjectStateService {
 
   transition(projectId: string, to: ProjectState, options: TransitionOptions): ProjectState {
     return this.db.raw.transaction(() => {
-      const row = this.db.raw.prepare('SELECT state, progress, resume_state FROM projects WHERE id = ?').get(projectId) as
-        | { state: ProjectState; progress: number; resume_state: ProjectState | null }
+      const row = this.db.raw.prepare('SELECT state, progress, resume_state, final_render_id FROM projects WHERE id = ?').get(projectId) as
+        | { state: ProjectState; progress: number; resume_state: ProjectState | null; final_render_id: string | null }
         | undefined;
       if (!row) throw new Error('Project not found.');
       assertProjectTransition(row.state, to);
@@ -27,6 +28,15 @@ export class ProjectStateService {
       const resumeState = enteringWait
         ? (['PAUSED', 'BLOCKED_EXCEPTION'].includes(row.state) ? row.resume_state : row.state)
         : leavingWait ? null : row.resume_state;
+      if (options.finalRenderId && options.finalRenderId !== row.final_render_id) {
+        invalidatePublicationSnapshots(
+          this.db,
+          projectId,
+          'A newly completed final render replaced the publication snapshot. The prior upload must remain private.',
+          'active_final_changed',
+          now
+        );
+      }
       this.db.raw.prepare(`
         UPDATE projects SET state = ?, progress = ?, final_render_id = COALESCE(?, final_render_id),
           youtube_video_id = COALESCE(?, youtube_video_id), published_at = COALESCE(?, published_at),

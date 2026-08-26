@@ -14,6 +14,7 @@ import type { FootageVerificationService } from './footage-verification-service'
 import type { PlaceService } from './place-service';
 import type { ProjectService } from './project-service';
 import type { RepairService } from './repair-service';
+import { invalidatePublicationSnapshots } from './active-final-service';
 
 const EDITABLE_STATES = new Set<ProjectState>([
   'STORYBOARD_PROVISIONAL',
@@ -702,10 +703,13 @@ export class StoryboardService {
     this.db.raw.prepare(`
       UPDATE packaging_candidates SET risk_status = 'blocked' WHERE project_id = ?
     `).run(projectId);
-    this.db.raw.prepare(`
-      UPDATE publication_records SET approval_hash = NULL, approved_at = NULL, updated_at = ?
-      WHERE project_id = ?
-    `).run(now, projectId);
+    invalidatePublicationSnapshots(
+      this.db,
+      projectId,
+      'The storyboard changed after rendering. The prior private publication snapshot is stale.',
+      'storyboard_mutation',
+      now
+    );
   }
 
   private transitionForRecovery(

@@ -142,6 +142,21 @@ describe('confirmed YouTube channel binding', () => {
     rejected.db.close();
 
     const confirmed = fixture();
+    const publicationNow = new Date().toISOString();
+    confirmed.db.raw.prepare(`
+      INSERT INTO projects(
+        id, sequence, slug, title, topic, state, progress, envato_project_name,
+        target_duration_ms, created_at, updated_at
+      ) VALUES('publication-project', 1, 'publication-project', 'Publication', 'Topic',
+        'WAITING_FINAL_APPROVAL', 0.95, 'YT-PUBLICATION', 60000, ?, ?)
+    `).run(publicationNow, publicationNow);
+    confirmed.db.raw.prepare(`
+      INSERT INTO publication_records(
+        id, project_id, channel_id, video_id, privacy_status, final_sha256,
+        snapshot_version, snapshot_status, created_at, updated_at
+      ) VALUES('old-channel-publication', 'publication-project', 'UC-old', 'old-channel-video',
+        'private', 'old-channel-sha', 1, 'current', ?, ?)
+    `).run(publicationNow, publicationNow);
     await expect(confirmed.service.confirmAuthorization({
       pendingAuthorizationId: 'pending-authorization',
       expectedChannelId: 'UC-new',
@@ -168,6 +183,14 @@ describe('confirmed YouTube channel binding', () => {
       replacedChannelId: 'UC-old'
     });
     expect(audit.metadata_json).not.toMatch(/refresh|access|client-secret/i);
+    expect(confirmed.db.raw.prepare(`
+      SELECT privacy_status, snapshot_status FROM publication_records
+      WHERE id = 'old-channel-publication'
+    `).get()).toEqual({ privacy_status: 'private', snapshot_status: 'stale' });
+    expect(confirmed.db.raw.prepare(`
+      SELECT count(*) AS count FROM exceptions
+      WHERE project_id = 'publication-project' AND code = 'STALE_PUBLICATION_SNAPSHOT'
+    `).get()).toEqual({ count: 1 });
     confirmed.db.close();
   });
 

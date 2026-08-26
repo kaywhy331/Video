@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { AppDatabase } from '@main/database/database';
 import { FinalReviewService, REVISION_ROUTES, finalReviewGates } from '@main/services/final-review-service';
+import { ActiveFinalService } from '@main/services/active-final-service';
 import { ProjectStateService } from '@main/services/project-state-service';
 import type { FinalReviewRevisionCategory, ProjectDetail, ProjectState } from '@shared/types';
 
@@ -25,6 +27,12 @@ function revisionFixture(state: ProjectState = 'WAITING_FINAL_APPROVAL') {
     ) VALUES('project-1', 1, 'project-1', 'Project', 'Topic', ?, 0.95,
       'YT-REVISION-0001', 300000, 'script-1', 'old-final', 'video-1', ?, ?)
   `).run(state, now, now);
+  db.raw.prepare(`
+    INSERT INTO renders(
+      id, project_id, kind, profile, state, output_path, sha256, created_at, completed_at
+    ) VALUES('old-final', 'project-1', 'final', 'final_1080p', 'SUCCEEDED',
+      ?, 'final-sha', ?, ?)
+  `).run(join(root, 'old-final.mp4'), now, now);
   db.raw.prepare(`
     INSERT INTO script_versions(
       id, project_id, version_number, title, topic, script_json,
@@ -63,10 +71,10 @@ function revisionFixture(state: ProjectState = 'WAITING_FINAL_APPROVAL') {
   }
   db.raw.prepare(`
     INSERT INTO publication_records(
-      id, project_id, video_id, privacy_status, final_sha256, approval_hash,
-      approved_at, created_at, updated_at
-    ) VALUES('publication-1', 'project-1', 'video-1', 'private', 'final-sha',
-      'approval-sha', ?, ?, ?)
+      id, project_id, video_id, privacy_status, final_render_id, final_sha256,
+      snapshot_version, snapshot_status, approval_hash, approved_at, created_at, updated_at
+    ) VALUES('publication-1', 'project-1', 'video-1', 'private', 'old-final', 'final-sha',
+      1, 'current', 'approval-sha', ?, ?, ?)
   `).run(now, now, now);
   const states = new ProjectStateService(db);
   const projects = {
@@ -126,6 +134,23 @@ describe('final review release gates', () => {
     roots.push(root);
     const db = new AppDatabase(join(root, 'db.sqlite'));
     const now = new Date().toISOString();
+    const outputPath = join(root, 'stale.mp4');
+    const thumbnailPath = join(root, 'thumbnail.jpg');
+    writeFileSync(outputPath, 'active final bytes');
+    writeFileSync(thumbnailPath, 'thumbnail bytes');
+    const finalSha = createHash('sha256').update('active final bytes').digest('hex');
+    db.raw.prepare(`
+      INSERT INTO projects(
+        id, sequence, slug, title, topic, state, progress, envato_project_name,
+        target_duration_ms, created_at, updated_at
+      ) VALUES('project-1', 1, 'project-1', 'Project', 'Topic', 'QC_FINAL', 0.9,
+        'YT-PROJECT-1', 60000, ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO renders(
+        id, project_id, kind, profile, state, output_path, sha256, created_at, completed_at
+      ) VALUES('stale-final', 'project-1', 'final', 'final_1080p', 'SUCCEEDED', ?, ?, ?, ?)
+    `).run(outputPath, finalSha, now, now);
     const project = {
       id: 'project-1',
       state: 'QC_FINAL',
@@ -133,18 +158,19 @@ describe('final review release gates', () => {
       youtubeVideoId: null,
       renders: [{
         id: 'stale-final', projectId: 'project-1', kind: 'final', profile: 'final_1080p',
-        state: 'SUCCEEDED', manifestPath: null, outputPath: '/tmp/stale.mp4', sha256: 'stale-sha',
+        state: 'SUCCEEDED', manifestPath: null, outputPath, sha256: finalSha,
         durationMs: 1_000, width: 1_920, height: 1_080, error: null, createdAt: now,
         completedAt: now, artifactVersion: 1, scope: null, baseRenderId: null
       }],
       qc: [],
       packaging: [{
         id: 'package-1', projectId: 'project-1', ordinal: 1, title: 'Title', angle: 'Angle',
-        viewerPromise: 'Promise', thumbnailPath: null, thumbnailFrameMs: null,
+        viewerPromise: 'Promise', thumbnailPath, thumbnailFrameMs: null,
         description: 'Description', chapters: '00:00 Opening', tags: ['tag'], riskStatus: 'pass', selected: true
       }]
     } as unknown as ProjectDetail;
-    const service = new FinalReviewService(db, { get: () => project } as never);
+    const activeFinal = new ActiveFinalService(db, () => root);
+    const service = new FinalReviewService(db, { get: () => project } as never, () => root, activeFinal);
 
     expect(service.get('project-1')).toMatchObject({
       localPreviewUrl: null,
@@ -152,6 +178,7 @@ describe('final review release gates', () => {
       canUpload: false
     });
     project.finalRenderId = 'stale-final';
+    db.raw.prepare(`UPDATE projects SET final_render_id = 'stale-final' WHERE id = 'project-1'`).run();
     expect(service.get('project-1')).toMatchObject({
       localPreviewUrl: 'videofactory://render/stale-final',
       localCaptionsUrl: null,
@@ -162,7 +189,8 @@ describe('final review release gates', () => {
     writeFileSync(captionsPath, 'WEBVTT\n\n');
     writeFileSync(manifestPath, JSON.stringify({ captions: { vttPath: captionsPath } }));
     project.renders[0]!.manifestPath = manifestPath;
-    const captionService = new FinalReviewService(db, { get: () => project } as never, () => root);
+    db.raw.prepare(`UPDATE renders SET manifest_path = ? WHERE id = 'stale-final'`).run(manifestPath);
+    const captionService = new FinalReviewService(db, { get: () => project } as never, () => root, activeFinal);
     expect(captionService.get('project-1').localCaptionsUrl).toBe('videofactory://caption/stale-final');
     db.close();
   });

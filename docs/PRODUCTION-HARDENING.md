@@ -11,7 +11,7 @@ Post-alpha.7 remediation now routes Tavily, language, vision, and HTTP TTS traff
 - Run a clean Windows 10/11 install and first-run diagnostic on a machine without Node, Python, or developer tools. Hosted CI now exercises ZIP launch and silent NSIS install/launch/uninstall, but its preinstalled developer tooling means it is supporting evidence rather than this qualification.
 - Run the five-video representative pilot with real licensed footage and preserve receipts for location grounding, rights, render QC, and human approval.
 - Rehearse live Envato account handoff, license naming, download watcher mapping, ambiguity handling, and certificate attachment.
-- Rehearse live YouTube OAuth, resumable interruption/restart, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish.
+- Rehearse live YouTube OAuth, resumable interruption/restart, active-final/package changes during upload and processing, stale-private cleanup, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish/private-reset races.
 - Rehearse live Tavily Search/Extract plus LLM claim extraction, including real URLs, freshness, disagreement, malformed output, auth failure, and quota exhaustion.
 - Rehearse representative Windows SAPI and configured HTTP TTS runs for place pronunciation, native/provider timing, auth, quota, malformed timing, and changed-section cache reuse.
 - Perform ingest, render, upload, and restore interruption drills on representative data.

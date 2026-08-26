@@ -230,7 +230,7 @@ function PublishingPanel({ project }: Pick<ProjectTabPanelProps, 'project'>): JS
     </section>
     <section><h3>Publication receipts ({project.publicationRecords.length})</h3>
       {project.publicationRecords.length ? <div className="workspace-list">{project.publicationRecords.map(item => (
-        <article key={item.id} className="workspace-row"><div><strong>{item.videoId ?? 'Upload pending'}</strong><span>{item.privacyStatus} · captions {item.captionId ? 'attached' : 'pending'} · thumbnail {item.thumbnailUploaded ? 'attached' : 'pending'}</span><p>{item.error ?? `Updated ${dateTime(item.updatedAt)}`}</p></div><StatusPill value={item.processingStatus ?? item.privacyStatus} /></article>
+        <article key={item.id} className="workspace-row"><div><strong>{item.videoId ?? 'Upload pending'}</strong><span>{item.privacyStatus} · final {item.finalRenderId ?? 'legacy/unbound'} · SHA-256 {item.finalSha256.slice(0, 12)}… · captions {item.captionId ? 'attached' : 'pending'} · thumbnail {item.thumbnailUploaded ? 'attached' : 'pending'}</span><p>{item.error ?? `Updated ${dateTime(item.updatedAt)}`}</p></div><StatusPill value={item.staleRemote ? 'stale private upload' : item.snapshotStatus === 'current' ? item.processingStatus ?? item.privacyStatus : item.snapshotStatus} /></article>
       ))}</div> : <EmptyTab>No upload or publication receipt exists.</EmptyTab>}
     </section>
     <section><h3>Analytics snapshots ({project.analyticsSnapshots.length})</h3>
