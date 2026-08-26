@@ -67,11 +67,13 @@ function settings(root: string): AppSettings {
 }
 
 describe('operational profiles and release discovery', () => {
-  it('exports a secret-free portable profile and imports validated settings without replacing active storage', async () => {
+  it('[SEC-012] exports a secret-free portable profile and imports validated settings without replacing active storage', async () => {
     const root = mkdtempSync(join(tmpdir(), 'videofactory-profile-'));
     roots.push(root);
     const db = new AppDatabase(join(root, 'db.sqlite'));
     let current = settings(root);
+    current.ffmpegPath = join(root, 'device-only', 'ffmpeg');
+    current.ffprobePath = join(root, 'device-only', 'ffprobe');
     const service = new SettingsProfileService(db, () => current, async patch => {
       current = { ...current, ...patch };
       return current;
@@ -81,23 +83,51 @@ describe('operational profiles and release discovery', () => {
     const payload = readFileSync(path, 'utf8');
     expect(payload).not.toContain('databasePath');
     expect(payload).not.toContain('dataRoot');
+    expect(payload).not.toContain('ffmpegPath');
+    expect(payload).not.toContain('ffprobePath');
     expect(payload).not.toContain('apiKey');
     expect(exported.warnings[0]).toContain('Credentials');
+    expect(exported.excludedKeys).toEqual(['dataRoot', 'databasePath', 'ffmpegPath', 'ffprobePath']);
 
-    const decoded = JSON.parse(payload) as { settings: Record<string, unknown> };
+    const decoded = JSON.parse(payload) as { schemaVersion: number; settings: Record<string, unknown>; mediaToolTrust?: unknown };
+    decoded.schemaVersion = 1;
     decoded.settings.defaultOutput = 'qualified_4k';
     decoded.settings.maxActiveProjects = 3;
     decoded.settings.llmBaseUrl = 'https://replacement-provider.example/v1';
     decoded.settings.llmEndpointTrust = 'custom_remote';
     decoded.settings.databasePath = '/unsafe/replacement.sqlite';
+    decoded.settings.ffmpegPath = '/untrusted/imported/ffmpeg';
+    decoded.settings.ffprobeSha256 = 'a'.repeat(64);
+    decoded.settings.binaryHashes = { ffmpeg: 'b'.repeat(64) };
+    decoded.settings.toolTrustTimestamp = '2026-08-25T00:00:00.000Z';
+    decoded.settings.developerAllowPathFallback = true;
+    decoded.mediaToolTrust = { ffmpeg: 'forged' };
     writeFileSync(path, JSON.stringify(decoded), 'utf8');
     const imported = await service.import(path);
     expect(imported.appliedKeys).toContain('defaultOutput');
     expect(imported.warnings).toContain('databasePath was ignored because active storage migration requires a controlled operation.');
+    expect(imported.excludedKeys).toEqual([
+      'binaryHashes',
+      'databasePath',
+      'developerAllowPathFallback',
+      'ffmpegPath',
+      'ffprobeSha256',
+      'mediaToolTrust',
+      'toolTrustTimestamp'
+    ]);
+    expect(imported.warnings).toContain('ffmpegPath was ignored because executable identity and trust are device-local.');
     expect(imported.warnings).toContain('Language provider endpoint changes were applied as an untrusted proposal; confirm the saved canonical origin locally before use.');
     expect(current.defaultOutput).toBe('qualified_4k');
     expect(current.databasePath).toBe(join(root, 'db.sqlite'));
-    expect(db.raw.prepare('SELECT count(*) AS count FROM settings_profile_operations').get()).toEqual({ count: 2 });
+    expect(current.ffmpegPath).toBe(join(root, 'device-only', 'ffmpeg'));
+    decoded.schemaVersion = 2;
+    decoded.settings.maxActiveProjects = 4;
+    writeFileSync(path, JSON.stringify(decoded), 'utf8');
+    await expect(service.import(path)).resolves.toMatchObject({
+      appliedKeys: expect.arrayContaining(['maxActiveProjects'])
+    });
+    expect(current.maxActiveProjects).toBe(4);
+    expect(db.raw.prepare('SELECT count(*) AS count FROM settings_profile_operations').get()).toEqual({ count: 3 });
     db.close();
   });
 

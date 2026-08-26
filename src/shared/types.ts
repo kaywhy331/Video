@@ -248,6 +248,64 @@ export interface AppSettings {
   blockedCountries: string[];
 }
 
+export type SettingsPatch = Omit<Partial<AppSettings>, 'ffmpegPath' | 'ffprobePath'>;
+
+export type MediaToolRole = 'ffmpeg' | 'ffprobe';
+export type MediaToolSource = 'bundled' | 'custom' | 'path_fallback' | 'unavailable';
+export type MediaToolTrustStatus =
+  | 'bundled'
+  | 'trusted'
+  | 'confirmation_required'
+  | 'changed'
+  | 'missing'
+  | 'role_mismatch'
+  | 'probe_failed'
+  | 'development_fallback'
+  | 'unavailable';
+
+export interface MediaToolSignature {
+  status: 'valid' | 'unsigned' | 'invalid' | 'unknown' | 'unavailable';
+  subject: string | null;
+}
+
+export interface MediaToolInspection {
+  role: MediaToolRole;
+  requestedPath: string;
+  canonicalPath: string;
+  sha256: string;
+  sizeBytes: number;
+  executableByCurrentUser: boolean;
+  detectedRole: MediaToolRole | 'unknown';
+  roleMatches: boolean;
+  signature: MediaToolSignature;
+  inspectedAt: string;
+}
+
+export interface MediaToolTrustRequest {
+  role: MediaToolRole;
+  path: string;
+  expectedSha256: string;
+  acknowledgePermissions: true;
+}
+
+export interface MediaToolState {
+  role: MediaToolRole;
+  source: MediaToolSource;
+  status: MediaToolTrustStatus;
+  configuredPath: string;
+  canonicalPath: string | null;
+  sha256: string | null;
+  hashPrefix: string | null;
+  sizeBytes: number | null;
+  executableByCurrentUser: boolean | null;
+  signature: MediaToolSignature;
+  trustedAt: string | null;
+  trustedAppVersion: string | null;
+  version: string | null;
+  executablePath: string | null;
+  message: string;
+}
+
 export interface SecretStatus {
   llmApiKeyConfigured: boolean;
   visionApiKeyConfigured: boolean;
@@ -706,6 +764,7 @@ export interface SettingsProfileReport {
   sha256: string;
   appliedKeys: string[];
   warnings: string[];
+  excludedKeys: string[];
   settings: AppSettings;
 }
 

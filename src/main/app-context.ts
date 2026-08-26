@@ -10,7 +10,9 @@ import type {
   ProviderEndpointId,
   QueueSummary,
   ProgressEvent,
-  SecretStatus
+  SecretStatus,
+  SettingsPatch,
+  MediaToolRole
 } from '@shared/types';
 import { buildDefaultSettings, ensureSettingsPaths } from './app-paths';
 import { AppDatabase } from './database/database';
@@ -56,11 +58,15 @@ import { WorkflowService } from './services/workflow-service';
 import { StoryboardService } from './services/storyboard-service';
 import { OperationGate, type ActiveOperation } from './services/operation-gate';
 import { classifyOperationsHealth } from '@shared/operations-health';
+import { MediaToolService } from './services/media-tool-service';
+import { installMediaToolResolver } from './tool-paths';
+import { installProcessLaunchGuard } from './services/process-utils';
 
 export class AppContext {
   readonly db: AppDatabase;
   readonly logger: Logger;
   readonly secrets: SecretStore;
+  readonly mediaTools: MediaToolService;
   readonly places: PlaceService;
   readonly vision: VisionService;
   readonly footageVerification: FootageVerificationService;
@@ -122,6 +128,16 @@ export class AppContext {
 
     this.logger = new Logger(join(this.settingsValue.dataRoot, 'logs', 'videofactory.jsonl'));
     this.secrets = new SecretStore(join(app.getPath('userData'), 'secrets.vf'));
+    this.mediaTools = new MediaToolService(
+      this.db,
+      () => this.settingsValue,
+      (role, path) => this.setMediaToolOverride(role, path),
+      app.getVersion(),
+      app.isPackaged
+    );
+    this.mediaTools.quarantineLegacyOverrides();
+    installMediaToolResolver(this.mediaTools);
+    installProcessLaunchGuard(executable => this.mediaTools.guardLaunch(executable));
     this.providerEndpoints = new ProviderEndpointPolicy(
       this.db,
       this.secrets,
@@ -334,7 +350,10 @@ export class AppContext {
     return { ...this.settingsValue };
   }
 
-  async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+  async updateSettings(patch: SettingsPatch): Promise<AppSettings> {
+    if ('ffmpegPath' in patch || 'ffprobePath' in patch) {
+      throw new Error('Media executable overrides require the dedicated inspect-and-trust flow.');
+    }
     const next = { ...this.settingsValue, ...patch };
     if (next.databasePath !== this.settingsValue.databasePath) {
       throw new Error('Changing the active database path requires a controlled migration and is not supported in this alpha.');
@@ -359,6 +378,14 @@ export class AppContext {
     this.refreshDiagnosticsInBackground();
     this.emitState();
     return this.settings();
+  }
+
+  private setMediaToolOverride(role: MediaToolRole, path: string): void {
+    const key = role === 'ffmpeg' ? 'ffmpegPath' : 'ffprobePath';
+    this.settingsValue = { ...this.settingsValue, [key]: path };
+    this.db.saveAppSettings(this.settingsValue);
+    this.refreshDiagnosticsInBackground();
+    this.emitState();
   }
 
   updateSecrets(patch: Partial<Secrets>): SecretStatus {
@@ -549,6 +576,8 @@ export class AppContext {
       this.youtube.shutdown()
     ]);
     await this.operationGate.waitForIdle();
+    installProcessLaunchGuard(null);
+    installMediaToolResolver(null);
     const stopFailures = serviceStops.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
     if (stopFailures.length) {
       throw new AggregateError(stopFailures, 'One or more application services could not stop safely.');

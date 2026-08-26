@@ -44,11 +44,11 @@ describe('release preflight', () => {
 
   it('rejects a package that omits the latest source migration', () => {
     const root = fixtureRoot();
-    rmSync(resolve(root, 'resources', '021_state_safe_job_retry.sql'));
+    rmSync(resolve(root, 'resources', '022_media_tool_trust.sql'));
     const result = runPreflight(root);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Source and packaged SQLite migration inventories differ');
-    expect(result.stderr).toContain('packaged latest: 020_provider_endpoint_trust.sql');
+    expect(result.stderr).toContain('packaged latest: 021_state_safe_job_retry.sql');
   });
 
   it('rejects matching inventories with a missing intermediate migration', () => {

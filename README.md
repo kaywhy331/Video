@@ -74,7 +74,7 @@ Prerequisites:
 - npm 10+
 - Windows 10/11 for Windows SAPI narration and target-platform testing
 
-FFmpeg and FFprobe are included through static packages. Paths can be overridden in Settings.
+FFmpeg and FFprobe are included through static packages and are preferred by packaged builds. A custom binary can be selected only through Settings' device-local inspect-and-trust flow, which binds its canonical path, role, and SHA-256 to a bounded version probe; portable profiles cannot carry that path or trust.
 
 ```powershell
 npm ci
@@ -124,7 +124,7 @@ The sample catalog is `samples/demo-catalog.csv`. Generate matching synthetic cl
 
 Default data is stored under `Documents\VideoFactory` in separate data, ingest, media, projects, output, and backup folders. Originals are stored once by SHA-256 and never overwritten.
 
-The renderer has no Node.js access. IPC inputs are schema-validated, navigation is deny-by-default, only allowlisted Envato/YouTube HTTPS URLs may open, credentials use Electron `safeStorage`, logs redact common secret and OAuth callback forms, and uploads begin private. Provider credentials are injected only by the main process after endpoint trust, DNS/address, redirect, and credential-origin checks; endpoint changes cannot inherit an old credential silently. OAuth state, PKCE verifier, authorization code, and candidate tokens stay in the main process; tokens become active only after exact-channel confirmation. Dependency audit, lockfile, SBOM, and response requirements are recorded in [Dependency Security](docs/DEPENDENCY-SECURITY.md).
+The renderer has no Node.js access. IPC inputs are schema-validated, navigation is deny-by-default, only allowlisted Envato/YouTube HTTPS URLs may open, credentials use Electron `safeStorage`, logs redact common secret and OAuth callback forms, and uploads begin private. Provider credentials are injected only by the main process after endpoint trust, DNS/address, redirect, and credential-origin checks; endpoint changes cannot inherit an old credential silently. OAuth state, PKCE verifier, authorization code, and candidate tokens stay in the main process; tokens become active only after exact-channel confirmation. Media-tool subprocesses receive an allowlisted environment, and custom FFmpeg/FFprobe executions are rechecked against device-local canonical-path and SHA-256 trust immediately before launch. Dependency audit, lockfile, SBOM, and response requirements are recorded in [Dependency Security](docs/DEPENDENCY-SECURITY.md).
 
 ## Output policy
 

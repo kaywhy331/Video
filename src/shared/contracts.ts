@@ -58,8 +58,6 @@ export const SettingsPatchSchema = z.object({
   musicDuckingDb: z.number().min(-30).max(-6).optional(),
   automaticDerivativeCleanup: z.boolean().optional(),
   derivativeCleanupTargetGb: z.number().min(1).max(1_000).optional(),
-  ffmpegPath: z.string().max(32_767).optional(),
-  ffprobePath: z.string().max(32_767).optional(),
   monthlyBudgetUsd: z.number().min(0).max(100_000).optional(),
   projectBudgetUsd: z.number().min(0).max(100_000).optional(),
   minFreeDiskGb: z.number().min(1).max(100_000).optional(),
@@ -132,6 +130,22 @@ export const CreateAutopilotProjectSchema = z.object({
 }).strict();
 
 export const IdSchema = z.string().min(1).max(200);
+
+export const MediaToolRoleSchema = z.enum(['ffmpeg', 'ffprobe']);
+
+export const MediaToolInspectSchema = z.object({
+  role: MediaToolRoleSchema,
+  path: FilePathSchema
+}).strict();
+
+export const MediaToolTrustSchema = z.object({
+  role: MediaToolRoleSchema,
+  path: FilePathSchema,
+  expectedSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  acknowledgePermissions: z.literal(true)
+}).strict();
+
+export const MediaToolClearSchema = z.object({ role: MediaToolRoleSchema }).strict();
 
 export const JobStateSchema = z.enum([
   'QUEUED',
