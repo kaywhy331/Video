@@ -83,6 +83,14 @@ Closing the main window leaves eligible jobs running in the tray. Explicit quit 
 
 During final render/upload, app prevents suspension as configured and releases the blocker afterward.
 
+### SYS-007 - Device-local media tool trust
+
+Custom FFmpeg and FFprobe binaries cannot run until a local inspection records canonical path, role, SHA-256, size, signature status, explicit permissions acknowledgement, and a successful bounded version probe.
+
+### SYS-008 - Changed media tool fail-closed behavior
+
+A missing, replaced, role-mismatched, or untrusted custom media tool never executes; packaged builds safely retain bundled-tool precedence and development PATH fallback remains visibly labeled.
+
 ---
 
 ## 4. Catalog import and metadata tests
@@ -682,6 +690,10 @@ Remote provider calls require a confirmed HTTPS origin, public DNS answers, addr
 ### SEC-011 - Provider credential-to-origin binding
 
 A stored provider credential is unusable after an endpoint-origin change or profile import until the canonical origin is explicitly confirmed and the credential is rebound.
+
+### SEC-012 - Portable profile executable isolation
+
+Portable settings profiles cannot export or import executable paths, binary identity, trust receipts, or developer fallback flags; safe version-1 settings still import with explicit exclusion warnings.
 
 ---
 

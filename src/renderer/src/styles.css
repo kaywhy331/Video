@@ -1065,6 +1065,17 @@ details pre { overflow: auto; max-height: 240px; padding: 12px; border-radius: 8
 .path-field button { border: 1px solid var(--border); border-left: 0; border-radius: 0 9px 9px 0; background: #171d26; color: #8995a5; }
 .checkbox-field { grid-column: 1 / -1; flex-direction: row !important; align-items: center; padding: 9px; border: 1px solid var(--border); border-radius: 9px; }
 .checkbox-field input { width: auto; }
+.media-tool-list { display: flex; flex-direction: column; gap: 9px; }
+.media-tool-card { display: flex; flex-direction: column; gap: 10px; padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.015); }
+.media-tool-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.media-tool-heading strong, .media-tool-heading span { display: block; }
+.media-tool-heading strong { font-size: 10px; }
+.media-tool-heading span { margin-top: 3px; color: var(--subtle); font-size: 8px; line-height: 1.45; }
+.media-tool-identity { display: grid; gap: 4px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,.16); }
+.media-tool-identity span { min-width: 0; overflow-wrap: anywhere; color: #8d9bab; font: 7px/1.45 "Cascadia Code", monospace; }
+.media-tool-identity b { display: inline-block; min-width: 104px; margin-right: 7px; color: #cbd5df; font-family: Inter, sans-serif; }
+.media-tool-inspection { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid rgba(255,204,103,.25); border-radius: 9px; background: rgba(255,204,103,.025); }
+.media-tool-inspection small { color: #ffd792; font-size: 7.5px; }
 .diagnostic-list { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
 .diagnostic-list > div { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; background: rgba(255,255,255,.018); }
 .diagnostic-list > div > div { min-width: 0; }

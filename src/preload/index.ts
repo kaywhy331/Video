@@ -53,7 +53,12 @@ import type {
   SemanticVerificationRetryResult,
   SecretStatus,
   SchedulerStatus,
+  SettingsPatch,
   SettingsProfileReport,
+  MediaToolInspection,
+  MediaToolRole,
+  MediaToolState,
+  MediaToolTrustRequest,
   StoryboardMutationResult,
   StoryboardRecoveryScene,
   StorageCleanupReport,
@@ -93,7 +98,7 @@ const api = {
   },
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.settingsGet),
-    update: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.settingsUpdate, patch),
+    update: (patch: SettingsPatch): Promise<AppSettings> => ipcRenderer.invoke(IPC.settingsUpdate, patch),
     updateSecrets: (patch: Record<string, string | undefined>): Promise<SecretStatus> =>
       ipcRenderer.invoke(IPC.secretsUpdate, patch),
     trustProviderEndpoint: (provider: ProviderEndpointId): Promise<ProviderEndpointState> =>
@@ -106,6 +111,15 @@ const api = {
       ipcRenderer.invoke(IPC.settingsProfileImport, path),
     choosePath: (request: { kind: 'directory' | 'file'; title?: string; filters?: Electron.FileFilter[] }): Promise<string | null> =>
       ipcRenderer.invoke(IPC.pathsChoose, request)
+  },
+  mediaTools: {
+    list: (): Promise<MediaToolState[]> => ipcRenderer.invoke(IPC.mediaToolsList),
+    inspect: (role: MediaToolRole, path: string): Promise<MediaToolInspection> =>
+      ipcRenderer.invoke(IPC.mediaToolInspect, { role, path }),
+    trust: (request: MediaToolTrustRequest): Promise<MediaToolState> =>
+      ipcRenderer.invoke(IPC.mediaToolTrust, request),
+    clear: (role: MediaToolRole): Promise<MediaToolState> =>
+      ipcRenderer.invoke(IPC.mediaToolClear, { role })
   },
   updates: {
     check: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(IPC.appCheckUpdate)

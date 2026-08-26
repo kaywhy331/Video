@@ -31,6 +31,12 @@
       "file": "tests/diagnostics-service.integration.test.ts",
       "title": "exercises a usable H.264 fallback, performs an encode/probe round trip, and saves the report"
     },
+    {
+      "ids": ["SYS-007", "SYS-008"],
+      "runner": "vitest",
+      "file": "tests/media-tool-service.test.ts",
+      "title": "[SYS-007][SYS-008] inspects without execution, probes after confirmation, and blocks a changed executable"
+    },
 
     {
       "ids": ["CAT-002"],
@@ -776,6 +782,12 @@
       "runner": "vitest",
       "file": "tests/provider-endpoint-policy.test.ts",
       "title": "[SEC-011] blocks unconfirmed and origin-mismatched credentials, then binds an explicit replacement"
+    },
+    {
+      "ids": ["SEC-012"],
+      "runner": "vitest",
+      "file": "tests/operations-service.test.ts",
+      "title": "[SEC-012] exports a secret-free portable profile and imports validated settings without replacing active storage"
     },
 
     {

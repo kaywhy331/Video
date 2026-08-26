@@ -9,13 +9,31 @@ import {
 import { dirname } from 'node:path';
 import type { AppDatabase } from '../database/database';
 import { SettingsPatchSchema } from '@shared/contracts';
-import type { AppSettings, SettingsProfileReport, UpdateCheckResult } from '@shared/types';
+import type { AppSettings, SettingsPatch, SettingsProfileReport, UpdateCheckResult } from '@shared/types';
 
 interface ReleaseRecord {
   tag_name?: unknown;
   html_url?: unknown;
   draft?: unknown;
   prerelease?: unknown;
+}
+
+const PROFILE_EXCLUDED_SETTINGS = [
+  'databasePath',
+  'dataRoot',
+  'ffmpegPath',
+  'ffprobePath'
+] as const;
+
+function isDeviceLocalProfileKey(key: string): boolean {
+  if ((PROFILE_EXCLUDED_SETTINGS as readonly string[]).includes(key)) return true;
+  if (['llmEndpointTrust', 'visionEndpointTrust', 'researchEndpointTrust', 'narratorEndpointTrust'].includes(key)) {
+    return false;
+  }
+  return /developer|devMode|allowPath/i.test(key)
+    || (/(?:ffmpeg|ffprobe|media.?tool|binary|executable|tool)/i.test(key)
+      && /(?:path|hash|sha|trust|trusted|override|source|signature|version|timestamp)/i.test(key))
+    || /(?:trust|trusted).*(?:record|timestamp|binary|executable|tool)/i.test(key);
 }
 
 function sha256(value: string | Buffer): string {
@@ -70,17 +88,17 @@ export class SettingsProfileService {
   constructor(
     private readonly db: AppDatabase,
     private readonly settings: () => AppSettings,
-    private readonly update: (patch: Partial<AppSettings>) => Promise<AppSettings>,
+    private readonly update: (patch: SettingsPatch) => Promise<AppSettings>,
     private readonly appVersion: string
   ) {}
 
   export(path: string): SettingsProfileReport {
     const current = this.settings();
     const portable: Partial<AppSettings> = { ...current };
-    delete portable.databasePath;
-    delete portable.dataRoot;
+    const excludedKeys = Object.keys(portable).filter(isDeviceLocalProfileKey).sort();
+    for (const key of excludedKeys) delete (portable as Record<string, unknown>)[key];
     const payload = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       product: 'VideoFactory Desktop',
       appVersion: this.appVersion,
       exportedAt: new Date().toISOString(),
@@ -95,17 +113,17 @@ export class SettingsProfileService {
     const digest = sha256(encoded);
     const appliedKeys = Object.keys(portable).sort();
     const warnings = [
-      'Credentials, OAuth tokens, provider endpoint confirmations, the active database path, and the data-root path are intentionally excluded.'
+      'Credentials, OAuth tokens, device-local executable paths and trust, provider endpoint confirmations, the active database path, and the data-root path are intentionally excluded.'
     ];
     this.record('export', path, digest, appliedKeys, warnings);
-    return { operation: 'export', path, sha256: digest, appliedKeys, warnings, settings: current };
+    return { operation: 'export', path, sha256: digest, appliedKeys, warnings, excludedKeys, settings: current };
   }
 
   async import(path: string): Promise<SettingsProfileReport> {
     if (statSync(path).size > 2 * 1024 * 1024) throw new Error('Settings profile exceeds the 2 MB safety limit.');
     const encoded = readFileSync(path, 'utf8');
     const decoded = JSON.parse(encoded) as Record<string, unknown>;
-    if (decoded.schemaVersion !== 1 || decoded.product !== 'VideoFactory Desktop') {
+    if (![1, 2].includes(Number(decoded.schemaVersion)) || decoded.product !== 'VideoFactory Desktop') {
       throw new Error('This is not a supported VideoFactory settings profile.');
     }
     if (!decoded.settings || typeof decoded.settings !== 'object' || Array.isArray(decoded.settings)) {
@@ -113,15 +131,25 @@ export class SettingsProfileService {
     }
     const candidate = { ...(decoded.settings as Record<string, unknown>) };
     const warnings: string[] = [];
-    for (const protectedKey of ['databasePath', 'dataRoot']) {
-      if (protectedKey in candidate) {
-        delete candidate[protectedKey];
+    const excludedKeys: string[] = [];
+    for (const protectedKey of Object.keys(candidate).filter(isDeviceLocalProfileKey)) {
+      delete candidate[protectedKey];
+      excludedKeys.push(protectedKey);
+      if (protectedKey === 'databasePath' || protectedKey === 'dataRoot') {
         warnings.push(`${protectedKey} was ignored because active storage migration requires a controlled operation.`);
+      } else {
+        warnings.push(`${protectedKey} was ignored because executable identity and trust are device-local.`);
       }
     }
-    const patch = SettingsPatchSchema.parse(candidate) as Partial<AppSettings>;
+    for (const rootKey of Object.keys(decoded).filter(key => ![
+      'schemaVersion', 'product', 'appVersion', 'exportedAt', 'secretsIncluded', 'settings'
+    ].includes(key) && isDeviceLocalProfileKey(key))) {
+      excludedKeys.push(rootKey);
+      warnings.push(`${rootKey} was ignored because trust metadata cannot be imported from a profile.`);
+    }
+    const patch = SettingsPatchSchema.parse(candidate) as SettingsPatch;
     const current = this.settings();
-    const endpointGroups: Array<{ label: string; keys: Array<keyof AppSettings> }> = [
+    const endpointGroups: Array<{ label: string; keys: Array<keyof SettingsPatch> }> = [
       { label: 'Language provider', keys: ['llmBaseUrl', 'llmEndpointTrust'] },
       { label: 'Vision provider', keys: ['visionBaseUrl', 'visionEndpointTrust'] },
       { label: 'Research provider', keys: ['researchBaseUrl', 'researchEndpointTrust'] },
@@ -136,7 +164,15 @@ export class SettingsProfileService {
     const digest = sha256(encoded);
     const appliedKeys = Object.keys(patch).sort();
     this.record('import', path, digest, appliedKeys, warnings);
-    return { operation: 'import', path, sha256: digest, appliedKeys, warnings, settings: next };
+    return {
+      operation: 'import',
+      path,
+      sha256: digest,
+      appliedKeys,
+      warnings,
+      excludedKeys: [...new Set(excludedKeys)].sort(),
+      settings: next
+    };
   }
 
   private record(

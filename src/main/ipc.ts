@@ -43,6 +43,9 @@ import {
   LearningRecommendationSchema,
   MusicImportSchema,
   MusicSelectSchema,
+  MediaToolClearSchema,
+  MediaToolInspectSchema,
+  MediaToolTrustSchema,
   KeywordMetricObservationSchema,
   GoogleSheetsSyncSchema,
   ChannelProfileSchema,
@@ -67,7 +70,7 @@ import {
   YouTubeAuthorizationCancellationSchema,
   YouTubeAuthorizationConfirmationSchema
 } from '@shared/contracts';
-import type { AppSettings } from '@shared/types';
+import type { SettingsPatch } from '@shared/types';
 import { assertAllowedExternalUrl, assertAuthorizedIpcSender, pathIsInside } from './security-policy';
 import { is } from '@electron-toolkit/utils';
 import { canTransitionProject } from '@shared/state-machine';
@@ -152,8 +155,25 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   });
   handle(IPC.settingsGet, () => context.settings());
   handle(IPC.settingsUpdate, async (_event, payload) => {
-    const patch = SettingsPatchSchema.parse(payload) as Partial<AppSettings>;
+    const patch = SettingsPatchSchema.parse(payload) as SettingsPatch;
     return context.updateSettings(patch);
+  });
+  handle(IPC.mediaToolsList, () => context.mediaTools.list());
+  handle(IPC.mediaToolInspect, async (_event, payload) => {
+    const request = MediaToolInspectSchema.parse(payload);
+    return context.mediaTools.inspect(request.role, request.path);
+  });
+  handle(IPC.mediaToolTrust, async (_event, payload) => {
+    const request = MediaToolTrustSchema.parse(payload);
+    const state = await context.mediaTools.trust(request);
+    context.emitState();
+    return state;
+  });
+  handle(IPC.mediaToolClear, (_event, payload) => {
+    const request = MediaToolClearSchema.parse(payload);
+    const state = context.mediaTools.clear(request.role);
+    context.emitState();
+    return state;
   });
   handle(IPC.providerEndpointTrust, async (_event, payload) => {
     const request = ProviderEndpointActionSchema.parse(payload);

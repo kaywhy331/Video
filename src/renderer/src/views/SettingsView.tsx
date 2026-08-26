@@ -22,6 +22,9 @@ import type {
   AppBootstrap,
   AppSettings,
   DiagnosticsReport,
+  MediaToolInspection,
+  MediaToolRole,
+  MediaToolState,
   ProviderEndpointId,
   ProviderEndpointState,
   ProviderEndpointTrustMode,
@@ -40,6 +43,9 @@ export function SettingsView({
 }) {
   const [form, setForm] = useState<AppSettings>(bootstrap.settings);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(bootstrap.diagnostics);
+  const [mediaTools, setMediaTools] = useState<MediaToolState[]>([]);
+  const [toolInspections, setToolInspections] = useState<Partial<Record<MediaToolRole, MediaToolInspection>>>({});
+  const [toolAcknowledgements, setToolAcknowledgements] = useState<Partial<Record<MediaToolRole, boolean>>>({});
   const [youtube, setYoutube] = useState<YouTubeConnectionStatus | null>(null);
   type SecretDraft = {
     llmApiKey: string;
@@ -81,6 +87,14 @@ export function SettingsView({
   useEffect(() => setDiagnostics(bootstrap.diagnostics), [bootstrap.diagnostics]);
 
   useEffect(() => {
+    let active = true;
+    void window.videoFactory.mediaTools.list()
+      .then(states => { if (active) setMediaTools(states); })
+      .catch(error => { if (active) setError(error instanceof Error ? error.message : String(error)); });
+    return () => { active = false; };
+  }, [bootstrap.settings.ffmpegPath, bootstrap.settings.ffprobePath, setError]);
+
+  useEffect(() => {
     void window.videoFactory.youtube.status().then(setYoutube).catch(() => undefined);
   }, []);
 
@@ -101,7 +115,7 @@ export function SettingsView({
 
   async function choose(field: keyof AppSettings): Promise<void> {
     const path = await window.videoFactory.settings.choosePath({
-      kind: ['ffmpegPath', 'ffprobePath', 'catalogImportFile'].includes(field) ? 'file' : 'directory',
+      kind: field === 'catalogImportFile' ? 'file' : 'directory',
       title: `Choose ${field}`
     });
     if (path) setForm(current => ({ ...current, [field]: path }));
@@ -125,12 +139,56 @@ export function SettingsView({
         (Object.entries(secrets) as Array<[keyof SecretDraft, string]>)
           .filter(([, value]) => value.trim().length > 0)
       ) as Record<string, string | undefined>;
-      const next = await window.videoFactory.settings.update(form);
+      const { ffmpegPath: _ffmpegPath, ffprobePath: _ffprobePath, ...portableForm } = form;
+      const next = await window.videoFactory.settings.update(portableForm);
       if (Object.keys(secretPatch).length) {
         await window.videoFactory.settings.updateSecrets(secretPatch);
         setSecrets({ llmApiKey: '', visionApiKey: '', researchApiKey: '', httpTtsApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
       }
       setForm(next);
+      await onRefresh();
+    });
+  }
+
+  async function chooseMediaTool(role: MediaToolRole): Promise<void> {
+    const path = await window.videoFactory.settings.choosePath({
+      kind: 'file',
+      title: `Inspect a ${role} executable`
+    });
+    if (!path) return;
+    await run(`tool-inspect-${role}`, async () => {
+      const inspection = await window.videoFactory.mediaTools.inspect(role, path);
+      setToolInspections(current => ({ ...current, [role]: inspection }));
+      setToolAcknowledgements(current => ({ ...current, [role]: false }));
+    });
+  }
+
+  async function trustMediaTool(role: MediaToolRole): Promise<void> {
+    const inspection = toolInspections[role];
+    if (!inspection || !toolAcknowledgements[role]) return;
+    await run(`tool-trust-${role}`, async () => {
+      await window.videoFactory.mediaTools.trust({
+        role,
+        path: inspection.requestedPath,
+        expectedSha256: inspection.sha256,
+        acknowledgePermissions: true
+      });
+      setToolInspections(current => ({ ...current, [role]: undefined }));
+      setToolAcknowledgements(current => ({ ...current, [role]: false }));
+      setMediaTools(await window.videoFactory.mediaTools.list());
+      setForm(await window.videoFactory.settings.get());
+      await onRefresh();
+    });
+  }
+
+  async function clearMediaTool(role: MediaToolRole): Promise<void> {
+    if (!window.confirm(`Clear the device-local ${role} override and trust record?`)) return;
+    await run(`tool-clear-${role}`, async () => {
+      await window.videoFactory.mediaTools.clear(role);
+      setToolInspections(current => ({ ...current, [role]: undefined }));
+      setToolAcknowledgements(current => ({ ...current, [role]: false }));
+      setMediaTools(await window.videoFactory.mediaTools.list());
+      setForm(await window.videoFactory.settings.get());
       await onRefresh();
     });
   }
@@ -365,8 +423,80 @@ export function SettingsView({
             <PathField label="Project records" field="projectFolder" value={form.projectFolder} choose={choose} />
             <PathField label="Rendered output" field="outputFolder" value={form.outputFolder} choose={choose} />
             <PathField label="Backups" field="backupFolder" value={form.backupFolder} choose={choose} />
-            <PathField label="FFmpeg override" field="ffmpegPath" value={form.ffmpegPath} choose={choose} />
-            <PathField label="FFprobe override" field="ffprobePath" value={form.ffprobePath} choose={choose} />
+          </div>
+        </Panel>
+
+        <Panel title="Media tool trust" subtitle="Bundled tools are preferred in production; custom executables require device-local inspection and confirmation">
+          <div className="media-tool-list">
+            {(['ffmpeg', 'ffprobe'] as const).map(role => {
+              const state = mediaTools.find(item => item.role === role);
+              const inspection = toolInspections[role];
+              return (
+                <div className="media-tool-card" key={role}>
+                  <div className="media-tool-heading">
+                    <div>
+                      <strong>{role.toUpperCase()}</strong>
+                      <span>{state?.message ?? 'Loading executable identity…'}</span>
+                    </div>
+                    <div className="button-row">
+                      {state ? <StatusPill value={state.status.replaceAll('_', ' ')} /> : null}
+                      {state ? <StatusPill value={state.source.replaceAll('_', ' ')} /> : null}
+                    </div>
+                  </div>
+                  {state ? (
+                    <div className="media-tool-identity">
+                      <span><b>Active executable</b>{state.executablePath ?? 'None'}</span>
+                      <span><b>Configured override</b>{state.configuredPath || 'None'}</span>
+                      <span><b>Canonical override</b>{state.canonicalPath ?? 'None'}</span>
+                      <span><b>SHA-256</b>{state.sha256 ?? 'Unavailable'}</span>
+                      <span><b>Signature</b>{state.signature.status}{state.signature.subject ? ` · ${state.signature.subject}` : ''}</span>
+                      <span><b>Version probe</b>{state.version ?? 'No custom-tool probe receipt'}</span>
+                    </div>
+                  ) : null}
+                  {inspection ? (
+                    <div className="media-tool-inspection">
+                      <div className="section-label"><ShieldCheck size={14} /> Pending local confirmation</div>
+                      <div className="media-tool-identity">
+                        <span><b>Requested path</b>{inspection.requestedPath}</span>
+                        <span><b>Canonical path</b>{inspection.canonicalPath}</span>
+                        <span><b>Detected role</b>{inspection.detectedRole} · {inspection.roleMatches ? 'matches request' : 'does not match request'}</span>
+                        <span><b>Size</b>{inspection.sizeBytes.toLocaleString()} bytes</span>
+                        <span><b>SHA-256</b>{inspection.sha256}</span>
+                        <span><b>Platform signature</b>{inspection.signature.status}{inspection.signature.subject ? ` · ${inspection.signature.subject}` : ''}</span>
+                      </div>
+                      <label className="checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(toolAcknowledgements[role])}
+                          onChange={event => setToolAcknowledgements(current => ({ ...current, [role]: event.target.checked }))}
+                        />
+                        <span>I reviewed this canonical path and SHA-256 and understand that this executable can read and write files with my account permissions.</span>
+                      </label>
+                      {!inspection.executableByCurrentUser ? <small>This file is not executable by the current user and cannot be trusted.</small> : null}
+                    </div>
+                  ) : null}
+                  <div className="button-row">
+                    <Button variant="secondary" busy={busy === `tool-inspect-${role}`} onClick={() => void chooseMediaTool(role)}>
+                      <Folder size={15} /> Inspect custom {role}
+                    </Button>
+                    {inspection ? (
+                      <Button
+                        busy={busy === `tool-trust-${role}`}
+                        disabled={!inspection.roleMatches || !inspection.executableByCurrentUser || !toolAcknowledgements[role] || inspection.signature.status === 'invalid'}
+                        onClick={() => void trustMediaTool(role)}
+                      >
+                        <ShieldCheck size={15} /> Trust and probe
+                      </Button>
+                    ) : null}
+                    {state?.configuredPath ? (
+                      <Button variant="ghost" busy={busy === `tool-clear-${role}`} onClick={() => void clearMediaTool(role)}>
+                        Clear override
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Panel>
 

@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v4",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v5",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -13,6 +13,14 @@
     {
       "ids": ["SYS-002"],
       "evidence": ["tests/diagnostics-service.integration.test.ts"]
+    },
+    {
+      "ids": ["SYS-007", "SYS-008"],
+      "evidence": [
+        "tests/contracts.test.ts",
+        "tests/media-tool-service.test.ts",
+        "tests/process-utils.test.ts"
+      ]
     },
     {
       "ids": [
@@ -186,11 +194,13 @@
       ]
     },
     {
-      "ids": ["SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-005", "SEC-006", "SEC-007", "SEC-008", "SEC-009", "SEC-010", "SEC-011"],
+      "ids": ["SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-005", "SEC-006", "SEC-007", "SEC-008", "SEC-009", "SEC-010", "SEC-011", "SEC-012"],
       "evidence": [
         "tests/contracts.test.ts",
         "tests/e2e/electron-accessibility.spec.ts",
         "tests/media-protocol.test.ts",
+        "tests/media-tool-service.test.ts",
+        "tests/operations-service.test.ts",
         "tests/project-artifact-service.integration.test.ts",
         "tests/provider-endpoint-policy.test.ts",
         "tests/security-policy.test.ts",
