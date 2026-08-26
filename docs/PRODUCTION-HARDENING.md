@@ -6,6 +6,8 @@ Alpha.7 carries forward the alpha.6 durability, security, rendering, backup, pub
 
 Post-alpha.7 remediation now routes Tavily, language, vision, and HTTP TTS traffic through one main-process endpoint policy. Managed origins are fixed; custom remote origins require explicit confirmation and credential rebinding; local mode is loopback-only and credential-free. DNS answers and redirects are revalidated, connections are pinned to admitted addresses, and requests have tested abort, timeout, redirect, and response-size bounds. These local controls do not replace the live-provider rehearsals below.
 
+Schema upgrades now fail closed as one pending-migration transaction after an integrity-checked pre-upgrade copy beside the database. Schema-18 upgrades are structurally compared with fresh schema-24 installs, injected migration failure proves rollback to a usable prior database, incompatible newer schemas raise a stable actionable error, and staged restore tests preserve the current OAuth/provider/retry/tool/publication/audit safety bindings. Schema 24 therefore requires a build advertising schema capability 24; using an older build requires restoring the automatically created `*.pre-migration-v18-to-v24-*.sqlite` copy first. This local evidence does not replace the representative production-data restore drill below.
+
 ## P0 before production qualification
 
 - Run a clean Windows 10/11 install and first-run diagnostic on a machine without Node, Python, or developer tools. Hosted CI now exercises ZIP launch and silent NSIS install/launch/uninstall, but its preinstalled developer tooling means it is supporting evidence rather than this qualification.

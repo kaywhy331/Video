@@ -344,7 +344,10 @@ function initializeDatabase(databasePath: string): void {
   mkdirSync(join(dataRoot, 'data'), { recursive: true });
   const db = new DatabaseSync(databasePath);
   const migrationRoot = join(process.cwd(), 'src', 'main', 'database');
-  for (const name of readdirSync(migrationRoot).filter(item => /^\d{3}_.+\.sql$/.test(item)).sort()) {
+  const migrations = readdirSync(migrationRoot).filter(item => /^\d{3}_.+\.sql$/.test(item)).sort();
+  const schemaCapability = Math.max(...migrations.map(name => Number(name.slice(0, 3))));
+  db.function('videofactory_schema_capability', { deterministic: true }, () => schemaCapability);
+  for (const name of migrations) {
     db.exec(readFileSync(join(migrationRoot, name), 'utf8'));
     db.prepare('INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)').run(
       Number(name.slice(0, 3)),

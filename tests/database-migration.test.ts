@@ -1,17 +1,54 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AppDatabase, SqliteConnection } from '@main/database/database';
+import { createHash } from 'node:crypto';
+import {
+  APPLICATION_SCHEMA_VERSION,
+  AppDatabase,
+  DatabaseCompatibilityError,
+  SqliteConnection
+} from '@main/database/database';
 
 const roots: string[] = [];
+
+function createDatabaseThrough(path: string, maximumVersion: number): SqliteConnection {
+  const database = new SqliteConnection(path);
+  const migrations = readdirSync(join(process.cwd(), 'src', 'main', 'database'))
+    .filter(name => /^\d{3}_.+\.sql$/.test(name) && Number(name.slice(0, 3)) <= maximumVersion)
+    .sort();
+  for (const name of migrations) {
+    database.exec(readFileSync(join(process.cwd(), 'src', 'main', 'database', name), 'utf8'));
+    database.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)`).run(
+      Number(name.slice(0, 3)), name.replace(/^\d{3}_|\.sql$/g, '')
+    );
+  }
+  return database;
+}
+
+function applicationSchema(database: AppDatabase) {
+  return database.raw.prepare(`
+    SELECT type, name, tbl_name, sql
+    FROM sqlite_schema
+    WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+    ORDER BY type, name
+  `).all();
+}
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe('application database migrations', () => {
-  it('applies and records every forward migration through the real wrapper', () => {
+  it('[SYS-009] applies and records every forward migration through the real wrapper', () => {
     const root = mkdtempSync(join(tmpdir(), 'videofactory-migrations-'));
     roots.push(root);
     const database = new AppDatabase(join(root, 'videofactory.sqlite'));
@@ -41,7 +78,8 @@ describe('application database migrations', () => {
       { version: 20, name: 'provider_endpoint_trust' },
       { version: 21, name: 'state_safe_job_retry' },
       { version: 22, name: 'media_tool_trust' },
-      { version: 23, name: 'active_final_publication' }
+      { version: 23, name: 'active_final_publication' },
+      { version: 24, name: 'database_compatibility_guard' }
     ]);
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('projects') WHERE name = 'resume_state'
@@ -192,25 +230,16 @@ describe('application database migrations', () => {
 
     const reopened = new AppDatabase(join(root, 'videofactory.sqlite'));
     expect(reopened.raw.prepare('SELECT count(*) AS count FROM schema_migrations').get())
-      .toEqual({ count: 23 });
+      .toEqual({ count: APPLICATION_SCHEMA_VERSION });
     expect(reopened.integrityCheck()).toBe('ok');
     reopened.close();
   });
 
-  it('upgrades an existing schema-18 database without changing its application records', () => {
+  it('[SYS-009] upgrades schema 18 with a backup and an identical current schema', () => {
     const root = mkdtempSync(join(tmpdir(), 'videofactory-migrations-upgrade-'));
     roots.push(root);
     const path = join(root, 'videofactory.sqlite');
-    const legacy = new SqliteConnection(path);
-    const migrations = readdirSync(join(process.cwd(), 'src', 'main', 'database'))
-      .filter(name => /^\d{3}_.+\.sql$/.test(name) && Number(name.slice(0, 3)) <= 18)
-      .sort();
-    for (const name of migrations) {
-      legacy.exec(readFileSync(join(process.cwd(), 'src', 'main', 'database', name), 'utf8'));
-      legacy.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)`).run(
-        Number(name.slice(0, 3)), name.replace(/^\d{3}_|\.sql$/g, '')
-      );
-    }
+    const legacy = createDatabaseThrough(path, 18);
     const now = new Date().toISOString();
     legacy.prepare(`
       INSERT INTO projects(
@@ -260,10 +289,19 @@ describe('application database migrations', () => {
     legacy.close();
 
     const upgraded = new AppDatabase(path);
+    expect(upgraded.migrationBackupPath).toMatch(/pre-migration-v18-to-v24/);
+    const migrationBackupPath = upgraded.migrationBackupPath;
+    if (!migrationBackupPath) throw new Error('Expected a pre-migration backup path.');
+    expect(existsSync(migrationBackupPath)).toBe(true);
+    expect(AppDatabase.schemaVersion(migrationBackupPath)).toBe(18);
+    const backup = new SqliteConnection(migrationBackupPath);
+    expect(backup.prepare(`SELECT title FROM projects WHERE id = 'legacy-project'`).get())
+      .toEqual({ title: 'Legacy' });
+    backup.close();
     expect(upgraded.raw.prepare(`SELECT title FROM projects WHERE id = 'legacy-project'`).get())
       .toEqual({ title: 'Legacy' });
     expect(upgraded.raw.prepare(`SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1`).get())
-      .toEqual({ version: 23, name: 'active_final_publication' });
+      .toEqual({ version: APPLICATION_SCHEMA_VERSION, name: 'database_compatibility_guard' });
     expect(upgraded.raw.prepare(`SELECT count(*) AS count FROM youtube_connection_binding`).get())
       .toEqual({ count: 0 });
     expect(upgraded.raw.prepare(`SELECT count(*) AS count FROM provider_endpoint_bindings`).get())
@@ -304,6 +342,119 @@ describe('application database migrations', () => {
       error: 'Legacy publication could not be bound to one final render; private re-upload and review are required.'
     });
     expect(upgraded.integrityCheck()).toBe('ok');
+    const fresh = new AppDatabase(join(root, 'fresh.sqlite'));
+    expect(applicationSchema(upgraded)).toEqual(applicationSchema(fresh));
+    fresh.close();
     upgraded.close();
+  });
+
+  it('[SYS-009] rolls back the entire pending batch after an injected migration failure', () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-migration-rollback-'));
+    roots.push(root);
+    const path = join(root, 'videofactory.sqlite');
+    const legacy = createDatabaseThrough(path, 18);
+    const now = new Date().toISOString();
+    legacy.prepare(`
+      INSERT INTO projects(
+        id, sequence, slug, title, topic, state, progress, envato_project_name,
+        target_duration_ms, created_at, updated_at
+      ) VALUES('rollback-project', 1, 'rollback-project', 'Rollback', 'Rollback',
+        'CREATED', 0, 'YT-ROLLBACK', 60000, ?, ?)
+    `).run(now, now);
+    legacy.close();
+
+    const migrationDirectory = join(root, 'failing-migrations');
+    mkdirSync(migrationDirectory, { recursive: true });
+    writeFileSync(join(migrationDirectory, '019_batch_first.sql'), `
+      CREATE TABLE batch_first_marker(value TEXT NOT NULL);
+      INSERT INTO batch_first_marker(value) VALUES('must-roll-back');
+    `);
+    writeFileSync(join(migrationDirectory, '020_batch_failure.sql'), `
+      CREATE TABLE batch_failure_marker(value TEXT NOT NULL);
+      INSERT INTO missing_failure_target(value) VALUES('injected-failure');
+    `);
+
+    expect(() => new AppDatabase(path, {
+      migrationDirectories: [migrationDirectory]
+    })).toThrow(/missing_failure_target/i);
+
+    const reopened = new SqliteConnection(path);
+    expect(reopened.prepare('SELECT MAX(version) AS version FROM schema_migrations').get())
+      .toEqual({ version: 18 });
+    expect(reopened.prepare(`
+      SELECT name FROM sqlite_schema
+      WHERE type = 'table' AND name IN ('batch_first_marker', 'batch_failure_marker')
+    `).all()).toEqual([]);
+    expect(reopened.prepare(`SELECT title FROM projects WHERE id = 'rollback-project'`).get())
+      .toEqual({ title: 'Rollback' });
+    expect(String(reopened.pragma('integrity_check', { simple: true }))).toBe('ok');
+    reopened.close();
+
+    const backups = readdirSync(root).filter(name => name.includes('pre-migration-v18-to-v20'));
+    expect(backups).toHaveLength(1);
+    expect(AppDatabase.schemaVersion(join(root, backups[0]!))).toBe(18);
+  });
+
+  it('[SYS-009] blocks incompatible and pre-guard binaries before application data mutation', () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-migration-compatibility-'));
+    roots.push(root);
+    const path = join(root, 'videofactory.sqlite');
+    const current = new AppDatabase(path);
+    const now = new Date().toISOString();
+    current.raw.prepare(`
+      INSERT INTO projects(
+        id, sequence, slug, title, topic, state, progress, envato_project_name,
+        target_duration_ms, created_at, updated_at
+      ) VALUES('compatibility-project', 1, 'compatibility-project', 'Protected', 'Protected',
+        'CREATED', 0, 'YT-PROTECTED', 60000, ?, ?)
+    `).run(now, now);
+    current.checkpoint();
+    current.close();
+
+    const before = createHash('sha256').update(readFileSync(path)).digest('hex');
+    let error: unknown;
+    try {
+      new AppDatabase(path, { schemaCapability: 23 });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(DatabaseCompatibilityError);
+    expect(error).toMatchObject({
+      code: 'DATABASE_SCHEMA_NEWER_THAN_APP',
+      databaseSchemaVersion: 24,
+      supportedSchemaVersion: 23
+    });
+    expect(String(error)).toContain('restore a pre-upgrade backup');
+    expect(createHash('sha256').update(readFileSync(path)).digest('hex')).toBe(before);
+
+    const verified = new AppDatabase(path);
+    expect(verified.raw.prepare(`SELECT title FROM projects WHERE id = 'compatibility-project'`).get())
+      .toEqual({ title: 'Protected' });
+    verified.close();
+
+    const guardPath = join(root, 'guard-only.sqlite');
+    const guardInstaller = new SqliteConnection(guardPath);
+    guardInstaller.exec(`
+      CREATE TABLE schema_migrations(
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+    `);
+    guardInstaller.exec(readFileSync(
+      join(process.cwd(), 'src', 'main', 'database', '024_database_compatibility_guard.sql'),
+      'utf8'
+    ));
+    guardInstaller.prepare(`
+      INSERT INTO schema_migrations(version, name) VALUES(24, 'database_compatibility_guard')
+    `).run();
+    guardInstaller.close();
+
+    const preGuard = new SqliteConnection(guardPath, { schemaCapability: null });
+    expect(() => preGuard.prepare(`
+      INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(1, 'initial')
+    `).run()).toThrow(/no such function: videofactory_schema_capability/i);
+    expect(preGuard.prepare(`SELECT MAX(version) AS version FROM schema_migrations`).get())
+      .toEqual({ version: APPLICATION_SCHEMA_VERSION });
+    preGuard.close();
   });
 });

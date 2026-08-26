@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Product | VideoFactory Desktop |
-| Document status | Remediation in progress; RG-VAL, RG-CLAIMS, and RG-OAUTH merged |
+| Document status | Remediation integration in progress; RG-VAL through RG-FINAL merged |
 | Baseline reviewed | `fb291abd401ec1e06bbc6494cc60d145d28ac024` |
 | Current implementation baseline | `ab0fda9aac447c7bd9b2d0cf1918dfc9af76722d` |
 | Audit date | 2026-08-25 |
@@ -168,11 +168,11 @@ Required tests:
 - [x] Release manifest generation and verification reject dirty, stale, or development evidence.
 - [x] Generated root receipts and result files are no longer tracked as current source evidence.
 - [x] A tracked historical evidence index points to the alpha.7 release without implying it validates later commits.
-- [ ] Exact-SHA CI artifact transfer still passes on Linux-to-Windows packaging.
+- [x] Exact-SHA CI artifact transfer still passes on Linux-to-Windows packaging.
 - [x] `REL-001` through `REL-003` have exact automated bindings and negative fixtures.
 - [x] Documentation tells operators where to obtain current checkout, CI, and immutable release evidence.
 
-Local implementation and canonical development-qualified validation completed on 2026-08-25. The remaining checkbox requires a passing hosted CI run of the committed change; the workflow and regression assertions preserve the exact `${{ github.sha }}` artifact name, Windows download, and cross-platform raw-byte digest.
+Local implementation and canonical development-qualified validation completed on 2026-08-25. Exact-SHA Linux validation to Windows packaging then passed on the merged `main` commit in [Actions run 32942188653](https://github.com/kaywhy331/Video/actions/runs/32942188653); the workflow and regression assertions preserve the exact `${{ github.sha }}` artifact name, Windows download, and cross-platform raw-byte digest.
 
 ---
 
@@ -318,15 +318,15 @@ Required tests:
 
 ### 7.6 Completion criteria
 
-- [ ] TTS, LLM, vision, and research all consume URLs produced by one centralized endpoint policy.
-- [ ] Remote calls cannot target HTTP, URL-credential, loopback, private, link-local, or metadata endpoints.
-- [ ] Every redirect target is revalidated and cannot downgrade or change to an untrusted origin.
-- [ ] Changing or importing an endpoint cannot reuse a previously stored credential silently.
-- [ ] Explicit local-provider mode works on loopback without a reusable remote credential.
-- [ ] Provider requests have tested timeouts, aborts, redirect caps, and response-size limits.
-- [ ] UI and health diagnostics expose trust/binding state without exposing secrets.
-- [ ] `SEC-010`, `SEC-011`, and `JOB-010` have exact negative and positive bindings.
-- [ ] Managed and custom provider fixtures continue to pass without weakening the trust policy.
+- [x] TTS, LLM, vision, and research all consume URLs produced by one centralized endpoint policy.
+- [x] Remote calls cannot target HTTP, URL-credential, loopback, private, link-local, or metadata endpoints.
+- [x] Every redirect target is revalidated and cannot downgrade or change to an untrusted origin.
+- [x] Changing or importing an endpoint cannot reuse a previously stored credential silently.
+- [x] Explicit local-provider mode works on loopback without a reusable remote credential.
+- [x] Provider requests have tested timeouts, aborts, redirect caps, and response-size limits.
+- [x] UI and health diagnostics expose trust/binding state without exposing secrets.
+- [x] `SEC-010`, `SEC-011`, and `JOB-010` have exact negative and positive bindings.
+- [x] Managed and custom provider fixtures continue to pass without weakening the trust policy.
 
 ---
 
@@ -600,15 +600,15 @@ Required tests:
 
 ### 11.6 Completion criteria
 
-- [ ] Portable exports contain no executable path or trust metadata.
-- [ ] Imports ignore executable-related keys, apply other safe settings, and return explicit warnings.
-- [ ] Generic settings IPC cannot modify FFmpeg/FFprobe execution identity.
-- [ ] Custom binaries require local confirmation tied to canonical path and SHA-256.
-- [ ] A changed, missing, or untrusted custom binary never executes.
-- [ ] Custom media-tool processes receive a minimal environment without provider or OAuth secrets.
-- [ ] Packaged builds continue to use bundled tools by default.
-- [ ] Existing custom overrides are quarantined safely during upgrade.
-- [ ] `SEC-012`, `SYS-007`, and `SYS-008` have exact automated bindings.
+- [x] Portable exports contain no executable path or trust metadata.
+- [x] Imports ignore executable-related keys, apply other safe settings, and return explicit warnings.
+- [x] Generic settings IPC cannot modify FFmpeg/FFprobe execution identity.
+- [x] Custom binaries require local confirmation tied to canonical path and SHA-256.
+- [x] A changed, missing, or untrusted custom binary never executes.
+- [x] Custom media-tool processes receive a minimal environment without provider or OAuth secrets.
+- [x] Packaged builds continue to use bundled tools by default.
+- [x] Existing custom overrides are quarantined safely during upgrade.
+- [x] `SEC-012`, `SYS-007`, and `SYS-008` have exact automated bindings.
 
 ---
 
@@ -648,12 +648,12 @@ Names may follow current IPC conventions, but behavior and privilege separation 
 
 ### Integrated migration completion criteria
 
-- [ ] Fresh install and schema-18 upgrade produce identical current schemas.
-- [ ] Source and packaged migration sets are byte-identical and contiguous.
-- [ ] Migration failure injection proves atomic rollback.
-- [ ] No legacy token, endpoint, publication, or binary trust is silently elevated.
-- [ ] Backup/restore preserves new binding and audit fields.
-- [ ] An older incompatible app version is blocked or warned before it can mutate upgraded state unsafely.
+- [x] Fresh install and schema-18 upgrade produce identical current schemas.
+- [x] Source and packaged migration sets are byte-identical and contiguous.
+- [x] Migration failure injection proves atomic rollback.
+- [x] No legacy token, endpoint, publication, or binary trust is silently elevated.
+- [x] Backup/restore preserves new binding and audit fields.
+- [x] An older incompatible app version is blocked or warned before it can mutate upgraded state unsafely.
 
 ---
 
