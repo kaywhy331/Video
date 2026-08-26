@@ -94,7 +94,9 @@ export class SettingsProfileService {
     renameSync(temporaryPath, path);
     const digest = sha256(encoded);
     const appliedKeys = Object.keys(portable).sort();
-    const warnings = ['Credentials, OAuth tokens, the active database path, and the data-root path are intentionally excluded.'];
+    const warnings = [
+      'Credentials, OAuth tokens, provider endpoint confirmations, the active database path, and the data-root path are intentionally excluded.'
+    ];
     this.record('export', path, digest, appliedKeys, warnings);
     return { operation: 'export', path, sha256: digest, appliedKeys, warnings, settings: current };
   }
@@ -118,6 +120,18 @@ export class SettingsProfileService {
       }
     }
     const patch = SettingsPatchSchema.parse(candidate) as Partial<AppSettings>;
+    const current = this.settings();
+    const endpointGroups: Array<{ label: string; keys: Array<keyof AppSettings> }> = [
+      { label: 'Language provider', keys: ['llmBaseUrl', 'llmEndpointTrust'] },
+      { label: 'Vision provider', keys: ['visionBaseUrl', 'visionEndpointTrust'] },
+      { label: 'Research provider', keys: ['researchBaseUrl', 'researchEndpointTrust'] },
+      { label: 'HTTP narration provider', keys: ['narratorBaseUrl', 'narratorEndpointTrust'] }
+    ];
+    for (const group of endpointGroups) {
+      if (group.keys.some(key => key in patch && patch[key] !== current[key])) {
+        warnings.push(`${group.label} endpoint changes were applied as an untrusted proposal; confirm the saved canonical origin locally before use.`);
+      }
+    }
     const next = await this.update(patch);
     const digest = sha256(encoded);
     const appliedKeys = Object.keys(patch).sort();

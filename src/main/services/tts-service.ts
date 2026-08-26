@@ -20,6 +20,7 @@ import {
 import { resolveFfmpeg, resolveFfprobe } from '../tool-paths';
 import { requireSuccess } from './process-utils';
 import type { ProviderPolicyService } from './provider-policy';
+import { ProviderEndpointPolicy } from './provider-endpoint-policy';
 
 export interface SynthesisResult {
   audioPath: string;
@@ -103,17 +104,22 @@ function parseWordTimings(
 }
 
 export class TtsService {
+  private readonly endpoints: ProviderEndpointPolicy;
+
   constructor(
     private readonly db: AppDatabase,
     private readonly secrets: SecretStore,
     private readonly settings: () => AppSettings,
-    private readonly policy?: ProviderPolicyService
-  ) {}
+    private readonly policy?: ProviderPolicyService,
+    endpoints?: ProviderEndpointPolicy
+  ) {
+    this.endpoints = endpoints ?? new ProviderEndpointPolicy(db, secrets, settings);
+  }
 
   configured(): boolean {
     const settings = this.settings();
     return settings.narratorProvider === 'windows_sapi'
-      || (settings.narratorProvider === 'http_tts' && Boolean(this.secrets.getAll().httpTtsApiKey));
+      || (settings.narratorProvider === 'http_tts' && this.endpoints.isReady('http_tts'));
   }
 
   async synthesize(options: {
@@ -315,23 +321,23 @@ export class TtsService {
     inputHash: string
   ): Promise<{ durationMs: number; wordTimings: NarrationWord[] | null; requestId: string | null }> {
     const settings = this.settings();
-    const secret = this.secrets.getAll().httpTtsApiKey;
     this.policy?.assertCanCall({
       projectId,
       provider: 'http_tts',
-      configured: Boolean(secret),
+      configured: this.endpoints.isReady('http_tts'),
       estimatedCostUsd: 0.05
     });
-    if (!secret) throw new Error('HTTP TTS is configured but its encrypted API key is missing; no request was sent.');
+    if (!this.endpoints.isReady('http_tts')) {
+      throw new Error('HTTP TTS endpoint or credential is not ready; no request was sent.');
+    }
     const started = Date.now();
     let requestId: string | null = null;
     let error: unknown;
     try {
-      const response = await fetch(settings.narratorBaseUrl, {
+      const response = await this.endpoints.request('http_tts', settings.narratorBaseUrl, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${secret}`,
           'idempotency-key': inputHash
         },
         body: JSON.stringify({
@@ -345,10 +351,13 @@ export class TtsService {
           requestTimings: true,
           idempotencyKey: inputHash
         })
+      }, {
+        timeoutMs: 90_000,
+        maxResponseBytes: 32 * 1024 * 1024
       });
       requestId = response.headers.get('x-request-id');
       if (!response.ok) {
-        const message = `HTTP TTS provider returned ${response.status}: ${await response.text()}`;
+        const message = `HTTP TTS provider returned HTTP ${response.status}.`;
         this.policy?.classifyHttpFailure('http_tts', response.status, message);
         throw new Error(message);
       }

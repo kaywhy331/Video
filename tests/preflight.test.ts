@@ -44,11 +44,11 @@ describe('release preflight', () => {
 
   it('rejects a package that omits the latest source migration', () => {
     const root = fixtureRoot();
-    rmSync(resolve(root, 'resources', '019_youtube_channel_binding.sql'));
+    rmSync(resolve(root, 'resources', '020_provider_endpoint_trust.sql'));
     const result = runPreflight(root);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Source and packaged SQLite migration inventories differ');
-    expect(result.stderr).toContain('packaged latest: 018_perceptual_matching.sql');
+    expect(result.stderr).toContain('packaged latest: 019_youtube_channel_binding.sql');
   });
 
   it('rejects matching inventories with a missing intermediate migration', () => {

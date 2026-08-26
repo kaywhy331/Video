@@ -6,6 +6,8 @@ export const IPC = {
   backupRestore: 'backup:restore',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  providerEndpointTrust: 'providers:endpoint:trust',
+  providerEndpointClearTrust: 'providers:endpoint:clear-trust',
   settingsProfileExport: 'settings:profile-export',
   settingsProfileImport: 'settings:profile-import',
   appCheckUpdate: 'app:check-update',

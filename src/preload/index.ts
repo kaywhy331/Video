@@ -39,6 +39,8 @@ import type {
   ProjectDetail,
   ProjectExportReport,
   ProjectSummary,
+  ProviderEndpointId,
+  ProviderEndpointState,
   RevisionRequestRecord,
   RenderRecord,
   RestoreReport,
@@ -89,6 +91,10 @@ const api = {
     update: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.settingsUpdate, patch),
     updateSecrets: (patch: Record<string, string | undefined>): Promise<SecretStatus> =>
       ipcRenderer.invoke(IPC.secretsUpdate, patch),
+    trustProviderEndpoint: (provider: ProviderEndpointId): Promise<ProviderEndpointState> =>
+      ipcRenderer.invoke(IPC.providerEndpointTrust, { provider }),
+    clearProviderEndpointTrust: (provider: ProviderEndpointId): Promise<ProviderEndpointState> =>
+      ipcRenderer.invoke(IPC.providerEndpointClearTrust, { provider }),
     exportProfile: (path?: string): Promise<SettingsProfileReport | null> =>
       ipcRenderer.invoke(IPC.settingsProfileExport, path),
     importProfile: (path?: string): Promise<SettingsProfileReport | null> =>

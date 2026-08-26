@@ -83,6 +83,36 @@ export type RepairAttemptStatus =
   | 'operator_required'
   | 'failed';
 
+export type ProviderEndpointId =
+  | 'openai_compatible'
+  | 'openai_compatible_vision'
+  | 'tavily'
+  | 'http_tts';
+
+export type ProviderEndpointTrustMode = 'managed' | 'custom_remote' | 'custom_local';
+
+export interface ProviderEndpointState {
+  provider: ProviderEndpointId;
+  displayName: string;
+  configuredUrl: string;
+  canonicalOrigin: string | null;
+  trustMode: ProviderEndpointTrustMode;
+  active: boolean;
+  status:
+    | 'confirmed'
+    | 'confirmation_required'
+    | 'invalid_endpoint'
+    | 'credential_required'
+    | 'credential_origin_mismatch'
+    | 'local_credential_forbidden';
+  ready: boolean;
+  credentialConfigured: boolean;
+  credentialBound: boolean;
+  message: string;
+  dataCategories: string[];
+  trustedAt: string | null;
+}
+
 export type VisualTreatment =
   | 'EXACT_LOCATION_FOOTAGE'
   | 'CONTEXTUAL_VERIFIED_FOOTAGE'
@@ -134,19 +164,23 @@ export interface AppSettings {
   matchingHeroStrategy: 'opening' | 'first_major_transition' | 'disabled';
   narratorProvider: 'windows_sapi' | 'http_tts';
   narratorBaseUrl: string;
+  narratorEndpointTrust: ProviderEndpointTrustMode;
   narratorModel: string;
   narratorVoice: string;
   narratorRate: number;
   pronunciationDictionary: Record<string, string>;
   llmProvider: 'mock' | 'openai_compatible';
   llmBaseUrl: string;
+  llmEndpointTrust: ProviderEndpointTrustMode;
   llmModel: string;
   visionProvider: 'disabled' | 'openai_compatible';
   visionBaseUrl: string;
+  visionEndpointTrust: ProviderEndpointTrustMode;
   visionModel: string;
   visionMinimumConfidence: number;
   researchProvider: 'disabled' | 'tavily';
   researchBaseUrl: string;
+  researchEndpointTrust: ProviderEndpointTrustMode;
   researchSearchDepth: 'basic' | 'advanced';
   researchMaxResultsPerQuery: number;
   youtubeCategoryId: string;
@@ -298,7 +332,9 @@ export interface OperationsHealth {
   };
   providers: Array<{
     provider: string;
-    status: 'healthy' | 'auth_invalid' | 'quota_exhausted' | 'unavailable';
+    status: 'healthy' | 'auth_invalid' | 'quota_exhausted' | 'unavailable'
+      | 'invalid_endpoint' | 'endpoint_untrusted' | 'credential_origin_mismatch'
+      | 'timeout' | 'provider_failure';
     message: string | null;
     checkedAt: string;
   }>;
@@ -313,6 +349,7 @@ export interface OperationsHealth {
 export interface AppBootstrap {
   settings: AppSettings;
   secrets: SecretStatus;
+  providerEndpoints: ProviderEndpointState[];
   diagnostics: DiagnosticsReport | null;
   queue: QueueSummary;
   catalog: CatalogStats;
@@ -338,6 +375,7 @@ export type AppStateSnapshot = Pick<AppBootstrap,
   | 'latestUpdateCheck'
   | 'scheduler'
   | 'operationsHealth'
+  | 'providerEndpoints'
   | 'learningRecommendations'
   | 'musicTracks'
   | 'latestStorageCleanup'

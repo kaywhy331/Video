@@ -79,6 +79,7 @@ export const SettingsPatchSchema = z.object({
   matchingHeroStrategy: z.enum(['opening', 'first_major_transition', 'disabled']).optional(),
   narratorProvider: z.enum(['windows_sapi', 'http_tts']).optional(),
   narratorBaseUrl: z.string().url().max(2_000).optional(),
+  narratorEndpointTrust: z.enum(['managed', 'custom_remote', 'custom_local']).optional(),
   narratorModel: z.string().trim().min(1).max(200).optional(),
   narratorVoice: z.string().max(200).optional(),
   narratorRate: z.number().min(-10).max(10).optional(),
@@ -88,13 +89,16 @@ export const SettingsPatchSchema = z.object({
   ).refine(value => Object.keys(value).length <= 500, 'Pronunciation dictionary is limited to 500 entries.').optional(),
   llmProvider: z.enum(['mock', 'openai_compatible']).optional(),
   llmBaseUrl: z.string().url().max(2_000).optional(),
+  llmEndpointTrust: z.enum(['managed', 'custom_remote', 'custom_local']).optional(),
   llmModel: z.string().trim().min(1).max(200).optional(),
   visionProvider: z.enum(['disabled', 'openai_compatible']).optional(),
   visionBaseUrl: z.string().url().max(2_000).optional(),
+  visionEndpointTrust: z.enum(['managed', 'custom_remote', 'custom_local']).optional(),
   visionModel: z.string().trim().min(1).max(200).optional(),
   visionMinimumConfidence: z.number().min(0.5).max(0.99).optional(),
   researchProvider: z.enum(['disabled', 'tavily']).optional(),
   researchBaseUrl: z.string().url().max(2_000).optional(),
+  researchEndpointTrust: z.enum(['managed', 'custom_remote', 'custom_local']).optional(),
   researchSearchDepth: z.enum(['basic', 'advanced']).optional(),
   researchMaxResultsPerQuery: z.number().int().min(1).max(5).optional(),
   youtubeCategoryId: z.string().regex(/^\d{1,4}$/).optional(),
@@ -286,6 +290,10 @@ export const SecretPatchSchema = z.object({
   youtubeClientId: z.string().optional(),
   youtubeClientSecret: z.string().optional(),
   youtubeApiKey: z.string().optional()
+}).strict();
+
+export const ProviderEndpointActionSchema = z.object({
+  provider: z.enum(['openai_compatible', 'openai_compatible_vision', 'tavily', 'http_tts'])
 }).strict();
 
 const VisionRequirementAssessmentSchema = z.object({

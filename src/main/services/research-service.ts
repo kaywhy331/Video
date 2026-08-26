@@ -12,6 +12,7 @@ import {
   type ResearchSearchResult
 } from '@shared/research';
 import { ProviderPolicyService } from './provider-policy';
+import { ProviderEndpointPolicy } from './provider-endpoint-policy';
 
 export interface ResearchSearchRequest {
   projectId: string;
@@ -44,22 +45,24 @@ function realHttpUrl(value: string): string {
 
 export class ResearchService {
   readonly policy: ProviderPolicyService;
+  readonly endpoints: ProviderEndpointPolicy;
 
   constructor(
     private readonly db: AppDatabase,
     private readonly secrets: SecretStore,
-    private readonly settings: () => AppSettings
+    private readonly settings: () => AppSettings,
+    endpoints?: ProviderEndpointPolicy
   ) {
     this.policy = new ProviderPolicyService(db, settings);
+    this.endpoints = endpoints ?? new ProviderEndpointPolicy(db, secrets, settings);
   }
 
   configured(): boolean {
-    return this.settings().researchProvider === 'tavily' && Boolean(this.secrets.getAll().researchApiKey);
+    return this.settings().researchProvider === 'tavily' && this.endpoints.isReady('tavily');
   }
 
   async search(request: ResearchSearchRequest): Promise<ResearchProviderResult<ResearchSearchResult[]>> {
     const settings = this.settings();
-    const apiKey = this.secrets.getAll().researchApiKey;
     const queries = [...new Set(request.queries.map(query => query.trim()).filter(Boolean))].slice(0, RESEARCH_QUERY_LIMIT);
     if (!queries.length) throw new Error('At least one bounded research query is required.');
     const maxResults = Math.min(
@@ -84,9 +87,9 @@ export class ResearchService {
     let requestId: string | null = null;
     try {
       for (const query of queries) {
-        const response = await fetch(`${settings.researchBaseUrl.replace(/\/$/, '')}/search`, {
+        const response = await this.endpoints.request('tavily', `${settings.researchBaseUrl.replace(/\/$/, '')}/search`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             query: `${query} language:${request.languageCode}`,
             search_depth: settings.researchSearchDepth,
@@ -96,10 +99,13 @@ export class ResearchService {
             ...(request.countryCode ? { country: request.countryCode } : {}),
             ...(request.freshnessDays ? { days: request.freshnessDays } : {})
           })
+        }, {
+          timeoutMs: 45_000,
+          maxResponseBytes: 8 * 1024 * 1024
         });
         requestId = response.headers.get('x-request-id') ?? requestId;
         if (!response.ok) {
-          const message = `Research provider returned ${response.status}: ${await response.text()}`;
+          const message = `Research provider returned HTTP ${response.status}.`;
           this.policy.classifyHttpFailure('tavily', response.status, message);
           throw new Error(message);
         }
@@ -130,7 +136,6 @@ export class ResearchService {
 
   async extract(projectId: string, urls: string[]): Promise<ResearchProviderResult<ResearchExtractResult[]>> {
     const settings = this.settings();
-    const apiKey = this.secrets.getAll().researchApiKey;
     const bounded = [...new Set(urls.map(realHttpUrl))].slice(0, RESEARCH_SOURCE_LIMIT);
     if (!bounded.length) throw new Error('At least one real research source URL is required.');
     const inputHash = hash({ urls: bounded, extractionMode: 'article' });
@@ -140,14 +145,17 @@ export class ResearchService {
     const started = Date.now();
     let requestId: string | null = null;
     try {
-      const response = await fetch(`${settings.researchBaseUrl.replace(/\/$/, '')}/extract`, {
+      const response = await this.endpoints.request('tavily', `${settings.researchBaseUrl.replace(/\/$/, '')}/extract`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ urls: bounded, extract_depth: 'basic', include_images: false, format: 'markdown' })
+      }, {
+        timeoutMs: 60_000,
+        maxResponseBytes: 8 * 1024 * 1024
       });
       requestId = response.headers.get('x-request-id');
       if (!response.ok) {
-        const message = `Research provider returned ${response.status}: ${await response.text()}`;
+        const message = `Research provider returned HTTP ${response.status}.`;
         this.policy.classifyHttpFailure('tavily', response.status, message);
         throw new Error(message);
       }

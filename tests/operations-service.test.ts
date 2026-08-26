@@ -56,10 +56,10 @@ function settings(root: string): AppSettings {
     matchingMaxConsecutiveShotMotion: 2,
     matchingPerceptualDistance: 6,
     matchingHeroStrategy: 'opening',
-    narratorProvider: 'windows_sapi', narratorBaseUrl: 'https://api.example.test', narratorModel: 'default', narratorVoice: '', narratorRate: 0,
-    pronunciationDictionary: {}, llmProvider: 'mock', llmBaseUrl: 'https://api.example.test', llmModel: 'local',
-    visionProvider: 'disabled', visionBaseUrl: 'https://api.example.test', visionModel: 'local', visionMinimumConfidence: 0.82,
-    researchProvider: 'disabled', researchBaseUrl: 'https://api.example.test', researchSearchDepth: 'basic', researchMaxResultsPerQuery: 5,
+    narratorProvider: 'windows_sapi', narratorBaseUrl: 'https://api.example.test', narratorEndpointTrust: 'custom_remote', narratorModel: 'default', narratorVoice: '', narratorRate: 0,
+    pronunciationDictionary: {}, llmProvider: 'mock', llmBaseUrl: 'https://api.example.test', llmEndpointTrust: 'custom_remote', llmModel: 'local',
+    visionProvider: 'disabled', visionBaseUrl: 'https://api.example.test', visionEndpointTrust: 'custom_remote', visionModel: 'local', visionMinimumConfidence: 0.82,
+    researchProvider: 'disabled', researchBaseUrl: 'https://api.example.test', researchEndpointTrust: 'custom_remote', researchSearchDepth: 'basic', researchMaxResultsPerQuery: 5,
     youtubeCategoryId: '19', youtubePlaylistId: '', youtubePrivacy: 'private', youtubeSyntheticMediaDisclosure: true,
     channelName: 'Fixture', channelShort: 'FIXTURE', autoStartWithWindows: false, autoUploadPrivate: false,
     preferredCountries: [], blockedCountries: []
@@ -87,11 +87,14 @@ describe('operational profiles and release discovery', () => {
     const decoded = JSON.parse(payload) as { settings: Record<string, unknown> };
     decoded.settings.defaultOutput = 'qualified_4k';
     decoded.settings.maxActiveProjects = 3;
+    decoded.settings.llmBaseUrl = 'https://replacement-provider.example/v1';
+    decoded.settings.llmEndpointTrust = 'custom_remote';
     decoded.settings.databasePath = '/unsafe/replacement.sqlite';
     writeFileSync(path, JSON.stringify(decoded), 'utf8');
     const imported = await service.import(path);
     expect(imported.appliedKeys).toContain('defaultOutput');
     expect(imported.warnings).toContain('databasePath was ignored because active storage migration requires a controlled operation.');
+    expect(imported.warnings).toContain('Language provider endpoint changes were applied as an untrusted proposal; confirm the saved canonical origin locally before use.');
     expect(current.defaultOutput).toBe('qualified_4k');
     expect(current.databasePath).toBe(join(root, 'db.sqlite'));
     expect(db.raw.prepare('SELECT count(*) AS count FROM settings_profile_operations').get()).toEqual({ count: 2 });

@@ -650,6 +650,18 @@
       "file": "tests/job-service.test.ts",
       "title": "leases one global final-render slot and defers another project without consuming an attempt"
     },
+    {
+      "ids": ["JOB-010"],
+      "runner": "vitest",
+      "file": "tests/provider-endpoint-policy.test.ts",
+      "title": "[JOB-010] revalidates redirects and enforces redirect, timeout, abort, and response-size bounds"
+    },
+    {
+      "ids": ["JOB-010"],
+      "runner": "vitest",
+      "file": "tests/provider-endpoint-policy.test.ts",
+      "title": "[JOB-010] pins the validated address in the real bounded transport and follows only a same-origin redirect"
+    },
 
     {
       "ids": ["SEC-001", "SEC-008"],
@@ -704,6 +716,24 @@
       "runner": "vitest",
       "file": "tests/security-policy.test.ts",
       "title": "[SEC-009] redacts OAuth callback queries, state, verifier, code, and token values"
+    },
+    {
+      "ids": ["SEC-010"],
+      "runner": "vitest",
+      "file": "tests/provider-endpoint-policy.test.ts",
+      "title": "[SEC-010] rejects ambiguous, private, metadata, and mixed-DNS remote destinations while allowing public addresses"
+    },
+    {
+      "ids": ["SEC-010"],
+      "runner": "vitest",
+      "file": "tests/provider-endpoint-policy.test.ts",
+      "title": "[SEC-010] permits explicit loopback mode only when no reusable credential is attached"
+    },
+    {
+      "ids": ["SEC-011"],
+      "runner": "vitest",
+      "file": "tests/provider-endpoint-policy.test.ts",
+      "title": "[SEC-011] blocks unconfirmed and origin-mismatched credentials, then binds an explicit replacement"
     },
 
     {

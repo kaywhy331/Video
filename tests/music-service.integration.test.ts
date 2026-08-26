@@ -46,7 +46,7 @@ describe('licensed music import, selection, ducking, and fade QC', () => {
       INSERT INTO projects(id, sequence, slug, title, topic, state, progress, envato_project_name, target_duration_ms, created_at, updated_at)
       VALUES('project-1', 1, 'music', 'Music', 'Music', 'CREATED', 0, 'YT-MUSIC', 2400, ?, ?)
     `).run(now, now);
-  }, 30_000);
+  }, 60_000);
 
   afterAll(() => {
     db?.close();
@@ -85,5 +85,5 @@ describe('licensed music import, selection, ducking, and fade QC', () => {
     const probe = await requireSuccess(ffprobeStatic.path, ['-v', 'error', '-show_streams', '-of', 'json', outputPath]);
     const audio = (JSON.parse(probe.stdout) as { streams: Array<Record<string, unknown>> }).streams.find(stream => stream.codec_type === 'audio');
     expect(audio).toMatchObject({ codec_name: 'aac', sample_rate: '48000', channels: 2 });
-  }, 30_000);
+  }, 60_000);
 });

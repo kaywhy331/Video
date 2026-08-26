@@ -27,6 +27,24 @@ describe('provider preflight', () => {
     db.close();
   });
 
+  it('blocks invalid, unconfirmed, and credential-mismatched endpoint health before a call', () => {
+    const { db, policy } = fixture();
+    for (const [status, code] of [
+      ['invalid_endpoint', 'PROVIDER_ENDPOINT_INVALID'],
+      ['endpoint_untrusted', 'PROVIDER_ENDPOINT_UNTRUSTED'],
+      ['credential_origin_mismatch', 'PROVIDER_CREDENTIAL_ORIGIN_MISMATCH']
+    ] as const) {
+      policy.recordHealth('tavily', status, null, status);
+      try {
+        policy.assertCanCall({ provider: 'tavily', projectId: 'p1', configured: true });
+        throw new Error('Expected provider preflight to reject endpoint health.');
+      } catch (error) {
+        expect(error).toMatchObject({ code });
+      }
+    }
+    db.close();
+  });
+
   it('enforces monthly and per-project hard limits', () => {
     const { db, policy, now } = fixture();
     db.raw.prepare(`INSERT INTO provider_calls(id, project_id, provider, model, operation, input_hash, estimated_cost_usd, created_at) VALUES('c1', 'p1', 'tavily', 'search', 'search', 'h1', 2, ?)`).run(now);

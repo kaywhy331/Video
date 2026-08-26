@@ -9,6 +9,9 @@ const RESUME_BLOCKER_CODES = new Set([
   'monthly_budget',
   'auth_invalid',
   'quota_exhausted',
+  'invalid_endpoint',
+  'endpoint_untrusted',
+  'credential_origin_mismatch',
   'disk_pressure',
   'disk_unavailable'
 ]);
@@ -121,7 +124,10 @@ export class SchedulerService {
       ...(settings.visionProvider === 'openai_compatible' ? ['openai_compatible_vision'] : []),
       ...(settings.narratorProvider === 'http_tts' ? ['http_tts'] : [])
     ]);
-    const health = (this.db.raw.prepare(`SELECT provider, status, message FROM provider_health WHERE status IN ('auth_invalid','quota_exhausted')`).all() as Array<{ provider: string; status: string; message: string | null }>).find(row => configured.has(row.provider));
+    const health = (this.db.raw.prepare(`
+      SELECT provider, status, message FROM provider_health
+      WHERE status IN ('auth_invalid','quota_exhausted','invalid_endpoint','endpoint_untrusted','credential_origin_mismatch')
+    `).all() as Array<{ provider: string; status: string; message: string | null }>).find(row => configured.has(row.provider));
     if (health) blockers.push({ code: health.status, reason: health.message ?? `${health.provider} ${health.status}.` });
     try {
       const stats = statfsSync(settings.mediaLibraryFolder);

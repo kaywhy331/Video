@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import { ResearchService } from '@main/services/research-service';
 import type { AppSettings } from '@shared/types';
+import { providerEndpointTestPolicy } from './provider-endpoint-test-utils';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -20,10 +21,11 @@ function fixture() {
   const now = new Date().toISOString();
   db.raw.prepare(`INSERT INTO projects(id, sequence, slug, title, topic, state, progress, envato_project_name, target_duration_ms, provider_budget_usd, created_at, updated_at) VALUES('p1', 1, 'p1', 'P1', 'P1', 'RESEARCHING', 0, 'YT-P1', 1000, 20, ?, ?)`).run(now, now);
   const settings = {
-    researchProvider: 'tavily', researchBaseUrl: 'https://api.tavily.test', researchSearchDepth: 'basic',
+    researchProvider: 'tavily', researchBaseUrl: 'https://api.tavily.com', researchEndpointTrust: 'managed', researchSearchDepth: 'basic',
     researchMaxResultsPerQuery: 5, monthlyBudgetUsd: 100
   } as AppSettings;
-  const service = new ResearchService(db, { getAll: () => ({ researchApiKey: 'secret' }) } as never, () => settings);
+  const secrets = { getAll: () => ({ researchApiKey: 'secret' }) } as never;
+  const service = new ResearchService(db, secrets, () => settings, providerEndpointTestPolicy(db, secrets, () => settings));
   return { db, service };
 }
 
@@ -54,6 +56,13 @@ describe('Tavily research adapter', () => {
     await expect(service.search({ projectId: 'p1', queries: ['different'], languageCode: 'en' })).rejects.toThrow('401');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(db.raw.prepare(`SELECT estimated_cost_usd FROM provider_calls WHERE operation = 'research_search'`).get()).toEqual({ estimated_cost_usd: 0.01 });
+    const recorded = db.raw.prepare(`
+      SELECT c.error, h.message FROM provider_calls c
+      JOIN provider_health h ON h.provider = 'tavily'
+      WHERE c.operation = 'research_search'
+    `).get() as { error: string; message: string };
+    expect(recorded.error).not.toContain('bad key');
+    expect(recorded.message).not.toContain('bad key');
     db.close();
   });
 

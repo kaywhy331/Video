@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import { AiService } from '@main/services/ai-service';
 import type { AppSettings } from '@shared/types';
+import { providerEndpointTestPolicy } from './provider-endpoint-test-utils';
 import type { CatalogAsset, CoverageCluster } from '@shared/types';
 
 const roots: string[] = [];
@@ -20,8 +21,10 @@ function fixture() {
   const db = new AppDatabase(join(root, 'db.sqlite'));
   const now = new Date().toISOString();
   db.raw.prepare(`INSERT INTO projects(id, sequence, slug, title, topic, state, progress, envato_project_name, target_duration_ms, provider_budget_usd, created_at, updated_at) VALUES('p1', 1, 'p1', 'P1', 'P1', 'RESEARCHING', 0, 'YT-P1', 1000, 20, ?, ?)`).run(now, now);
-  const settings = { llmProvider: 'openai_compatible', llmBaseUrl: 'https://llm.test/v1', llmModel: 'test', monthlyBudgetUsd: 100 } as AppSettings;
-  return { db, service: new AiService(db, { getAll: () => ({ llmApiKey: 'secret' }) } as never, () => settings) };
+  const settings = { llmProvider: 'openai_compatible', llmBaseUrl: 'https://api.openai.com/v1', llmEndpointTrust: 'managed', llmModel: 'test', monthlyBudgetUsd: 100 } as AppSettings;
+  const secrets = { getAll: () => ({ llmApiKey: 'secret' }) } as never;
+  const endpoints = providerEndpointTestPolicy(db, secrets, () => settings);
+  return { db, service: new AiService(db, secrets, () => settings, undefined, endpoints) };
 }
 
 function response(content: string): Response {
@@ -31,13 +34,20 @@ function response(content: string): Response {
 describe('LLM claim extraction', () => {
   it('does not silently downgrade an explicitly configured provider with a missing key', async () => {
     const { db } = fixture();
-    const settings = { llmProvider: 'openai_compatible', llmBaseUrl: 'https://llm.test/v1', llmModel: 'test', monthlyBudgetUsd: 100 } as AppSettings;
-    const service = new AiService(db, { getAll: () => ({}) } as never, () => settings);
+    const settings = { llmProvider: 'openai_compatible', llmBaseUrl: 'https://api.openai.com/v1', llmEndpointTrust: 'managed', llmModel: 'test', monthlyBudgetUsd: 100 } as AppSettings;
+    const secrets = { getAll: () => ({}) } as never;
+    const service = new AiService(db, secrets, () => settings, undefined, providerEndpointTestPolicy(db, secrets, () => settings));
     await expect(service.generateScript({
       projectId: 'p1', topicTitle: 'Museum', destination: 'Paris', targetMinutes: 1,
       coverage: { key: 'Paris' } as CoverageCluster,
       assets: []
     })).rejects.toThrow('local fallback was not used');
+    await expect(service.extractClaims({
+      projectId: 'p1',
+      topicTitle: 'Museum',
+      destination: 'Paris',
+      sources: []
+    })).rejects.toThrow('claim extraction was not skipped silently');
     db.close();
   });
 

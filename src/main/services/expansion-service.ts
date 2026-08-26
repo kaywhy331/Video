@@ -13,6 +13,8 @@ import type {
   OpportunityAssessment,
   OutputProfile,
   ProviderCapabilityRecord,
+  ProviderEndpointId,
+  ProviderEndpointState,
   SecretStatus
 } from '@shared/types';
 import type {
@@ -102,7 +104,8 @@ export class ExpansionService {
     private readonly settings: () => AppSettings,
     private readonly secretStatus: () => SecretStatus,
     private readonly catalogImports: CatalogImportRunner,
-    private readonly sheetValues?: SheetValuesReader
+    private readonly sheetValues?: SheetValuesReader,
+    private readonly endpointState?: (provider: ProviderEndpointId) => ProviderEndpointState
   ) {}
 
   registry(): ExpansionRegistrySnapshot {
@@ -492,19 +495,41 @@ export class ExpansionService {
     settings: AppSettings,
     secrets: SecretStatus
   ): Partial<ProviderCapabilityRecord> | null {
-    const remote = (configured: boolean, message: string): Partial<ProviderCapabilityRecord> => ({
-      configured,
-      available: configured,
-      statusMessage: configured ? `${message}; live qualification remains unverified.` : 'Credentials or provider selection are not configured.'
-    });
+    const remote = (
+      provider: ProviderEndpointId,
+      selected: boolean,
+      credentialsConfigured: boolean,
+      message: string
+    ): Partial<ProviderCapabilityRecord> => {
+      const endpoint = this.endpointState?.(provider);
+      const configured = selected && credentialsConfigured && (endpoint?.ready ?? true);
+      return {
+        configured,
+        available: configured,
+        statusMessage: configured
+          ? `${message}; live qualification remains unverified.`
+          : endpoint && selected && !endpoint.ready
+            ? endpoint.message
+            : 'Credentials or provider selection are not configured.'
+      };
+    };
     switch (key) {
-      case 'openai_compatible': return remote(settings.llmProvider === 'openai_compatible' && secrets.llmApiKeyConfigured, 'Language adapter is configured');
-      case 'openai_compatible_vision': return remote(settings.visionProvider === 'openai_compatible' && secrets.visionApiKeyConfigured, 'Vision adapter is configured');
-      case 'http_tts': return remote(settings.narratorProvider === 'http_tts' && secrets.httpTtsApiKeyConfigured, 'HTTP TTS adapter is configured');
-      case 'tavily': return remote(settings.researchProvider === 'tavily' && secrets.researchApiKeyConfigured, 'Research adapter is configured');
+      case 'openai_compatible': return remote('openai_compatible', settings.llmProvider === 'openai_compatible', secrets.llmApiKeyConfigured || settings.llmEndpointTrust === 'custom_local', 'Language adapter is configured');
+      case 'openai_compatible_vision': return remote('openai_compatible_vision', settings.visionProvider === 'openai_compatible', secrets.visionApiKeyConfigured || settings.visionEndpointTrust === 'custom_local', 'Vision adapter is configured');
+      case 'http_tts': return remote('http_tts', settings.narratorProvider === 'http_tts', secrets.httpTtsApiKeyConfigured || settings.narratorEndpointTrust === 'custom_local', 'HTTP TTS adapter is configured');
+      case 'tavily': return remote('tavily', settings.researchProvider === 'tavily', secrets.researchApiKeyConfigured || settings.researchEndpointTrust === 'custom_local', 'Research adapter is configured');
       case 'youtube':
       case 'youtube_analytics':
-      case 'google_sheets_readonly': return remote(secrets.youtubeClientConfigured && secrets.youtubeAuthorized, 'Google OAuth is configured');
+      case 'google_sheets_readonly': {
+        const configured = secrets.youtubeClientConfigured && secrets.youtubeAuthorized;
+        return {
+          configured,
+          available: configured,
+          statusMessage: configured
+            ? 'Google OAuth is configured; live qualification remains unverified.'
+            : 'Credentials or provider selection are not configured.'
+        };
+      }
       case 'windows_sapi': return {
         configured: settings.narratorProvider === 'windows_sapi',
         available: process.platform === 'win32',
