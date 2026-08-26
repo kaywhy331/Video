@@ -1396,7 +1396,8 @@ export class ProjectService {
     const now = new Date().toISOString();
     this.db.raw.prepare(`
       UPDATE jobs SET state = 'CANCELLED', error = ?, lease_owner = NULL,
-        lease_until = NULL, completed_at = ?, updated_at = ?
+        lease_until = NULL, completed_at = ?, transition_version = transition_version + 1,
+        updated_at = ?
       WHERE project_id = ?
         AND state IN ('QUEUED','READY','WAITING_EXTERNAL','WAITING_HUMAN',
           'RETRY_SCHEDULED','FAILED_RETRYABLE','FAILED_PERMANENT')

@@ -662,6 +662,48 @@
       "file": "tests/provider-endpoint-policy.test.ts",
       "title": "[JOB-010] pins the validated address in the real bounded transport and follows only a same-origin redirect"
     },
+    {
+      "ids": ["JOB-011"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-011] allows only failed jobs and commits at most one retry for an expected state/version"
+    },
+    {
+      "ids": ["JOB-011"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-011] preserves every invalid state and its job, lock, and lease fields"
+    },
+    {
+      "ids": ["JOB-011"],
+      "runner": "vitest",
+      "file": "tests/contracts.test.ts",
+      "title": "[JOB-011] requires exact retry state/version contracts even when renderer controls are bypassed"
+    },
+    {
+      "ids": ["JOB-011"],
+      "runner": "playwright",
+      "file": "tests/e2e/electron-accessibility.spec.ts",
+      "title": "[JOB-011] exposes backend retry capability and commits the retry through the project audit workspace"
+    },
+    {
+      "ids": ["JOB-012"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-012] grants exactly one audited attempt for a permanent failure with an operator reason"
+    },
+    {
+      "ids": ["JOB-013"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-013] reconciles remote video, upload session, no-effect, and identity-mismatch receipts before queueing"
+    },
+    {
+      "ids": ["JOB-013"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-013] reconciles interrupted upload jobs before startup makes them runnable"
+    },
 
     {
       "ids": ["SEC-001", "SEC-008"],

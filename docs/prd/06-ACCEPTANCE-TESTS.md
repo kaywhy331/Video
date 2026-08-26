@@ -623,6 +623,18 @@ Provider call that would exceed hard budget is not sent.
 
 Every credentialed provider request has bounded connect/overall timeouts, cancellation, redirect count, and response size; every redirect destination is revalidated before use.
 
+### JOB-011 - State-safe manual retry
+
+Manual retry allows only failed jobs, compares the expected state/version atomically, preserves every invalid-state job and owned lock/lease field, and permits at most one successful transition.
+
+### JOB-012 - Audited retry attempt grant
+
+A permanent failure can retry only with an operator reason and one explicit attempt grant; prior failure context and the exact budget change remain reconstructable from durable audit history.
+
+### JOB-013 - Side-effect retry reconciliation
+
+An upload job cannot become runnable until its durable publication identity is reconciled as no remote effect, a reusable upload session, or an existing remote video; identity mismatch remains blocked.
+
 ---
 
 ## 17. Security tests

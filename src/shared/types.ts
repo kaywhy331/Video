@@ -65,6 +65,59 @@ export type JobState =
   | 'FAILED_PERMANENT'
   | 'CANCELLED';
 
+export type JobRetryOutcome =
+  | 'retry_started'
+  | 'already_scheduled'
+  | 'invalid_state'
+  | 'reconciliation_required'
+  | 'concurrent_change';
+
+export type JobRetryAction =
+  | 'retry'
+  | 'retry_with_reason'
+  | 'reconcile_and_retry'
+  | 'expedite'
+  | 'none';
+
+export interface JobRetryCapability {
+  jobId: string;
+  currentState: JobState;
+  transitionVersion: number;
+  action: JobRetryAction;
+  canRetry: boolean;
+  requiresReason: boolean;
+  requiresAttemptGrant: boolean;
+  reconciliationRequired: boolean;
+  message: string;
+}
+
+export interface JobRetryRequest {
+  jobId: string;
+  expectedState: JobState;
+  expectedVersion: number;
+  operatorReason?: string;
+  grantAttempt?: boolean;
+}
+
+export interface JobRetryResult {
+  outcome: JobRetryOutcome;
+  job: JobRecord | null;
+  capability: JobRetryCapability | null;
+  message: string;
+}
+
+export interface JobExpediteRequest {
+  jobId: string;
+  expectedVersion: number;
+}
+
+export interface JobExpediteResult {
+  outcome: 'expedited' | 'invalid_state' | 'concurrent_change';
+  job: JobRecord | null;
+  capability: JobRetryCapability | null;
+  message: string;
+}
+
 export type ExceptionSeverity = 'BLOCKER' | 'HIGH' | 'MEDIUM' | 'LOW';
 
 export type RepairClass =
@@ -1305,11 +1358,14 @@ export interface JobRecord {
   phase: string | null;
   attempt: number;
   maxAttempts: number;
+  manualAttemptGrants: number;
+  transitionVersion: number;
   availableAt: string;
   leaseUntil: string | null;
   error: string | null;
   createdAt: string;
   updatedAt: string;
+  retryCapability: JobRetryCapability;
 }
 
 export interface ExceptionRecord {

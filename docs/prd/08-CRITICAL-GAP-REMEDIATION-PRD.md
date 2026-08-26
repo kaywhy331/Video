@@ -388,14 +388,14 @@ Required tests:
 
 ### 8.6 Completion criteria
 
-- [ ] Only the documented failed states can enter `QUEUED` through manual retry.
-- [ ] Invalid retry of every other state is side-effect free, including lock and lease state.
-- [ ] SQL compare-and-set makes concurrent retry deterministic.
-- [ ] Permanent-failure retry requires and records an operator reason and explicit attempt grant.
-- [ ] Upload/publication retry cannot run before remote reconciliation succeeds.
-- [ ] Renderer controls consume backend retry capability and stable typed errors.
-- [ ] Existing deferred final-render behavior uses `expedite` or natural scheduling rather than generic retry.
-- [ ] `JOB-011` through `JOB-013` have exact automated bindings.
+- [x] Only the documented failed states can enter `QUEUED` through manual retry.
+- [x] Invalid retry of every other state is side-effect free, including lock and lease state.
+- [x] SQL compare-and-set makes concurrent retry deterministic.
+- [x] Permanent-failure retry requires and records an operator reason and explicit attempt grant.
+- [x] Upload/publication retry cannot run before remote reconciliation succeeds.
+- [x] Renderer controls consume backend retry capability and stable typed errors.
+- [x] Existing deferred final-render behavior uses `expedite` or natural scheduling rather than generic retry.
+- [x] `JOB-011` through `JOB-013` have exact automated bindings.
 
 ---
 

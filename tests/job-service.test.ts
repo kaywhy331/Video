@@ -18,6 +18,8 @@ function fixture() {
       priority INTEGER NOT NULL DEFAULT 100, progress REAL NOT NULL DEFAULT 0,
       phase TEXT, input_json TEXT NOT NULL, input_hash TEXT NOT NULL, output_json TEXT,
       attempt INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3,
+      manual_attempt_grants INTEGER NOT NULL DEFAULT 0,
+      transition_version INTEGER NOT NULL DEFAULT 0,
       available_at TEXT NOT NULL, lease_owner TEXT, lease_until TEXT, error TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT
     );
@@ -26,7 +28,23 @@ function fixture() {
       resource_key TEXT PRIMARY KEY, holder_job_id TEXT NOT NULL, lease_owner TEXT NOT NULL,
       lease_until TEXT NOT NULL, acquired_at TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}'
     );
-    INSERT INTO projects(id, updated_at) VALUES('p1', datetime('now')), ('p2', datetime('now'));
+    CREATE TABLE publication_records(
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, video_id TEXT, upload_session_uri TEXT,
+      final_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE job_retry_reconciliations(
+      id TEXT PRIMARY KEY, job_id TEXT NOT NULL, job_transition_version INTEGER NOT NULL,
+      job_type TEXT NOT NULL, outcome TEXT NOT NULL, publication_id TEXT, video_id TEXT,
+      input_hash TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+    );
+    CREATE TABLE audit_log(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, action TEXT NOT NULL,
+      actor TEXT NOT NULL, entity_type TEXT, entity_id TEXT, before_json TEXT,
+      after_json TEXT, metadata_json TEXT, created_at TEXT NOT NULL
+    );
+    INSERT INTO projects(id, updated_at) VALUES
+      ('p1', datetime('now')), ('p2', datetime('now')),
+      ('p3', datetime('now')), ('p4', datetime('now'));
   `);
   const service = new JobService({ raw } as AppDatabase);
   return { raw, service };
@@ -149,8 +167,237 @@ describe('durable job engine', () => {
     service.succeed(first.id, {});
     expect(raw.prepare('SELECT count(*) AS count FROM job_resource_leases').get()).toEqual({ count: 0 });
 
-    service.retry(second.id);
+    const scheduled = service.list('p2').find(job => job.id === second.id)!;
+    expect(service.expedite({ jobId: second.id, expectedVersion: scheduled.transitionVersion }).outcome)
+      .toBe('expedited');
     expect(service.start(second.id, 'Rendering final', { resourceKey: 'render_final' })).toEqual({ state: 'started' });
+    raw.close();
+  });
+
+  it('[JOB-011] allows only failed jobs and commits at most one retry for an expected state/version', () => {
+    const { raw, service } = fixture();
+    const invalid = service.create('queued-work', 'p1', {});
+    raw.prepare(`UPDATE projects SET locked_by_job_id = ? WHERE id = 'p1'`).run(invalid.id);
+    raw.prepare(`
+      INSERT INTO job_resource_leases(resource_key, holder_job_id, lease_owner, lease_until, acquired_at)
+      VALUES('fixture', ?, 'fixture-owner', '2999-01-01T00:00:00.000Z', datetime('now'))
+    `).run(invalid.id);
+    const rejected = service.retry({
+      jobId: invalid.id,
+      expectedState: invalid.state,
+      expectedVersion: invalid.transitionVersion
+    });
+    expect(rejected.outcome).toBe('invalid_state');
+    expect(raw.prepare(`SELECT state FROM jobs WHERE id = ?`).get(invalid.id)).toEqual({ state: 'QUEUED' });
+    expect(raw.prepare(`SELECT locked_by_job_id FROM projects WHERE id = 'p1'`).get())
+      .toEqual({ locked_by_job_id: invalid.id });
+    expect(raw.prepare(`SELECT holder_job_id FROM job_resource_leases WHERE resource_key = 'fixture'`).get())
+      .toEqual({ holder_job_id: invalid.id });
+
+    raw.prepare(`UPDATE projects SET locked_by_job_id = NULL WHERE id = 'p1'`).run();
+    raw.prepare(`DELETE FROM job_resource_leases WHERE resource_key = 'fixture'`).run();
+    const failed = service.create('retryable-work', 'p1', {});
+    raw.prepare(`
+      UPDATE jobs SET state = 'FAILED_RETRYABLE', error = 'temporary', transition_version = transition_version + 1
+      WHERE id = ?
+    `).run(failed.id);
+    raw.prepare(`UPDATE projects SET locked_by_job_id = ? WHERE id = 'p1'`).run(failed.id);
+    const current = service.list('p1').find(job => job.id === failed.id)!;
+    const request = {
+      jobId: failed.id,
+      expectedState: current.state,
+      expectedVersion: current.transitionVersion
+    } as const;
+    expect(service.retry(request).outcome).toBe('retry_started');
+    expect(service.retry(request).outcome).toBe('concurrent_change');
+    expect(service.list('p1').find(job => job.id === failed.id)).toMatchObject({
+      state: 'QUEUED',
+      attempt: 0,
+      maxAttempts: 3,
+      transitionVersion: current.transitionVersion + 1
+    });
+    expect(raw.prepare(`SELECT locked_by_job_id FROM projects WHERE id = 'p1'`).get())
+      .toEqual({ locked_by_job_id: null });
+    raw.close();
+  });
+
+  it('[JOB-011] preserves every invalid state and its job, lock, and lease fields', () => {
+    const { raw, service } = fixture();
+    const cases = [
+      ['QUEUED', 'invalid_state'],
+      ['READY', 'invalid_state'],
+      ['RUNNING', 'invalid_state'],
+      ['WAITING_EXTERNAL', 'reconciliation_required'],
+      ['WAITING_HUMAN', 'reconciliation_required'],
+      ['RETRY_SCHEDULED', 'already_scheduled'],
+      ['SUCCEEDED', 'invalid_state'],
+      ['CANCELLED', 'invalid_state']
+    ] as const;
+    for (const [state, expectedOutcome] of cases) {
+      const job = service.create(`invalid-${state}`, 'p1', { state });
+      const availableAt = '2031-01-02T03:04:05.000Z';
+      const completedAt = '2026-01-02T03:04:05.000Z';
+      raw.prepare(`
+        UPDATE jobs SET state = ?, error = 'preserve-error', output_json = '{"receipt":true}',
+          attempt = 2, max_attempts = 5, manual_attempt_grants = 1,
+          available_at = ?, lease_owner = 'owned-worker', lease_until = ?,
+          completed_at = ?, transition_version = 9 WHERE id = ?
+      `).run(state, availableAt, availableAt, completedAt, job.id);
+      raw.prepare(`UPDATE projects SET locked_by_job_id = ? WHERE id = 'p1'`).run(job.id);
+      raw.prepare(`
+        INSERT INTO job_resource_leases(resource_key, holder_job_id, lease_owner, lease_until, acquired_at)
+        VALUES(?, ?, 'owned-worker', ?, ?)
+      `).run(`lease-${state}`, job.id, availableAt, completedAt);
+      const before = raw.prepare(`
+        SELECT state, error, output_json, attempt, max_attempts, manual_attempt_grants,
+          available_at, lease_owner, lease_until, completed_at, transition_version
+        FROM jobs WHERE id = ?
+      `).get(job.id);
+      expect(service.retry({ jobId: job.id, expectedState: state, expectedVersion: 9 }).outcome)
+        .toBe(expectedOutcome);
+      expect(raw.prepare(`
+        SELECT state, error, output_json, attempt, max_attempts, manual_attempt_grants,
+          available_at, lease_owner, lease_until, completed_at, transition_version
+        FROM jobs WHERE id = ?
+      `).get(job.id)).toEqual(before);
+      expect(raw.prepare(`SELECT locked_by_job_id FROM projects WHERE id = 'p1'`).get())
+        .toEqual({ locked_by_job_id: job.id });
+      expect(raw.prepare(`SELECT holder_job_id FROM job_resource_leases WHERE resource_key = ?`).get(`lease-${state}`))
+        .toEqual({ holder_job_id: job.id });
+      raw.prepare(`UPDATE projects SET locked_by_job_id = NULL WHERE id = 'p1'`).run();
+      raw.prepare(`DELETE FROM job_resource_leases WHERE resource_key = ?`).run(`lease-${state}`);
+    }
+    raw.close();
+  });
+
+  it('[JOB-012] grants exactly one audited attempt for a permanent failure with an operator reason', () => {
+    const { raw, service } = fixture();
+    const created = service.create('permanent-work', 'p1', {}, 1);
+    service.start(created.id, 'attempt one');
+    service.fail(created.id, new Error('credential denied'));
+    const failed = service.list('p1').find(job => job.id === created.id)!;
+    expect(failed.state).toBe('FAILED_PERMANENT');
+
+    expect(service.retry({
+      jobId: failed.id,
+      expectedState: failed.state,
+      expectedVersion: failed.transitionVersion
+    }).outcome).toBe('invalid_state');
+    const result = service.retry({
+      jobId: failed.id,
+      expectedState: failed.state,
+      expectedVersion: failed.transitionVersion,
+      operatorReason: 'Credential was rotated and verified by the operator.',
+      grantAttempt: true
+    });
+    expect(result).toMatchObject({
+      outcome: 'retry_started',
+      job: { state: 'QUEUED', attempt: 1, maxAttempts: 2, manualAttemptGrants: 1 }
+    });
+    const audit = raw.prepare(`
+      SELECT before_json, metadata_json FROM audit_log
+      WHERE action = 'job.manual_retry' ORDER BY id DESC LIMIT 1
+    `).get() as { before_json: string; metadata_json: string };
+    expect(JSON.parse(audit.before_json)).toMatchObject({ priorError: 'credential denied', maxAttempts: 1 });
+    expect(JSON.parse(audit.metadata_json)).toMatchObject({
+      outcome: 'retry_started',
+      grantedAttempts: 1,
+      operatorReason: 'Credential was rotated and verified by the operator.'
+    });
+    raw.close();
+  });
+
+  it('[JOB-013] reconciles remote video, upload session, no-effect, and identity-mismatch receipts before queueing', () => {
+    const { raw, service } = fixture();
+    const now = new Date().toISOString();
+    raw.prepare(`
+      INSERT INTO publication_records(id, project_id, video_id, upload_session_uri, final_sha256, created_at)
+      VALUES('publication-1', 'p1', 'youtube-video-1', NULL, 'final-sha-1', ?)
+    `).run(now);
+    const created = service.create('workflow_upload_private', 'p1', {
+      projectId: 'p1',
+      render: { sha256: 'final-sha-1' },
+      publication: { id: 'publication-1', final_sha256: 'final-sha-1' }
+    });
+    raw.prepare(`
+      UPDATE jobs SET state = 'FAILED_RETRYABLE', error = 'attachment timeout',
+        transition_version = transition_version + 1 WHERE id = ?
+    `).run(created.id);
+    const failed = service.list('p1').find(job => job.id === created.id)!;
+    expect(failed.retryCapability.action).toBe('reconcile_and_retry');
+    expect(service.retry({
+      jobId: failed.id,
+      expectedState: failed.state,
+      expectedVersion: failed.transitionVersion
+    }).outcome).toBe('retry_started');
+    expect(raw.prepare(`SELECT count(*) AS count FROM publication_records WHERE project_id = 'p1'`).get())
+      .toEqual({ count: 1 });
+    expect(raw.prepare(`
+      SELECT outcome, publication_id, video_id FROM job_retry_reconciliations WHERE job_id = ?
+    `).get(created.id)).toEqual({
+      outcome: 'remote_effect_reused',
+      publication_id: 'publication-1',
+      video_id: 'youtube-video-1'
+    });
+
+    raw.prepare(`
+      INSERT INTO publication_records(id, project_id, video_id, upload_session_uri, final_sha256, created_at)
+      VALUES('publication-session', 'p2', NULL, 'https://upload.youtube.com/session-safe', 'session-sha', ?)
+    `).run(now);
+    const sessionJob = service.create('workflow_upload_private', 'p2', {
+      projectId: 'p2',
+      render: { sha256: 'session-sha' },
+      publication: { id: 'publication-session', final_sha256: 'session-sha' }
+    });
+    raw.prepare(`
+      UPDATE jobs SET state = 'FAILED_RETRYABLE', transition_version = transition_version + 1 WHERE id = ?
+    `).run(sessionJob.id);
+    const sessionFailure = service.list('p2').find(job => job.id === sessionJob.id)!;
+    expect(service.retry({
+      jobId: sessionJob.id,
+      expectedState: sessionFailure.state,
+      expectedVersion: sessionFailure.transitionVersion
+    }).outcome).toBe('retry_started');
+    expect(raw.prepare(`SELECT outcome FROM job_retry_reconciliations WHERE job_id = ?`).get(sessionJob.id))
+      .toEqual({ outcome: 'remote_session_reused' });
+
+    const noEffectJob = service.create('workflow_upload_private', 'p3', {
+      projectId: 'p3',
+      render: { sha256: 'not-uploaded-sha' }, publication: null
+    });
+    raw.prepare(`
+      UPDATE jobs SET state = 'FAILED_RETRYABLE', transition_version = transition_version + 1 WHERE id = ?
+    `).run(noEffectJob.id);
+    const noEffectFailure = service.list('p3').find(job => job.id === noEffectJob.id)!;
+    expect(service.retry({
+      jobId: noEffectJob.id,
+      expectedState: noEffectFailure.state,
+      expectedVersion: noEffectFailure.transitionVersion
+    }).outcome).toBe('retry_started');
+    expect(raw.prepare(`SELECT outcome FROM job_retry_reconciliations WHERE job_id = ?`).get(noEffectJob.id))
+      .toEqual({ outcome: 'no_remote_effect' });
+
+    raw.prepare(`
+      INSERT INTO publication_records(id, project_id, video_id, upload_session_uri, final_sha256, created_at)
+      VALUES('publication-current', 'p4', NULL, NULL, 'current-sha', ?)
+    `).run(now);
+    const stale = service.create('workflow_upload_private', 'p4', {
+      projectId: 'p4',
+      render: { sha256: 'stale-sha' },
+      publication: { id: 'publication-stale', final_sha256: 'stale-sha' }
+    });
+    raw.prepare(`
+      UPDATE jobs SET state = 'FAILED_RETRYABLE', transition_version = transition_version + 1 WHERE id = ?
+    `).run(stale.id);
+    const staleFailure = service.list('p4').find(job => job.id === stale.id)!;
+    const blocked = service.retry({
+      jobId: stale.id,
+      expectedState: staleFailure.state,
+      expectedVersion: staleFailure.transitionVersion
+    });
+    expect(blocked.outcome).toBe('reconciliation_required');
+    expect(raw.prepare(`SELECT state, transition_version FROM jobs WHERE id = ?`).get(stale.id))
+      .toEqual({ state: 'FAILED_RETRYABLE', transition_version: staleFailure.transitionVersion });
     raw.close();
   });
 
@@ -174,6 +421,53 @@ describe('durable job engine', () => {
       .run('desktop-previous-process', '2999-01-01T00:00:00.000Z', stale.id);
     service.recoverInterrupted();
     expect(service.list('p1').find(job => job.id === stale.id)?.state).toBe('QUEUED');
+    raw.close();
+  });
+
+  it('[JOB-013] reconciles interrupted upload jobs before startup makes them runnable', () => {
+    const { raw, service } = fixture();
+    const now = new Date().toISOString();
+    raw.prepare(`
+      INSERT INTO publication_records(id, project_id, video_id, upload_session_uri, final_sha256, created_at)
+      VALUES('startup-current', 'p1', NULL, NULL, 'current-sha', ?)
+    `).run(now);
+    const blocked = service.create('workflow_upload_private', 'p1', {
+      projectId: 'p1',
+      render: { sha256: 'stale-sha' },
+      publication: { id: 'startup-stale', final_sha256: 'stale-sha' }
+    });
+    service.start(blocked.id, 'Uploading private video');
+    raw.prepare(`UPDATE jobs SET lease_owner = 'desktop-previous-process' WHERE id = ?`).run(blocked.id);
+
+    raw.prepare(`
+      INSERT INTO publication_records(id, project_id, video_id, upload_session_uri, final_sha256, created_at)
+      VALUES('startup-complete', 'p2', 'youtube-startup-video', NULL, 'complete-sha', ?)
+    `).run(now);
+    const recoverable = service.create('workflow_upload_private', 'p2', {
+      projectId: 'p2',
+      render: { sha256: 'complete-sha' },
+      publication: { id: 'startup-complete', final_sha256: 'complete-sha' }
+    });
+    service.start(recoverable.id, 'Uploading private video');
+    raw.prepare(`UPDATE jobs SET lease_owner = 'desktop-previous-process' WHERE id = ?`).run(recoverable.id);
+
+    service.recoverInterrupted();
+    expect(service.list('p1').find(job => job.id === blocked.id)).toMatchObject({
+      state: 'FAILED_RETRYABLE',
+      phase: 'Remote side effect requires operator reconciliation'
+    });
+    expect(service.list('p2').find(job => job.id === recoverable.id)).toMatchObject({
+      state: 'QUEUED',
+      phase: 'Recovered after remote effect reused'
+    });
+    expect(raw.prepare(`
+      SELECT job_id, outcome FROM job_retry_reconciliations ORDER BY job_id
+    `).all()).toEqual([
+      { job_id: blocked.id, outcome: 'identity_mismatch' },
+      { job_id: recoverable.id, outcome: 'remote_effect_reused' }
+    ].sort((left, right) => left.job_id.localeCompare(right.job_id)));
+    expect(raw.prepare(`SELECT locked_by_job_id FROM projects WHERE id IN ('p1','p2') ORDER BY id`).all())
+      .toEqual([{ locked_by_job_id: null }, { locked_by_job_id: null }]);
     raw.close();
   });
 

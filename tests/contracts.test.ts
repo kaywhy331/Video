@@ -6,6 +6,9 @@ import {
   AmbiguousMappingResolveSchema,
   KeywordMetricObservationSchema,
   GoogleSheetsSyncSchema,
+  JobExpediteSchema,
+  JobRetryCapabilitySchema,
+  JobRetrySchema,
   AcquisitionAttestSchema,
   AcquisitionBatchAttestSchema,
   CreateAutopilotProjectSchema,
@@ -84,6 +87,22 @@ describe('IPC request contracts', () => {
       .toBe(true);
     expect(YouTubeAuthorizationCancellationSchema.safeParse({ pendingAuthorizationId: 'pending-1', force: true }).success)
       .toBe(false);
+  });
+
+  it('[JOB-011] requires exact retry state/version contracts even when renderer controls are bypassed', () => {
+    expect(JobRetryCapabilitySchema.safeParse({ jobId: 'job-1' }).success).toBe(true);
+    expect(JobRetryCapabilitySchema.safeParse({ jobId: 'job-1', force: true }).success).toBe(false);
+    expect(JobRetrySchema.safeParse({
+      jobId: 'job-1', expectedState: 'FAILED_RETRYABLE', expectedVersion: 4
+    }).success).toBe(true);
+    expect(JobRetrySchema.safeParse({ jobId: 'job-1' }).success).toBe(false);
+    expect(JobRetrySchema.safeParse({
+      jobId: 'job-1', expectedState: 'RUNNING', expectedVersion: -1, force: true
+    }).success).toBe(false);
+    expect(JobExpediteSchema.safeParse({ jobId: 'job-1', expectedVersion: 4 }).success).toBe(true);
+    expect(JobExpediteSchema.safeParse({
+      jobId: 'job-1', expectedVersion: 4, expectedState: 'FAILED_RETRYABLE'
+    }).success).toBe(false);
   });
 
   it('bounds analytics snapshots and evidence-gated learning requests', () => {
