@@ -234,6 +234,9 @@ async function launchApplication(dataRoot: string): Promise<{
   const electronLaunchMs = nodePerformance.now() - startedAt;
   const page = application.windows()[0] ?? await application.firstWindow();
   await page.getByRole('heading', { name: /Produce the next accurate video/i }).waitFor();
+  await expect.poll(() => application.evaluate(({ BrowserWindow }) => (
+    BrowserWindow.getAllWindows()[0]?.isVisible() ?? false
+  )), { message: 'The usable dashboard must be in a visible OS window.' }).toBe(true);
   const usableMs = nodePerformance.now() - startedAt;
   return {
     application,

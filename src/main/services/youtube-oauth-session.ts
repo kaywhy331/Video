@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { google } from 'googleapis';
 import type { CodeChallengeMethod } from 'google-auth-library';
+import { googleApis } from '../google-apis';
 import {
   formatSecurityError,
   PrivilegedOperationError,
@@ -172,6 +172,7 @@ export function createGoogleYouTubeOAuthProvider(input: {
   redirectUri: string;
   scopes: string[];
 }): YouTubeOAuthProvider {
+  const google = googleApis().google;
   const auth = new google.auth.OAuth2(input.clientId, input.clientSecret, input.redirectUri);
   const credentialsFor = (credentials: YouTubeOAuthCredentials) => ({
     access_token: credentials.accessToken,

@@ -114,6 +114,7 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     context.catalogImports.status() ?? context.expansion.googleSheetOperationStatus();
 
   handle(IPC.bootstrap, () => context.bootstrap());
+  handle(IPC.rendererReady, () => context.startBackgroundServices());
   handle(IPC.diagnosticsRun, () => context.diagnostics.run());
   handle(IPC.backupCreate, () => context.backups.create());
   handle(IPC.backupList, () => context.backups.list());

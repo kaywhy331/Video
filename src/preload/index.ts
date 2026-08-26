@@ -77,6 +77,7 @@ import type {
 const api = {
   app: {
     bootstrap: (): Promise<AppBootstrap> => ipcRenderer.invoke(IPC.bootstrap),
+    rendererReady: (): Promise<void> => ipcRenderer.invoke(IPC.rendererReady),
     onProgress: (listener: (event: ProgressEvent) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, value: ProgressEvent): void => listener(value);
       ipcRenderer.on(IPC.progressEvent, handler);

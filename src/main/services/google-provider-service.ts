@@ -1,7 +1,8 @@
-import { google, type Auth } from 'googleapis';
+import type { Auth } from 'googleapis';
 import type { AnalyticsProvider } from './analytics-service';
 import type { AnalyticsCollectionRequest, AnalyticsProviderResult } from '@shared/types';
 import type { SecretStore } from '../secret-store';
+import { googleApis } from '../google-apis';
 import type { SheetValuesReader } from './expansion-service';
 
 interface AnalyticsQueryResponse {
@@ -25,7 +26,7 @@ export class GoogleProviderService implements AnalyticsProvider, SheetValuesRead
     if (!secret.youtubeRefreshToken && !secret.youtubeAccessToken) {
       throw new Error('Google OAuth authorization is required.');
     }
-    const auth = new google.auth.OAuth2(secret.youtubeClientId, secret.youtubeClientSecret);
+    const auth = new (googleApis().google.auth.OAuth2)(secret.youtubeClientId, secret.youtubeClientSecret);
     auth.setCredentials({
       refresh_token: secret.youtubeRefreshToken,
       access_token: secret.youtubeAccessToken,
@@ -43,7 +44,7 @@ export class GoogleProviderService implements AnalyticsProvider, SheetValuesRead
 
   async getValues(spreadsheetId: string, sheetRange: string): Promise<unknown[][]> {
     const auth = await this.auth();
-    const sheets = google.sheets({ version: 'v4', auth });
+    const sheets = googleApis().google.sheets({ version: 'v4', auth });
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: sheetRange,
@@ -56,7 +57,7 @@ export class GoogleProviderService implements AnalyticsProvider, SheetValuesRead
 
   async collect(request: AnalyticsCollectionRequest): Promise<AnalyticsProviderResult> {
     const auth = await this.auth();
-    const analytics = google.youtubeAnalytics({ version: 'v2', auth });
+    const analytics = googleApis().google.youtubeAnalytics({ version: 'v2', auth });
     const channelQuery = await analytics.reports.query({
       ids: 'channel==MINE',
       startDate: request.startDate,
@@ -104,7 +105,7 @@ export class GoogleProviderService implements AnalyticsProvider, SheetValuesRead
     });
     const retention = this.retention(retentionQuery.data as AnalyticsQueryResponse);
 
-    const youtube = google.youtube({ version: 'v3', auth });
+    const youtube = googleApis().google.youtube({ version: 'v3', auth });
     const video = await youtube.videos.list({ part: ['statistics'], id: [request.videoId] });
     const statistics = video.data.items?.[0]?.statistics;
     const views = Number(statistics?.viewCount ?? values.views ?? 0);
@@ -141,7 +142,7 @@ export class GoogleProviderService implements AnalyticsProvider, SheetValuesRead
     publishedAt: string | null;
   }> {
     const auth = await this.auth();
-    const youtube = google.youtube({ version: 'v3', auth });
+    const youtube = googleApis().google.youtube({ version: 'v3', auth });
     const response = await youtube.videos.list({
       part: ['status', 'snippet'],
       id: [videoId]

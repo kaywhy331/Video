@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { XLSX } from '@shared/xlsx-node';
+import { XLSX, type WorkBook } from '@shared/xlsx-node';
 import type { AppDatabase } from '../database/database';
 import type { PlaceService } from './place-service';
 import type {
@@ -226,7 +226,7 @@ export class CatalogService {
     this.importHooks.onProgress?.(Math.max(0, Math.min(1, progress)), phase, message);
   }
 
-  private readWorkbook(filePath: string): XLSX.WorkBook {
+  private readWorkbook(filePath: string): WorkBook {
     return XLSX.read(readFileSync(filePath), {
       type: 'buffer',
       cellDates: true,
