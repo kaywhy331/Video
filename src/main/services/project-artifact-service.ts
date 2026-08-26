@@ -8,6 +8,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
+import { cpus } from 'node:os';
 import type { AppDatabase } from '../database/database';
 import type {
   AppSettings,
@@ -21,6 +22,12 @@ import { captionCuesFromWords } from '@shared/narration';
 import { resolveFfmpeg } from '../tool-paths';
 import { requireSuccess } from './process-utils';
 import { EditingService } from './editing-service';
+import {
+  backgroundFfmpegGlobalArguments,
+  backgroundFfmpegVideoArguments
+} from '@shared/ffmpeg-resource-policy';
+
+const LOGICAL_CPU_COUNT = cpus().length;
 
 interface ExportArtifact {
   path: string;
@@ -598,10 +605,12 @@ export class ProjectArtifactService {
   private async createProxy(ffmpeg: string, originalPath: string, proxyPath: string, audioPresent: boolean): Promise<void> {
     mkdirSync(dirname(proxyPath), { recursive: true });
     await requireSuccess(ffmpeg, [
-      '-y', '-hide_banner', '-i', originalPath, '-map', '0:v:0',
+      '-y', '-hide_banner', ...backgroundFfmpegGlobalArguments(LOGICAL_CPU_COUNT),
+      '-i', originalPath, '-map', '0:v:0',
       ...(audioPresent ? ['-map', '0:a:0?'] : []),
       '-vf', "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps=30,format=yuv420p",
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24',
+      '-c:v', 'libx264', ...backgroundFfmpegVideoArguments(LOGICAL_CPU_COUNT),
+      '-preset', 'veryfast', '-crf', '24',
       ...(audioPresent ? ['-c:a', 'aac', '-b:a', '128k'] : ['-an']),
       '-movflags', '+faststart', proxyPath
     ]);
