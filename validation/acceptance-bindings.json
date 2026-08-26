@@ -37,6 +37,30 @@
       "file": "tests/media-tool-service.test.ts",
       "title": "[SYS-007][SYS-008] inspects without execution, probes after confirmation, and blocks a changed executable"
     },
+    {
+      "ids": ["SYS-009"],
+      "runner": "vitest",
+      "file": "tests/database-migration.test.ts",
+      "title": "[SYS-009] applies and records every forward migration through the real wrapper"
+    },
+    {
+      "ids": ["SYS-009"],
+      "runner": "vitest",
+      "file": "tests/database-migration.test.ts",
+      "title": "[SYS-009] upgrades schema 18 with a backup and an identical current schema"
+    },
+    {
+      "ids": ["SYS-009"],
+      "runner": "vitest",
+      "file": "tests/database-migration.test.ts",
+      "title": "[SYS-009] rolls back the entire pending batch after an injected migration failure"
+    },
+    {
+      "ids": ["SYS-009"],
+      "runner": "vitest",
+      "file": "tests/database-migration.test.ts",
+      "title": "[SYS-009] blocks incompatible and pre-guard binaries before application data mutation"
+    },
 
     {
       "ids": ["CAT-002"],
@@ -843,6 +867,12 @@
       "runner": "vitest",
       "file": "tests/backup-service.test.ts",
       "title": "[BAK-005] applies independent daily, weekly, and monthly retention without deleting newer snapshots"
+    },
+    {
+      "ids": ["BAK-006"],
+      "runner": "vitest",
+      "file": "tests/backup-service.test.ts",
+      "title": "[BAK-006] preserves current safety bindings and audit evidence through restore"
     },
 
     {

@@ -1,6 +1,6 @@
 import { DatabaseSync, type StatementSync, type SQLInputValue } from 'node:sqlite';
 import { existsSync, readFileSync, copyFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { readdirSync } from 'node:fs';
 import type { AppSettings } from '@shared/types';
 
@@ -8,6 +8,41 @@ type PragmaOptions = { simple?: boolean };
 
 type SqlRow = Record<string, unknown>;
 type SqlRunResult = { lastInsertRowid: number | bigint; changes: number | bigint };
+
+export const APPLICATION_SCHEMA_VERSION = 24;
+export const DATABASE_SCHEMA_CAPABILITY_FUNCTION = 'videofactory_schema_capability';
+
+export type SqliteConnectionOptions = {
+  schemaCapability?: number | null;
+};
+
+export type AppDatabaseOptions = {
+  migrationDirectories?: string[];
+  schemaCapability?: number;
+};
+
+type Migration = {
+  path: string;
+  version: number;
+  migrationName: string;
+};
+
+export class DatabaseCompatibilityError extends Error {
+  readonly code = 'DATABASE_SCHEMA_NEWER_THAN_APP';
+
+  constructor(
+    readonly databaseSchemaVersion: number,
+    readonly supportedSchemaVersion: number
+  ) {
+    super(
+      '[DATABASE_SCHEMA_NEWER_THAN_APP] '
+      + `This database uses schema ${databaseSchemaVersion}, `
+      + `but this VideoFactory build supports through schema ${supportedSchemaVersion}. `
+      + 'Install the current application or restore a pre-upgrade backup; no migrations were run.'
+    );
+    this.name = 'DatabaseCompatibilityError';
+  }
+}
 
 function normalizeParameter(value: unknown): SQLInputValue {
   if (value === null || value === undefined) return null;
@@ -45,8 +80,22 @@ export class SqliteConnection {
   private transactionDepth = 0;
   private savepointSequence = 0;
 
-  constructor(path: string) {
+  constructor(path: string, options: SqliteConnectionOptions = {}) {
     this.database = new DatabaseSync(path);
+    const schemaCapability = options.schemaCapability === undefined
+      ? APPLICATION_SCHEMA_VERSION
+      : options.schemaCapability;
+    if (schemaCapability !== null) {
+      if (!Number.isSafeInteger(schemaCapability) || schemaCapability < 1) {
+        this.database.close();
+        throw new Error('SQLite schema capability must be a positive integer.');
+      }
+      this.database.function(
+        DATABASE_SCHEMA_CAPABILITY_FUNCTION,
+        { deterministic: true },
+        () => schemaCapability
+      );
+    }
   }
 
   get open(): boolean {
@@ -112,23 +161,48 @@ export class SqliteConnection {
 
 export class AppDatabase {
   readonly raw: SqliteConnection;
+  private migrationBackupPathValue: string | null = null;
 
-  constructor(readonly path: string) {
+  constructor(readonly path: string, options: AppDatabaseOptions = {}) {
     mkdirSync(dirname(path), { recursive: true });
-    this.raw = new SqliteConnection(path);
-    this.raw.pragma('foreign_keys = ON');
-    this.raw.pragma('journal_mode = WAL');
-    this.raw.pragma('synchronous = NORMAL');
-    this.raw.pragma('busy_timeout = 5000');
-    this.migrate();
+    const schemaCapability = options.schemaCapability ?? APPLICATION_SCHEMA_VERSION;
+    this.raw = new SqliteConnection(path, { schemaCapability });
+    try {
+      const migrations = this.migrations(options.migrationDirectories);
+      const targetVersion = Math.max(...migrations.map(migration => migration.version));
+      const existingVersion = this.appliedSchemaVersion();
+      if (existingVersion > schemaCapability) {
+        throw new DatabaseCompatibilityError(existingVersion, schemaCapability);
+      }
+      if (targetVersion > schemaCapability) {
+        throw new Error(
+          `Migration inventory targets schema ${targetVersion}, above application capability ${schemaCapability}.`
+        );
+      }
+      this.raw.pragma('busy_timeout = 5000');
+      if (existingVersion > 0 && migrations.some(migration => migration.version > existingVersion)) {
+        this.migrationBackupPathValue = this.createMigrationBackup(existingVersion, targetVersion, schemaCapability);
+      }
+      this.raw.pragma('foreign_keys = ON');
+      this.raw.pragma('journal_mode = WAL');
+      this.raw.pragma('synchronous = NORMAL');
+      this.migrate(migrations);
+    } catch (error) {
+      this.raw.close();
+      throw error;
+    }
   }
 
-  private migrationPaths(): string[] {
-    const directories = [
+  get migrationBackupPath(): string | null {
+    return this.migrationBackupPathValue;
+  }
+
+  private migrationPaths(override?: string[]): string[] {
+    const directories = override ?? [
       join(process.cwd(), 'src', 'main', 'database'),
-      join(process.cwd(), 'resources')
+      join(process.cwd(), 'resources'),
+      ...(process.resourcesPath ? [join(process.resourcesPath, 'resources'), process.resourcesPath] : [])
     ];
-    if (process.resourcesPath) directories.push(join(process.resourcesPath, 'resources'), process.resourcesPath);
     for (const directory of directories) {
       if (!existsSync(directory)) continue;
       const migrations = readdirSync(directory)
@@ -140,27 +214,111 @@ export class AppDatabase {
     throw new Error(`Database migrations not found. Checked: ${directories.join(', ')}`);
   }
 
-  migrate(): void {
-    for (const path of this.migrationPaths()) {
+  private migrations(override?: string[]): Migration[] {
+    return this.migrationPaths(override).map(path => {
       const name = path.split(/[\\/]/).pop() ?? path;
       const version = Number(name.slice(0, 3));
-      const migrationName = name.replace(/^\d{3}_|\.sql$/g, '');
-      if (version === 1) {
-        this.raw.exec(readFileSync(path, 'utf8'));
-        this.raw.prepare(`
-          INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)
-        `).run(version, migrationName);
-      } else {
-        const applied = this.raw.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version);
-        if (!applied) {
-          this.raw.transaction(() => {
-            this.raw.exec(readFileSync(path, 'utf8'));
-            this.raw.prepare(`
-              INSERT INTO schema_migrations(version, name) VALUES(?, ?)
-            `).run(version, migrationName);
-          })();
-        }
+      return { path, version, migrationName: name.replace(/^\d{3}_|\.sql$/g, '') };
+    });
+  }
+
+  private appliedSchemaVersion(): number {
+    const exists = this.raw.prepare(`
+      SELECT 1 AS present FROM sqlite_schema
+      WHERE type = 'table' AND name = 'schema_migrations'
+    `).get();
+    if (!exists) return 0;
+    const row = this.raw.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as
+      | { version: number | null }
+      | undefined;
+    return Number(row?.version ?? 0);
+  }
+
+  private createMigrationBackup(
+    existingVersion: number,
+    targetVersion: number,
+    schemaCapability: number
+  ): string {
+    const checkpointRows = this.raw.pragma('wal_checkpoint(TRUNCATE)') as Array<{
+      busy?: number;
+      log?: number;
+      checkpointed?: number;
+    }>;
+    const checkpoint = checkpointRows[0];
+    if (
+      !checkpoint
+      || Number(checkpoint.busy) !== 0
+      || Number(checkpoint.log) !== Number(checkpoint.checkpointed)
+    ) {
+      throw new Error(
+        '[DATABASE_MIGRATION_BACKUP_CHECKPOINT_FAILED] '
+        + 'Could not checkpoint every database page before upgrade; close other app instances and retry.'
+      );
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = join(
+      dirname(this.path),
+      `${basename(this.path)}.pre-migration-v${existingVersion}-to-v${targetVersion}-${timestamp}.sqlite`
+    );
+    copyFileSync(this.path, backupPath);
+    const backup = new SqliteConnection(backupPath, { schemaCapability });
+    try {
+      const integrity = String(backup.pragma('integrity_check', { simple: true }) ?? 'unknown');
+      if (integrity !== 'ok') throw new Error(`Pre-migration backup failed integrity validation: ${integrity}.`);
+      const backedUpVersion = backup.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as
+        | { version: number | null }
+        | undefined;
+      if (Number(backedUpVersion?.version ?? 0) !== existingVersion) {
+        throw new Error('Pre-migration backup schema version does not match the source database.');
       }
+    } finally {
+      backup.close();
+    }
+    return backupPath;
+  }
+
+  private migrate(migrations = this.migrations()): void {
+    const initial = migrations.find(migration => migration.version === 1);
+    const existingVersion = this.appliedSchemaVersion();
+    if (existingVersion === 0 && initial) {
+      this.raw.exec(readFileSync(initial.path, 'utf8'));
+      this.raw.prepare(`
+        INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)
+      `).run(initial.version, initial.migrationName);
+    } else if (existingVersion === 0) {
+      throw new Error('Migration inventory cannot initialize a database without schema 001.');
+    }
+
+    const pending = migrations.filter(migration => (
+      migration.version > 1
+      && !this.raw.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(migration.version)
+    ));
+    if (pending.length > 0) {
+      this.raw.transaction(() => {
+        for (const migration of pending) {
+          this.raw.exec(readFileSync(migration.path, 'utf8'));
+          this.raw.prepare(`
+            INSERT INTO schema_migrations(version, name) VALUES(?, ?)
+          `).run(migration.version, migration.migrationName);
+        }
+      })();
+    }
+  }
+
+  static schemaVersion(path: string): number {
+    const connection = new SqliteConnection(path);
+    try {
+      const exists = connection.prepare(`
+        SELECT 1 AS present FROM sqlite_schema
+        WHERE type = 'table' AND name = 'schema_migrations'
+      `).get();
+      if (!exists) return 0;
+      const row = connection.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as
+        | { version: number | null }
+        | undefined;
+      return Number(row?.version ?? 0);
+    } finally {
+      connection.close();
     }
   }
 

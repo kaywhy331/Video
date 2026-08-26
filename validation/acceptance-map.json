@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v5",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v6",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -20,6 +20,13 @@
         "tests/contracts.test.ts",
         "tests/media-tool-service.test.ts",
         "tests/process-utils.test.ts"
+      ]
+    },
+    {
+      "ids": ["SYS-009"],
+      "evidence": [
+        "tests/database-migration.test.ts",
+        "tests/preflight.test.ts"
       ]
     },
     {
@@ -211,7 +218,7 @@
       ]
     },
     {
-      "ids": ["BAK-001", "BAK-002", "BAK-003", "BAK-004", "BAK-005"],
+      "ids": ["BAK-001", "BAK-002", "BAK-003", "BAK-004", "BAK-005", "BAK-006"],
       "evidence": [
         "tests/backup-service.test.ts",
         "tests/project-artifact-service.integration.test.ts",

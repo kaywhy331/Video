@@ -91,6 +91,10 @@ Custom FFmpeg and FFprobe binaries cannot run until a local inspection records c
 
 A missing, replaced, role-mismatched, or untrusted custom media tool never executes; packaged builds safely retain bundled-tool precedence and development PATH fallback remains visibly labeled.
 
+### SYS-009 - Transactional schema upgrade and compatibility guard
+
+Schema 18 upgrades automatically only after an integrity-checked backup, the entire pending migration batch rolls back on injected failure, upgraded and fresh schemas are structurally identical, and a build below the database capability fails with an actionable compatibility error before it can mutate application rows.
+
 ---
 
 ## 4. Catalog import and metadata tests
@@ -730,6 +734,10 @@ Restore identifies missing original and blocks final reproduction with exact fil
 ### BAK-005 - Retention policy
 
 Daily/weekly/monthly rotation deletes only expired backups.
+
+### BAK-006 - Safety-binding restore preservation
+
+A staged, checksummed restore preserves confirmed YouTube and provider bindings, retry reconciliation, media-tool trust, active-final publication identity/approval, and the associated audit evidence at the current schema version.
 
 ---
 
