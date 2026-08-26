@@ -105,7 +105,7 @@ describe('durable automatic workflow continuation', () => {
         }
       } as never,
       () => undefined,
-      () => undefined
+      () => () => undefined
     );
 
     const [first, second] = await Promise.all([service.advance('project-1'), service.advance('project-1')]);
@@ -141,7 +141,7 @@ describe('durable automatic workflow continuation', () => {
         })
       } as never,
       emit,
-      () => undefined
+      () => () => undefined
     );
 
     expect((await service.advance('project-1')).state).toBe('BLOCKED_EXCEPTION');
@@ -172,7 +172,7 @@ describe('durable automatic workflow continuation', () => {
         }
       } as never,
       () => undefined,
-      () => undefined
+      () => () => undefined
     );
 
     expect((await service.advance('project-1')).state).toBe('BLOCKED_EXCEPTION');
@@ -191,7 +191,7 @@ describe('durable automatic workflow continuation', () => {
     const service = new WorkflowService(
       waiting.db, new JobService(waiting.db), waitingProjects as never,
       {} as never, {} as never, {} as never, {} as never, {} as never,
-      () => undefined, () => undefined
+      () => undefined, () => () => undefined
     );
     expect((await service.advance('project-1')).state).toBe('WAITING_FOR_DOWNLOADS');
     waiting.db.close();
@@ -203,7 +203,7 @@ describe('durable automatic workflow continuation', () => {
     const lockedService = new WorkflowService(
       locked.db, new JobService(locked.db), lockedProjects as never,
       {} as never, { generate } as never, {} as never, {} as never, {} as never,
-      () => undefined, () => undefined
+      () => undefined, () => () => undefined
     );
     expect((await lockedService.advance('project-1')).state).toBe('GENERATING_VOICE');
     expect(generate).not.toHaveBeenCalled();
@@ -225,7 +225,7 @@ describe('durable automatic workflow continuation', () => {
       {} as never, {} as never, {} as never,
       { get: () => ({ canUpload: true }), completeAutomaticRevisions: vi.fn() } as never,
       { uploadReadiness: () => ({ ready: true }), uploadPrivate } as never,
-      () => undefined, () => undefined
+      () => undefined, () => () => undefined
     );
 
     expect((await service.advance('project-1')).state).toBe('QC_FINAL');
@@ -249,7 +249,7 @@ describe('durable automatic workflow continuation', () => {
       {} as never,
       {} as never,
       () => undefined,
-      () => undefined
+      () => () => undefined
     );
 
     expect((await service.advance('project-1')).state).toBe('QC_DRAFT');
@@ -275,7 +275,7 @@ describe('durable automatic workflow continuation', () => {
       { get: () => ({ canUpload: true }) } as never,
       { createUploadSnapshot: uploadSnapshot, uploadPrivate } as never,
       () => undefined,
-      () => undefined
+      () => () => undefined
     );
 
     await expect(service.uploadPrivate('project-1')).resolves.toEqual({
@@ -320,7 +320,7 @@ describe('durable automatic workflow continuation', () => {
       { get: () => ({ canUpload: true }) } as never,
       { createUploadSnapshot: uploadSnapshot, uploadPrivate } as never,
       () => undefined,
-      () => undefined
+      () => () => undefined
     );
 
     await expect(service.uploadPrivate('project-1')).rejects.toThrow(/already running|project is busy/i);

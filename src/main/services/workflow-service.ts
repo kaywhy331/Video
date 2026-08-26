@@ -59,7 +59,7 @@ export class WorkflowService {
     private readonly finalReview: FinalReviewService,
     private readonly youtube: YouTubeService,
     private readonly emitState: () => void,
-    private readonly setLongOperationActive: (active: boolean) => void
+    private readonly beginLongOperation: () => () => void
   ) {}
 
   advance(projectId: string): Promise<ProjectDetail> {
@@ -115,7 +115,7 @@ export class WorkflowService {
   }
 
   private async run(projectId: string): Promise<ProjectDetail> {
-    this.setLongOperationActive(true);
+    const release = this.beginLongOperation();
     try {
       for (let step = 0; step < 24; step += 1) {
         const project = this.projects.get(projectId);
@@ -150,7 +150,7 @@ export class WorkflowService {
       this.emitState();
       return this.projects.get(projectId);
     } finally {
-      this.setLongOperationActive(false);
+      release();
     }
   }
 

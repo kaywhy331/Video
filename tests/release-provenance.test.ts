@@ -8,7 +8,9 @@ import { validationInputDigests } from '../scripts/validation-input.mjs';
 import {
   ELECTRON_PERFORMANCE_RECEIPT_PATH,
   EXTERNAL_QUALIFICATION_INDEX_PATH,
-  writeElectronPerformanceQualificationIndex
+  WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+  writeElectronPerformanceQualificationIndex,
+  writeWindowsPackageRuntimeQualificationIndex
 } from '../scripts/external-qualification-evidence.mjs';
 
 const repositoryRoot = process.cwd();
@@ -321,9 +323,26 @@ function writePackageSmokeEvidence(root: string, status: 'passed' | 'failed' = '
   const archivePath = resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip');
   const packageEvidence = (path: string) => ({ name: basename(path), ...evidence(path) });
   const identity = gitIdentity(root);
+  const runtimeCheckNames = [
+    'trayReady', 'catalogWorkerObservedActive', 'powerBlockerObservedStarted',
+    'windowCloseHiddenToTray', 'processAliveAfterWindowClose',
+    'catalogWorkerObservedActiveWhileHidden', 'catalogWorkerCompletedWhileHidden',
+    'powerBlockerObservedStopped', 'powerBlockerCoveredWork', 'shutdownStarted',
+    'shutdownCompleted', 'orderlyQuit', 'eventSequenceValid'
+  ];
+  const runtimeEvents = [
+    ['qualification_started', { packaged: true }],
+    ['tray_ready', { available: true }],
+    ['power_blocker_started', { blockerId: 9, started: true, mode: 'prevent-app-suspension' }],
+    ['window_hidden_to_tray', { visible: false, destroyed: false }],
+    ['power_blocker_stopped', { blockerId: 9, wasStarted: true, reason: 'operation_complete' }],
+    ['shutdown_started', {}],
+    ['shutdown_completed', {}]
+  ];
   writeFileSync(resolve(root, 'release', 'WINDOWS_PACKAGE_SMOKE.json'), JSON.stringify({
-    receiptVersion: 2,
+    receiptVersion: 3,
     status,
+    generatedAt: '2026-08-26T12:00:00.000Z',
     appVersion: '9.8.7-alpha.1',
     source: {
       commit: identity.commit,
@@ -335,8 +354,15 @@ function writePackageSmokeEvidence(root: string, status: 'passed' | 'failed' = '
       runAttempt: '1',
       dirty: false
     },
-    runner: { platform: 'win32' },
-    qualification: { validation: 'release' },
+    runner: { platform: 'win32', architecture: 'x64' },
+    qualification: {
+      validation: 'release',
+      scope: 'hosted_windows_package_smoke',
+      cleanMachine: false,
+      developerToolingPresent: true,
+      productionQualification: false,
+      windowsRuntimeLifecycle: { status: 'passed', qualifiedGateIds: ['SYS-005', 'SYS-006'] }
+    },
     packages: {
       installer: packageEvidence(installerPath),
       archive: packageEvidence(archivePath)
@@ -344,10 +370,93 @@ function writePackageSmokeEvidence(root: string, status: 'passed' | 'failed' = '
     checks: {
       archiveLaunch: { status },
       installerInstall: { status },
-      installedLaunch: { status },
+      installedLaunch: {
+        status,
+        kind: 'installed',
+        app: { isPackaged: true },
+        lifecycle: { orderlyQuit: true },
+        runtimeQualification: {
+          schemaVersion: 1,
+          status: 'passed',
+          workload: {
+            kind: 'catalog_preview', operationId: 'runtime', source: 'catalog.xlsx',
+            sourceSizeBytes: 100, requestedRows: 26_000, completedRows: 26_000
+          },
+          checks: Object.fromEntries(runtimeCheckNames.map(name => [name, true])),
+          events: runtimeEvents.map(([event, details], index) => ({
+            schemaVersion: 1, sequence: index + 1,
+            at: new Date(Date.parse('2026-08-26T12:00:01.000Z') + index * 100).toISOString(),
+            event, pid: 10, details
+          }))
+        }
+      },
       uninstall: { status }
     }
   }));
+}
+
+function writeQualifiedWindowsEvidence(root: string): void {
+  const identity = gitIdentity(root);
+  const source = {
+    commit: identity.commit,
+    tree: identity.tree,
+    ref: 'refs/tags/v9.8.7-alpha.1',
+    repository: 'fixture/video',
+    workflowCommit: identity.commit,
+    runId: '1',
+    runAttempt: '1',
+    dirty: false
+  };
+  const admitted = writeWindowsPackageRuntimeQualificationIndex({
+    root,
+    source,
+    now: new Date('2026-08-26T12:02:00.000Z')
+  });
+  const projection = {
+    index: admitted.index,
+    receipts: admitted.receipts.map(item => ({
+      kind: item.kind,
+      evidence: item.evidence,
+      qualifiedIds: item.qualifiedIds
+    })),
+    qualifiedIds: admitted.qualifiedIds
+  };
+  const acceptancePath = resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
+  const acceptance = JSON.parse(readFileSync(acceptancePath, 'utf8'));
+  const windowsCases = ['SYS-005', 'SYS-006'].map(id => ({
+    id,
+    classification: 'external',
+    result: 'passed_external_qualification',
+    artifacts: [EXTERNAL_QUALIFICATION_INDEX_PATH, WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH],
+    externalEvidence: {
+      kind: 'windows_package_runtime',
+      index: admitted.index,
+      receipt: admitted.qualifiedById[id]!.evidence
+    }
+  }));
+  const summary = {
+    total: acceptance.cases.length + windowsCases.length,
+    passedLocalValidation: 1,
+    qualifiedExternal: admitted.qualifiedIds.length,
+    externalPending: 0,
+    productionQualified: true
+  };
+  acceptance.cases.push(...windowsCases);
+  acceptance.summary = summary;
+  acceptance.externalQualificationEvidence = projection;
+  writeFileSync(acceptancePath, JSON.stringify(acceptance));
+
+  const statusPath = resolve(root, 'VALIDATION_STATUS.json');
+  const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+  status.acceptance = { receipt: 'VALIDATION_ACCEPTANCE_RECEIPT.json', ...summary };
+  status.externalQualificationEvidence = projection;
+  status.externalQualification.push(...windowsCases.map(item => ({
+    id: item.id,
+    status: 'qualified',
+    artifacts: item.artifacts,
+    evidence: item.externalEvidence
+  })));
+  writeFileSync(statusPath, JSON.stringify(status));
 }
 
 afterEach(() => {
@@ -418,6 +527,20 @@ describe('release artifact provenance', () => {
     ]));
   });
 
+  it('re-admits independent Electron and Windows runtime receipts in one release', () => {
+    const root = fixtureRoot();
+    writeValidationEvidence(root);
+    writeQualifiedElectronEvidence(root);
+    writePackageSmokeEvidence(root);
+    writeQualifiedWindowsEvidence(root);
+    expect(run(root, ['--require-package-smoke']).status).toBe(0);
+    expect(run(root, ['--verify']).status).toBe(0);
+    const manifest = JSON.parse(readFileSync(resolve(root, 'release', 'RELEASE_PROVENANCE.json'), 'utf8'));
+    expect(manifest.validation.externalQualificationEvidence.receipts.map(
+      (item: { kind: string }) => item.kind
+    )).toEqual(['electron_performance', 'windows_package_runtime']);
+  });
+
   it('fails verification after a published artifact changes', () => {
     const root = fixtureRoot();
     writeValidationEvidence(root);
@@ -462,7 +585,7 @@ describe('release artifact provenance', () => {
     expect(run(root, ['--require-package-smoke']).status).toBe(0);
     expect(run(root, ['--verify']).status).toBe(0);
     const manifest = JSON.parse(readFileSync(resolve(root, 'release', 'RELEASE_PROVENANCE.json'), 'utf8'));
-    expect(manifest.windowsPackageSmoke.receiptVersion).toBe(2);
+    expect(manifest.windowsPackageSmoke.receiptVersion).toBe(3);
     expect(manifest.windowsPackageSmoke.source.tree).toBe(manifest.source.tree);
     expect(manifest.windowsPackageSmoke.checks.uninstall.status).toBe('passed');
   });

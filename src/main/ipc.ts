@@ -249,23 +249,16 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
         { name: 'Spreadsheets', extensions: ['xlsx', 'xls', 'csv'] }
       ]
     });
-    if (result.canceled || !result.filePaths[0]) return null;
-    context.setLongOperationActive(true);
-    try {
-      return await context.catalogImports.preview(operationId, { filePath: result.filePaths[0] });
-    } finally {
-      if (!context.catalogImports.status()) context.setLongOperationActive(false);
-    }
+    const filePath = result.filePaths[0];
+    if (result.canceled || !filePath) return null;
+    return context.runLongOperation(() =>
+      context.catalogImports.preview(operationId, { filePath })
+    );
   });
   handle(IPC.catalogPreviewImport, async (_event, payload) => {
     const request = ImportRequestSchema.parse(payload);
     const operationId = request.operationId ?? randomUUID();
-    context.setLongOperationActive(true);
-    try {
-      return await context.catalogImports.preview(operationId, request);
-    } finally {
-      if (!context.catalogImports.status()) context.setLongOperationActive(false);
-    }
+    return context.runLongOperation(() => context.catalogImports.preview(operationId, request));
   });
   handle(IPC.catalogCancelImport, (_event, payload) => context.catalog.cancelImportPreview(IdSchema.parse(payload)));
   handle(IPC.catalogCancelOperation, (_event, payload) => {
@@ -281,15 +274,12 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   handle(IPC.catalogCommitImport, async (_event, payload) => {
     const request = ImportRequestSchema.parse(payload);
     const operationId = request.operationId ?? randomUUID();
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const result = await context.catalogImports.commit(operationId, request);
       context.catalog.invalidateSearchCaches();
       context.emitState();
       return result;
-    } finally {
-      if (!context.catalogImports.status()) context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.catalogBulkUpdate, (_event, payload) => {
     const request = CatalogBulkUpdateSchema.parse(payload);
@@ -353,8 +343,7 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   handle(IPC.catalogRefreshRun, async (_event, payload) => {
     const request = CatalogRefreshSchema.parse(payload ?? {});
     const settings = context.settings();
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const result = await context.catalogImports.refresh(request.operationId ?? randomUUID(), {
         filePath: request.sourcePath ?? settings.catalogImportFile,
         templateId: request.templateId ?? settings.catalogValidationTemplateId
@@ -362,9 +351,7 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
       context.catalog.invalidateSearchCaches();
       context.emitState();
       return result;
-    } finally {
-      if (!context.catalogImports.status()) context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.catalogUpdateAsset, (_event, payload) => {
     const request = CatalogUpdateAssetSchema.parse(payload);
@@ -455,21 +442,11 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   });
   handle(IPC.googleSheetsSync, async (_event, payload) => {
     const request = GoogleSheetsSyncSchema.parse(payload);
-    context.setLongOperationActive(true);
-    try {
-      return await context.expansion.stageGoogleSheet(request);
-    } finally {
-      if (!context.catalogImports.status()) context.setLongOperationActive(false);
-    }
+    return context.runLongOperation(() => context.expansion.stageGoogleSheet(request));
   });
   handle(IPC.googleSheetsRuns, () => context.expansion.googleSheetsRuns());
   handle(IPC.googleSheetsPreview, async (_event, payload) => {
-    context.setLongOperationActive(true);
-    try {
-      return await context.expansion.stagedGoogleSheetPreview(IdSchema.parse(payload));
-    } finally {
-      if (!context.catalogImports.status()) context.setLongOperationActive(false);
-    }
+    return context.runLongOperation(() => context.expansion.stagedGoogleSheetPreview(IdSchema.parse(payload)));
   });
 
   handle(IPC.projectsList, () => context.projects.list());
@@ -521,28 +498,22 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
       destinationPath = result.filePaths[0];
     }
     if (!destinationPath) return null;
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const report = await context.artifacts.exportProject(request.projectId, destinationPath, {
         includeOriginals: request.includeOriginals,
         includeFinalOutput: request.includeFinalOutput
       });
       context.emitState();
       return report;
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.projectRebuildDerivatives, async (_event, payload) => {
     const request = ProjectRebuildSchema.parse(payload ?? {});
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const report = await context.artifacts.rebuildProject(request.projectId);
       context.emitState();
       return report;
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.projectDelete, (_event, payload) => {
     context.projects.delete(IdSchema.parse(payload));
@@ -636,14 +607,11 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     return result;
   });
   handle(IPC.storyboardVerifyLocation, async (_event, payload) => {
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const result = await context.storyboard.verifyLocation(StoryboardVerifyLocationSchema.parse(payload));
       context.emitState();
       return result;
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.storyboardRejectCandidate, (_event, payload) => {
     const result = context.storyboard.rejectCandidate(StoryboardRejectCandidateSchema.parse(payload));
@@ -653,14 +621,11 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
 
   handle(IPC.renderStart, async (_event, payload) => {
     const request = RenderRequestSchema.parse(payload);
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const result = await context.renders.render(request.projectId, request);
       context.emitState();
       return result;
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.renderFourKBlockers, (_event, payload) => context.renders.fourKBlockers(IdSchema.parse(payload)));
   handle(IPC.finalReviewGet, (_event, payload) => context.finalReview.get(IdSchema.parse(payload)));
@@ -709,14 +674,11 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
       YouTubeAuthorizationCancellationSchema.parse(payload).pendingAuthorizationId
     ));
   handle(IPC.youtubeUploadPrivate, async (_event, payload) => {
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const result = await context.workflow.uploadPrivate(IdSchema.parse(payload));
       context.emitState();
       return result;
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.youtubeApprove, async (_event, payload) => {
     const request = ApprovePublicationSchema.parse(payload);
@@ -748,8 +710,7 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     const request = ExceptionRetrySchema.parse(payload);
     const before = context.exceptions.get(request.id);
     if (!before.retryAction) throw new Error('This exception has no safe retry action.');
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       if (before.retryAction === 'semantic_verification') {
         await context.media.retrySemanticVerification(before.id);
         context.emitState();
@@ -782,34 +743,26 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
       }
       context.emitState();
       return context.exceptions.get(before.id);
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.ambiguousMappingGet, (_event, payload) =>
     context.ambiguousMappings.get(IdSchema.parse(payload))
   );
   handle(IPC.ambiguousMappingResolve, async (_event, payload) => {
     const request = AmbiguousMappingResolveSchema.parse(payload);
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const result = await context.ambiguousMappings.resolve(request.exceptionId, request.acquisitionId);
       context.emitState();
       return result;
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.semanticVerificationRetry, async (_event, payload) => {
     const request = SemanticVerificationRetrySchema.parse(payload);
-    context.setLongOperationActive(true);
-    try {
+    return context.runLongOperation(async () => {
       const result = await context.media.retrySemanticVerification(request.exceptionId);
       context.emitState();
       return result;
-    } finally {
-      context.setLongOperationActive(false);
-    }
+    });
   });
   handle(IPC.jobsList, (_event, payload) => context.jobs.list(payload ? IdSchema.parse(payload) : undefined));
   handle(IPC.jobsRetryCapability, (_event, payload) => {

@@ -137,9 +137,10 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - canonical `VideoFactory-Desktop-<version>-<arch>.<ext>` Windows package names that are independent of the human-facing product name and remain byte-for-byte addressable after hosted upload;
 - fail-closed release-manifest validation for filenames outside the upload-safe ASCII letter, digit, period, underscore, and hyphen set, with regression coverage for normalized-name risk.
 
-## Packaged Windows smoke gate added in alpha.6
+## Packaged Windows smoke and lifecycle gate
 
 - hosted Windows CI launches the extracted ZIP and installed NSIS application through the packaged executable, waits for the real dashboard, confirms packaged mode and isolated database initialization, and requests an orderly Electron quit;
+- the installed-app run starts a real 26K catalog worker, observes Electron's suspend blocker, closes the main window to the tray, proves IPC work continues while hidden, then records blocker release and safe shutdown from the packaged main process;
 - the same bounded run performs silent installation and uninstallation in an isolated path, verifies removal, and writes `WINDOWS_PACKAGE_SMOKE.json` with exact commit, version, runner, package hash, lifecycle, and cleanup evidence;
 - release provenance fails closed when that receipt is missing, failed, stale, incomplete, or does not match the installer and archive bytes. This supports packaging confidence but does not close the clean-machine qualification gate.
 
@@ -151,6 +152,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - runtime and human release-claim inputs have separate deterministic per-file manifests without hashing their own generated provenance;
 - claim validation checks exact tags, commits, workflow runs, published-asset counts, signing/readiness state, and external-gate counts against the immutable historical index across every tracked claim document, while Git checks the recorded tag, trees, ancestry, and single-change index history;
 - Linux validation and Windows packaging retain the exact `${{ github.sha }}` artifact handoff, while manifest generation and verification reject dirty, development, stale commit/tree, or mismatched-input evidence;
+- the Windows job adds its hashed package-runtime receipt to the exact-source external index and reruns acceptance against the downloaded Linux reports, allowing only `SYS-005` and `SYS-006` to qualify while `SYS-001` remains a clean-machine gate;
 - the tracked [alpha.7 historical evidence index](release-evidence/v0.1.0-alpha.7.json) records the immutable tag/release, workflow/job chain, transient Actions artifacts, and all published assets without claiming to validate the current checkout.
 
 ## Measured catalog performance and remaining UI boundary

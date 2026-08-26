@@ -62,6 +62,7 @@ import { MediaToolService } from './services/media-tool-service';
 import { installMediaToolResolver } from './tool-paths';
 import { installProcessLaunchGuard } from './services/process-utils';
 import { ActiveFinalService } from './services/active-final-service';
+import { LongOperationPowerGuard } from './services/long-operation-power-guard';
 
 export class AppContext {
   readonly db: AppDatabase;
@@ -106,7 +107,7 @@ export class AppContext {
   readonly storyboard: StoryboardService;
 
   private settingsValue: AppSettings;
-  private powerBlockerChanged?: (active: boolean) => void;
+  private readonly longOperationPower = new LongOperationPowerGuard();
   private backupTimer?: NodeJS.Timeout;
   private backupStartupTimer?: NodeJS.Timeout;
   private catalogRefreshTimer?: NodeJS.Timeout;
@@ -297,7 +298,7 @@ export class AppContext {
       this.finalReview,
       this.youtube,
       () => this.emitState(),
-      active => this.setLongOperationActive(active)
+      () => this.beginLongOperation()
     );
     this.backups = new BackupService(this.db, () => this.settingsValue);
     this.artifacts = new ProjectArtifactService(this.db, () => this.settingsValue);
@@ -342,11 +343,15 @@ export class AppContext {
   }
 
   setPowerBlockerHandler(handler: (active: boolean) => void): void {
-    this.powerBlockerChanged = handler;
+    this.longOperationPower.setHandler(handler);
   }
 
-  setLongOperationActive(active: boolean): void {
-    this.powerBlockerChanged?.(active);
+  beginLongOperation(): () => void {
+    return this.longOperationPower.begin();
+  }
+
+  runLongOperation<T>(work: () => T | Promise<T>): Promise<T> {
+    return this.longOperationPower.run(work);
   }
 
   runOperation<T>(label: string, work: () => T | Promise<T>): Promise<T> {
@@ -688,21 +693,16 @@ export class AppContext {
       const latest = this.catalog.latestRefresh();
       const intervalMs = settings.catalogRefreshIntervalHours * 60 * 60 * 1_000;
       if (latest && Date.now() - Date.parse(latest.createdAt) < intervalMs) return;
-      this.runBackground('catalog:scheduled-refresh', async () => {
-        this.setLongOperationActive(true);
-        try {
-          const run = await this.catalogImports.refresh(randomUUID(), {
-            filePath: settings.catalogImportFile,
-            templateId: settings.catalogValidationTemplateId
-          });
-          if (run.status === 'staged') this.notify('A scheduled catalog refresh diff is staged for review.');
-          if (run.status === 'blocked' || run.status === 'failed') {
-            this.notify(`Scheduled catalog refresh ${run.status}: ${run.validation.issues[0] ?? run.error ?? 'Review required.'}`);
-          }
-        } finally {
-          if (!this.catalogImports.status()) this.setLongOperationActive(false);
+      this.runBackground('catalog:scheduled-refresh', () => this.runLongOperation(async () => {
+        const run = await this.catalogImports.refresh(randomUUID(), {
+          filePath: settings.catalogImportFile,
+          templateId: settings.catalogValidationTemplateId
+        });
+        if (run.status === 'staged') this.notify('A scheduled catalog refresh diff is staged for review.');
+        if (run.status === 'blocked' || run.status === 'failed') {
+          this.notify(`Scheduled catalog refresh ${run.status}: ${run.validation.issues[0] ?? run.error ?? 'Review required.'}`);
         }
-      }, error => this.logger.error('Scheduled catalog refresh failed', error));
+      }), error => this.logger.error('Scheduled catalog refresh failed', error));
     };
     const checkUpdates = (): void => {
       if (!this.settingsValue.updateCheckEnabled) return;
