@@ -277,7 +277,7 @@
     },
     {
       "ids": ["E2E-004"],
-      "reason": "A real SIGKILL-and-restart drill now covers FFmpeg-backed ingest checkpoint recovery without source loss or database corruption; forced termination at every real render stage and live YouTube resumable-upload stage remains a production drill.",
+      "reason": "Real SIGKILL-and-restart drills now cover FFmpeg-backed ingest checkpoint recovery without source loss and a draft-render assembly-boundary recovery through a successful second durable attempt; forced termination at every representative render stage and the live YouTube resumable-upload stage remain production drills.",
       "evidence": [
         "tests/job-service.test.ts",
         "tests/media-ingest-safety.integration.test.ts",

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import { JobService } from '@main/services/job-service';
 import { RenderService } from '@main/services/render-service';
 import type { AppSettings } from '@shared/types';
+import { openRenderCrashFixture, seedRenderCrashFixture } from './fixtures/render-crash-fixture';
 
 const roots: string[] = [];
 
@@ -14,6 +16,93 @@ afterEach(() => {
 });
 
 describe('render crash recovery', () => {
+  it('[E2E-004] resumes a real draft render after the service host is killed at the assembly boundary', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-real-render-recovery-'));
+    roots.push(root);
+    await seedRenderCrashFixture(root);
+
+    const child = spawnSync(process.execPath, [
+      resolve('node_modules/vite-node/vite-node.mjs'),
+      `--config=${resolve('vitest.config.ts')}`,
+      resolve('tests/fixtures/render-crash-host.ts')
+    ], {
+      cwd: process.cwd(),
+      env: { ...process.env, VIDEOFACTORY_RENDER_CRASH_ROOT: root },
+      encoding: 'utf8',
+      timeout: 60_000
+    });
+    expect(child.error, child.stderr).toBeUndefined();
+    expect(child.stdout, child.stderr).toContain('VIDEOFACTORY_RENDER_CHECKPOINT_READY');
+    expect(child.status, child.stderr).not.toBe(0);
+
+    const restarted = openRenderCrashFixture(root);
+    try {
+      const interruptedJob = restarted.db.raw.prepare(`
+        SELECT id, state, attempt, phase FROM jobs WHERE type = 'render_draft'
+      `).get() as { id: string; state: string; attempt: number; phase: string };
+      const interruptedRender = restarted.db.raw.prepare(`
+        SELECT id, state, output_path FROM renders WHERE kind = 'draft'
+      `).get() as { id: string; state: string; output_path: string };
+      const interruptedFragment = restarted.db.raw.prepare(`
+        SELECT output_path FROM render_fragments WHERE project_id = 'project-1'
+      `).get() as { output_path: string };
+      const staleWork = join(
+        restarted.settings.projectFolder,
+        'project-1',
+        'render-work',
+        interruptedRender.id
+      );
+
+      expect(interruptedJob).toMatchObject({ state: 'RUNNING', attempt: 1, phase: 'Assembling timeline' });
+      expect(interruptedRender).toMatchObject({ state: 'RUNNING' });
+      expect(restarted.db.raw.prepare(`
+        SELECT state, locked_by_job_id FROM projects WHERE id = 'project-1'
+      `).get()).toEqual({ state: 'RENDERING_DRAFT', locked_by_job_id: interruptedJob.id });
+      expect(existsSync(staleWork)).toBe(true);
+      expect(existsSync(interruptedFragment.output_path)).toBe(true);
+      expect(existsSync(interruptedRender.output_path)).toBe(false);
+
+      restarted.jobs.recoverInterrupted();
+      expect(restarted.render.recoverInterrupted()).toBe(1);
+      expect(restarted.db.raw.prepare(`
+        SELECT state, attempt, phase FROM jobs WHERE id = ?
+      `).get(interruptedJob.id)).toEqual({ state: 'QUEUED', attempt: 1, phase: 'Recovered after restart' });
+      expect(restarted.db.raw.prepare(`
+        SELECT state, locked_by_job_id FROM projects WHERE id = 'project-1'
+      `).get()).toEqual({ state: 'RENDERING_DRAFT', locked_by_job_id: null });
+      expect(restarted.db.raw.prepare(`
+        SELECT state, error, completed_at FROM renders WHERE id = ?
+      `).get(interruptedRender.id)).toEqual({
+        state: 'FAILED',
+        error: 'Interrupted by a prior desktop process; automatic rerender is safe.',
+        completed_at: expect.any(String)
+      });
+      expect(existsSync(staleWork)).toBe(false);
+      expect(restarted.db.integrityCheck()).toBe('ok');
+
+      const completed = await restarted.render.render('project-1', 'draft');
+      expect(completed).toMatchObject({ state: 'SUCCEEDED', kind: 'draft', artifactVersion: 2 });
+      expect(existsSync(completed.outputPath!)).toBe(true);
+      expect(existsSync(completed.manifestPath!)).toBe(true);
+      expect(restarted.db.raw.prepare(`
+        SELECT state, attempt FROM jobs WHERE id = ?
+      `).get(interruptedJob.id)).toEqual({ state: 'SUCCEEDED', attempt: 2 });
+      expect(restarted.db.raw.prepare(`
+        SELECT state, count(*) AS count FROM renders
+        WHERE project_id = 'project-1' GROUP BY state ORDER BY state
+      `).all()).toEqual([
+        { state: 'FAILED', count: 1 },
+        { state: 'SUCCEEDED', count: 1 }
+      ]);
+      expect(restarted.db.raw.prepare(`
+        SELECT state, locked_by_job_id FROM projects WHERE id = 'project-1'
+      `).get()).toEqual({ state: 'QC_DRAFT', locked_by_job_id: null });
+      expect(restarted.db.integrityCheck()).toBe('ok');
+    } finally {
+      restarted.db.close();
+    }
+  }, 120_000);
+
   it('requeues the prior-process job, releases its lock, and closes only stale running render attempts', () => {
     const root = mkdtempSync(join(tmpdir(), 'videofactory-render-recovery-'));
     roots.push(root);
