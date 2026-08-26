@@ -1,7 +1,7 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import { randomUUID } from 'node:crypto';
-import { statSync } from 'node:fs';
-import { basename } from 'node:path';
+import { readdirSync, statSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import type { AppDatabase } from '../database/database';
 import type { AppSettings } from '@shared/types';
 import { fileLooksTemporary } from '@shared/media-policy';
@@ -50,6 +50,13 @@ export class DownloadWatcher {
   async start(): Promise<void> {
     await this.stop();
     const folder = this.settings().ingestFolder;
+    const recovery = await this.media.recoverInterruptedIngests();
+    if (recovery.recovered > 0) {
+      this.notify(`VideoFactory resumed ${recovery.recovered} interrupted media ingest${recovery.recovered === 1 ? '' : 's'}.`);
+    }
+    if (recovery.failed > 0) {
+      this.notify(`VideoFactory could not resume ${recovery.failed} interrupted media ingest${recovery.failed === 1 ? '' : 's'}; open Exceptions for recovery steps.`);
+    }
     this.acceptingEvents = true;
     this.watcher = chokidar.watch(folder, {
       ignoreInitial: true,
@@ -60,6 +67,14 @@ export class DownloadWatcher {
     this.watcher.on('add', path => {
       if (this.acceptingEvents) this.processAddedFile(path);
     });
+    const initialFiles = readdirSync(folder, { withFileTypes: true })
+      .filter(entry => entry.isFile() && !fileLooksTemporary(entry.name))
+      .map(entry => join(folder, entry.name))
+      .sort();
+    for (const path of initialFiles) {
+      if (!this.acceptingEvents) break;
+      this.processAddedFile(path);
+    }
   }
 
   async stop(): Promise<void> {
@@ -134,7 +149,7 @@ export class DownloadWatcher {
     } catch (error) {
       const active = this.db.raw.prepare(`
         SELECT * FROM acquisition_items
-        WHERE state IN ('ACTIVE_IN_BROWSER','WAITING_FOR_FILE','FILE_STABLE')
+        WHERE state IN ('ACTIVE_IN_BROWSER','WAITING_FOR_FILE','FILE_STABLE','MAPPED','PROCESSING')
         ORDER BY active_at DESC LIMIT 1
       `).get() as Record<string, unknown> | undefined;
       this.db.raw.prepare(`

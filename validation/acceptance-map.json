@@ -277,9 +277,10 @@
     },
     {
       "ids": ["E2E-004"],
-      "reason": "Deterministic crash reconciliation is automated, but forced process termination at every real ingest, render, and upload stage remains a production drill.",
+      "reason": "A real SIGKILL-and-restart drill now covers FFmpeg-backed ingest checkpoint recovery without source loss or database corruption; forced termination at every real render stage and live YouTube resumable-upload stage remains a production drill.",
       "evidence": [
         "tests/job-service.test.ts",
+        "tests/media-ingest-safety.integration.test.ts",
         "tests/render-recovery.test.ts",
         "tests/workflow-service.test.ts"
       ]
