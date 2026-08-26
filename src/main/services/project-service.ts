@@ -674,16 +674,16 @@ export class ProjectService {
     const { cluster, destination, title } = guidance;
     assertPlanningCapacity(this.db, settings, title);
     if (settings.researchProvider === 'tavily' && !this.research?.configured()) {
-      throw new Error('Tavily research is enabled but its encrypted API key is not configured; no project or provider call was started.');
+      throw new Error('Tavily research is enabled but its endpoint trust or credential binding is not ready; no project or provider call was started.');
     }
     if (settings.llmProvider === 'openai_compatible' && !this.ai.configured()) {
-      throw new Error('The language provider is enabled but its encrypted API key is not configured; no project or provider call was started.');
+      throw new Error('The language provider is enabled but its endpoint trust or credential binding is not ready; no project or provider call was started.');
     }
     if (settings.researchProvider === 'tavily' && settings.llmProvider !== 'openai_compatible') {
-      throw new Error('Web research requires the configured language provider and encrypted API key for cited claim extraction; no project or provider call was started.');
+      throw new Error('Web research requires a ready language-provider endpoint for cited claim extraction; no project or provider call was started.');
     }
     if (settings.visionProvider === 'openai_compatible' && !this.vision?.configured()) {
-      throw new Error('The semantic vision provider is enabled but its encrypted API key is not configured; no project or provider call was started.');
+      throw new Error('The semantic vision provider is enabled but its endpoint trust or credential binding is not ready; no project or provider call was started.');
     }
     const targetMinutes = request.targetMinutes ?? settings.targetVideoMinutes;
     const targetDurationMs = Math.round(targetMinutes * 60_000);

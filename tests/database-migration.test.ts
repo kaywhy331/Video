@@ -37,7 +37,8 @@ describe('application database migrations', () => {
       { version: 16, name: 'job_resource_leases' },
       { version: 17, name: 'deferred_lifecycle' },
       { version: 18, name: 'perceptual_matching' },
-      { version: 19, name: 'youtube_channel_binding' }
+      { version: 19, name: 'youtube_channel_binding' },
+      { version: 20, name: 'provider_endpoint_trust' }
     ]);
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('projects') WHERE name = 'resume_state'
@@ -150,6 +151,9 @@ describe('application database migrations', () => {
     expect(database.raw.prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'youtube_connection_binding'
     `).get()).toEqual({ name: 'youtube_connection_binding' });
+    expect(database.raw.prepare(`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'provider_endpoint_bindings'
+    `).get()).toEqual({ name: 'provider_endpoint_bindings' });
     const now = new Date().toISOString();
     database.raw.prepare(`INSERT INTO projects(id, sequence, slug, title, topic, state, progress, envato_project_name, target_duration_ms, created_at, updated_at) VALUES('claim-project', 99, 'claim-project', 'Claims', 'Claims', 'CREATED', 0, 'YT-CLAIMS', 1000, ?, ?)`).run(now, now);
     database.raw.prepare(`
@@ -170,7 +174,7 @@ describe('application database migrations', () => {
 
     const reopened = new AppDatabase(join(root, 'videofactory.sqlite'));
     expect(reopened.raw.prepare('SELECT count(*) AS count FROM schema_migrations').get())
-      .toEqual({ count: 19 });
+      .toEqual({ count: 20 });
     expect(reopened.integrityCheck()).toBe('ok');
     reopened.close();
   });
@@ -197,15 +201,23 @@ describe('application database migrations', () => {
       ) VALUES('legacy-project', 1, 'legacy-project', 'Legacy', 'Legacy', 'CREATED', 0,
         'YT-LEGACY', 60000, ?, ?)
     `).run(now, now);
+    legacy.prepare(`
+      INSERT INTO provider_health(provider, status, status_code, message, checked_at, metadata_json)
+      VALUES('tavily', 'auth_invalid', 401, 'Legacy invalid credential', ?, '{}')
+    `).run(now);
     legacy.close();
 
     const upgraded = new AppDatabase(path);
     expect(upgraded.raw.prepare(`SELECT title FROM projects WHERE id = 'legacy-project'`).get())
       .toEqual({ title: 'Legacy' });
     expect(upgraded.raw.prepare(`SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1`).get())
-      .toEqual({ version: 19, name: 'youtube_channel_binding' });
+      .toEqual({ version: 20, name: 'provider_endpoint_trust' });
     expect(upgraded.raw.prepare(`SELECT count(*) AS count FROM youtube_connection_binding`).get())
       .toEqual({ count: 0 });
+    expect(upgraded.raw.prepare(`SELECT count(*) AS count FROM provider_endpoint_bindings`).get())
+      .toEqual({ count: 0 });
+    expect(upgraded.raw.prepare(`SELECT status, status_code FROM provider_health WHERE provider = 'tavily'`).get())
+      .toEqual({ status: 'auth_invalid', status_code: 401 });
     expect(upgraded.integrityCheck()).toBe('ok');
     upgraded.close();
   });

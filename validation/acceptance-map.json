@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v2",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-25-v3",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -172,22 +172,24 @@
     {
       "ids": [
         "JOB-001", "JOB-002", "JOB-003", "JOB-004", "JOB-005", "JOB-006",
-        "JOB-007", "JOB-008", "JOB-009"
+        "JOB-007", "JOB-008", "JOB-009", "JOB-010"
       ],
       "evidence": [
         "tests/job-service.test.ts",
+        "tests/provider-endpoint-policy.test.ts",
         "tests/provider-policy.test.ts",
         "tests/render-recovery.test.ts",
         "tests/workflow-service.test.ts"
       ]
     },
     {
-      "ids": ["SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-005", "SEC-006", "SEC-007", "SEC-008", "SEC-009"],
+      "ids": ["SEC-001", "SEC-002", "SEC-003", "SEC-004", "SEC-005", "SEC-006", "SEC-007", "SEC-008", "SEC-009", "SEC-010", "SEC-011"],
       "evidence": [
         "tests/contracts.test.ts",
         "tests/e2e/electron-accessibility.spec.ts",
         "tests/media-protocol.test.ts",
         "tests/project-artifact-service.integration.test.ts",
+        "tests/provider-endpoint-policy.test.ts",
         "tests/security-policy.test.ts",
         "tests/youtube-oauth-session.test.ts"
       ]

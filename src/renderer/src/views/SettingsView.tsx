@@ -18,7 +18,15 @@ import {
   Sheet,
   X
 } from 'lucide-react';
-import type { AppBootstrap, AppSettings, DiagnosticsReport, YouTubeConnectionStatus } from '@shared/types';
+import type {
+  AppBootstrap,
+  AppSettings,
+  DiagnosticsReport,
+  ProviderEndpointId,
+  ProviderEndpointState,
+  ProviderEndpointTrustMode,
+  YouTubeConnectionStatus
+} from '@shared/types';
 import { Button, MetricCard, Panel, StatusPill } from '../components/ui';
 
 export function SettingsView({
@@ -117,14 +125,44 @@ export function SettingsView({
         (Object.entries(secrets) as Array<[keyof SecretDraft, string]>)
           .filter(([, value]) => value.trim().length > 0)
       ) as Record<string, string | undefined>;
+      const next = await window.videoFactory.settings.update(form);
       if (Object.keys(secretPatch).length) {
         await window.videoFactory.settings.updateSecrets(secretPatch);
         setSecrets({ llmApiKey: '', visionApiKey: '', researchApiKey: '', httpTtsApiKey: '', youtubeClientId: '', youtubeClientSecret: '', youtubeApiKey: '' });
       }
-      const next = await window.videoFactory.settings.update(form);
       setForm(next);
       await onRefresh();
     });
+  }
+
+  async function trustProviderEndpoint(provider: ProviderEndpointId): Promise<void> {
+    await run(`endpoint-trust-${provider}`, async () => {
+      await window.videoFactory.settings.trustProviderEndpoint(provider);
+      await onRefresh();
+    });
+  }
+
+  async function clearProviderEndpointTrust(provider: ProviderEndpointId): Promise<void> {
+    if (!window.confirm('Clear this provider endpoint confirmation? Provider calls will stop until it is confirmed again.')) return;
+    await run(`endpoint-clear-${provider}`, async () => {
+      await window.videoFactory.settings.clearProviderEndpointTrust(provider);
+      await onRefresh();
+    });
+  }
+
+  async function removeProviderCredential(
+    provider: ProviderEndpointId,
+    key: 'llmApiKey' | 'visionApiKey' | 'researchApiKey' | 'httpTtsApiKey'
+  ): Promise<void> {
+    if (!window.confirm('Remove this encrypted provider credential from this device?')) return;
+    await run(`endpoint-key-${provider}`, async () => {
+      await window.videoFactory.settings.updateSecrets({ [key]: '' });
+      await onRefresh();
+    });
+  }
+
+  function endpoint(provider: ProviderEndpointId): ProviderEndpointState | undefined {
+    return bootstrap.providerEndpoints.find(item => item.provider === provider);
   }
 
   async function connectYouTube(): Promise<void> {
@@ -181,7 +219,10 @@ export function SettingsView({
       if (!report) return;
       setForm(report.settings);
       await onRefresh();
-      window.alert(`Applied ${report.appliedKeys.length} settings. Credentials were not imported.`);
+      window.alert([
+        `Applied ${report.appliedKeys.length} settings. Credentials were not imported.`,
+        ...report.warnings.map(warning => `• ${warning}`)
+      ].join('\n'));
     });
   }
 
@@ -527,9 +568,29 @@ export function SettingsView({
                 <option value="openai_compatible">OpenAI-compatible HTTP API</option>
               </select>
             </label>
+            <label>
+              <span>Endpoint trust</span>
+              <select value={form.llmEndpointTrust} onChange={event => {
+                const trust = event.target.value as ProviderEndpointTrustMode;
+                setForm({ ...form, llmEndpointTrust: trust, llmBaseUrl: trust === 'managed' ? 'https://api.openai.com/v1' : form.llmBaseUrl });
+              }}>
+                <option value="managed">Managed OpenAI origin</option>
+                <option value="custom_remote">Confirmed custom HTTPS origin</option>
+                <option value="custom_local">Local loopback · no API key</option>
+              </select>
+            </label>
             <label><span>Base URL</span><input value={form.llmBaseUrl} onChange={event => setForm({ ...form, llmBaseUrl: event.target.value })} /></label>
             <label><span>Model</span><input value={form.llmModel} onChange={event => setForm({ ...form, llmModel: event.target.value })} /></label>
             <label><span>API key {bootstrap.secrets.llmApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.llmApiKey} onChange={event => setSecrets({ ...secrets, llmApiKey: event.target.value })} placeholder={bootstrap.secrets.llmApiKeyConfigured ? 'Leave blank to keep current key' : 'Required for configured provider'} /></label>
+            <ProviderEndpointControls
+              state={endpoint('openai_compatible')}
+              busy={busy}
+              hasUnsavedChanges={form.llmBaseUrl !== bootstrap.settings.llmBaseUrl || form.llmEndpointTrust !== bootstrap.settings.llmEndpointTrust}
+              credentialConfigured={bootstrap.secrets.llmApiKeyConfigured}
+              onTrust={trustProviderEndpoint}
+              onClear={clearProviderEndpointTrust}
+              onRemoveCredential={() => removeProviderCredential('openai_compatible', 'llmApiKey')}
+            />
           </div>
         </Panel>
 
@@ -542,11 +603,27 @@ export function SettingsView({
                 <option value="http_tts">Generic HTTP TTS</option>
               </select>
             </label>
+            <label>
+              <span>Endpoint trust</span>
+              <select value={form.narratorEndpointTrust} onChange={event => setForm({ ...form, narratorEndpointTrust: event.target.value as ProviderEndpointTrustMode })}>
+                <option value="custom_remote">Confirmed custom HTTPS origin</option>
+                <option value="custom_local">Local loopback · no API key</option>
+              </select>
+            </label>
             <label><span>HTTP base URL</span><input value={form.narratorBaseUrl} onChange={event => setForm({ ...form, narratorBaseUrl: event.target.value })} /></label>
             <label><span>Model</span><input value={form.narratorModel} onChange={event => setForm({ ...form, narratorModel: event.target.value })} /></label>
             <label><span>Voice name</span><input value={form.narratorVoice} onChange={event => setForm({ ...form, narratorVoice: event.target.value })} placeholder="Blank uses Windows default" /></label>
             <NumberField label="Voice rate" value={form.narratorRate} min={-10} max={10} set={value => setForm({ ...form, narratorRate: value })} />
             <label><span>HTTP API key {bootstrap.secrets.httpTtsApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.httpTtsApiKey} onChange={event => setSecrets({ ...secrets, httpTtsApiKey: event.target.value })} placeholder={bootstrap.secrets.httpTtsApiKeyConfigured ? 'Leave blank to keep current key' : 'Required when HTTP TTS is enabled'} /></label>
+            <ProviderEndpointControls
+              state={endpoint('http_tts')}
+              busy={busy}
+              hasUnsavedChanges={form.narratorBaseUrl !== bootstrap.settings.narratorBaseUrl || form.narratorEndpointTrust !== bootstrap.settings.narratorEndpointTrust}
+              credentialConfigured={bootstrap.secrets.httpTtsApiKeyConfigured}
+              onTrust={trustProviderEndpoint}
+              onClear={clearProviderEndpointTrust}
+              onRemoveCredential={() => removeProviderCredential('http_tts', 'httpTtsApiKey')}
+            />
             <label>
               <span>Pronunciation dictionary (one term = spoken form per line)</span>
               <textarea
@@ -573,6 +650,17 @@ export function SettingsView({
                 <option value="tavily">Tavily Search + Extract</option>
               </select>
             </label>
+            <label>
+              <span>Endpoint trust</span>
+              <select value={form.researchEndpointTrust} onChange={event => {
+                const trust = event.target.value as ProviderEndpointTrustMode;
+                setForm({ ...form, researchEndpointTrust: trust, researchBaseUrl: trust === 'managed' ? 'https://api.tavily.com' : form.researchBaseUrl });
+              }}>
+                <option value="managed">Managed Tavily origin</option>
+                <option value="custom_remote">Confirmed custom HTTPS origin</option>
+                <option value="custom_local">Local loopback · no API key</option>
+              </select>
+            </label>
             <label><span>Base URL</span><input value={form.researchBaseUrl} onChange={event => setForm({ ...form, researchBaseUrl: event.target.value })} /></label>
             <label>
               <span>Search depth</span>
@@ -583,6 +671,15 @@ export function SettingsView({
             </label>
             <NumberField label="Results per query" value={form.researchMaxResultsPerQuery} min={1} max={5} set={value => setForm({ ...form, researchMaxResultsPerQuery: value })} />
             <label><span>Research API key {bootstrap.secrets.researchApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.researchApiKey} onChange={event => setSecrets({ ...secrets, researchApiKey: event.target.value })} placeholder={bootstrap.secrets.researchApiKeyConfigured ? 'Leave blank to keep current key' : 'Required when Tavily is enabled'} /></label>
+            <ProviderEndpointControls
+              state={endpoint('tavily')}
+              busy={busy}
+              hasUnsavedChanges={form.researchBaseUrl !== bootstrap.settings.researchBaseUrl || form.researchEndpointTrust !== bootstrap.settings.researchEndpointTrust}
+              credentialConfigured={bootstrap.secrets.researchApiKeyConfigured}
+              onTrust={trustProviderEndpoint}
+              onClear={clearProviderEndpointTrust}
+              onRemoveCredential={() => removeProviderCredential('tavily', 'researchApiKey')}
+            />
           </div>
         </Panel>
 
@@ -595,10 +692,30 @@ export function SettingsView({
                 <option value="openai_compatible">OpenAI-compatible multimodal API</option>
               </select>
             </label>
+            <label>
+              <span>Endpoint trust</span>
+              <select value={form.visionEndpointTrust} onChange={event => {
+                const trust = event.target.value as ProviderEndpointTrustMode;
+                setForm({ ...form, visionEndpointTrust: trust, visionBaseUrl: trust === 'managed' ? 'https://api.openai.com/v1' : form.visionBaseUrl });
+              }}>
+                <option value="managed">Managed OpenAI origin</option>
+                <option value="custom_remote">Confirmed custom HTTPS origin</option>
+                <option value="custom_local">Local loopback · no API key</option>
+              </select>
+            </label>
             <label><span>Base URL</span><input value={form.visionBaseUrl} onChange={event => setForm({ ...form, visionBaseUrl: event.target.value })} /></label>
             <label><span>Vision model</span><input value={form.visionModel} onChange={event => setForm({ ...form, visionModel: event.target.value })} /></label>
             <NumberField label="Minimum confidence" value={form.visionMinimumConfidence} min={0.5} max={0.99} step={0.01} set={value => setForm({ ...form, visionMinimumConfidence: value })} />
             <label><span>Vision API key {bootstrap.secrets.visionApiKeyConfigured ? '· configured' : ''}</span><input type="password" value={secrets.visionApiKey} onChange={event => setSecrets({ ...secrets, visionApiKey: event.target.value })} placeholder={bootstrap.secrets.visionApiKeyConfigured ? 'Leave blank to keep current key' : 'Required for semantic verification'} /></label>
+            <ProviderEndpointControls
+              state={endpoint('openai_compatible_vision')}
+              busy={busy}
+              hasUnsavedChanges={form.visionBaseUrl !== bootstrap.settings.visionBaseUrl || form.visionEndpointTrust !== bootstrap.settings.visionEndpointTrust}
+              credentialConfigured={bootstrap.secrets.visionApiKeyConfigured}
+              onTrust={trustProviderEndpoint}
+              onClear={clearProviderEndpointTrust}
+              onRemoveCredential={() => removeProviderCredential('openai_compatible_vision', 'visionApiKey')}
+            />
           </div>
         </Panel>
 
@@ -697,6 +814,77 @@ export function SettingsView({
             </Button>
           </div>
         </Panel>
+      </div>
+    </div>
+  );
+}
+
+function ProviderEndpointControls({
+  state,
+  busy,
+  hasUnsavedChanges,
+  credentialConfigured,
+  onTrust,
+  onClear,
+  onRemoveCredential
+}: {
+  state: ProviderEndpointState | undefined;
+  busy: string;
+  hasUnsavedChanges: boolean;
+  credentialConfigured: boolean;
+  onTrust: (provider: ProviderEndpointId) => Promise<void>;
+  onClear: (provider: ProviderEndpointId) => Promise<void>;
+  onRemoveCredential: () => Promise<void>;
+}) {
+  if (!state) return null;
+  return (
+    <div className="diagnostic-list">
+      <div>
+        <Network size={14} />
+        <div>
+          <strong>{state.canonicalOrigin ?? 'Invalid endpoint'}</strong>
+          <span>{hasUnsavedChanges ? 'Save endpoint and trust-mode changes before confirming them.' : state.message} Status reflects the last saved settings.</span>
+        </div>
+        <StatusPill value={hasUnsavedChanges ? 'unsaved changes' : state.active ? state.status.replaceAll('_', ' ') : 'inactive'} />
+      </div>
+      <div>
+        <ShieldCheck size={14} />
+        <div>
+          <strong>{state.trustMode.replaceAll('_', ' ')}</strong>
+          <span>Sends: {state.dataCategories.join(', ')}.</span>
+        </div>
+        <StatusPill value={state.credentialBound ? 'credential bound' : 'blocked'} />
+      </div>
+      <div className="button-row">
+        {state.trustMode !== 'managed' && state.status !== 'invalid_endpoint' ? (
+          <Button
+            variant="secondary"
+            busy={busy === `endpoint-trust-${state.provider}`}
+            disabled={hasUnsavedChanges}
+            onClick={() => void onTrust(state.provider)}
+          >
+            <ShieldCheck size={15} /> {state.status === 'confirmed' ? 'Reconfirm endpoint' : 'Confirm endpoint'}
+          </Button>
+        ) : null}
+        {state.trustMode !== 'managed' && state.status === 'confirmed' ? (
+          <Button
+            variant="ghost"
+            busy={busy === `endpoint-clear-${state.provider}`}
+            disabled={hasUnsavedChanges}
+            onClick={() => void onClear(state.provider)}
+          >
+            Clear confirmation
+          </Button>
+        ) : null}
+        {credentialConfigured ? (
+          <Button
+            variant="ghost"
+            busy={busy === `endpoint-key-${state.provider}`}
+            onClick={() => void onRemoveCredential()}
+          >
+            <KeyRound size={15} /> Remove stored key
+          </Button>
+        ) : null}
       </div>
     </div>
   );

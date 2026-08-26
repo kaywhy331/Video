@@ -619,6 +619,10 @@ Final render concurrency limit is respected while UI and lightweight jobs remain
 
 Provider call that would exceed hard budget is not sent.
 
+### JOB-010 - Bounded provider transport
+
+Every credentialed provider request has bounded connect/overall timeouts, cancellation, redirect count, and response size; every redirect destination is revalidated before use.
+
 ---
 
 ## 17. Security tests
@@ -658,6 +662,14 @@ Renderer loads with restrictive CSP and no unsafe remote script execution.
 ### SEC-009 - OAuth callback-data redaction
 
 Authorization codes, state, PKCE values, tokens, and callback query strings never reach renderer payloads, logs, audit records, or user-facing errors.
+
+### SEC-010 - Provider endpoint trust and SSRF boundary
+
+Remote provider calls require a confirmed HTTPS origin, public DNS answers, address-pinned connections, and same-origin redirects; explicit local mode accepts only loopback without a reusable credential.
+
+### SEC-011 - Provider credential-to-origin binding
+
+A stored provider credential is unusable after an endpoint-origin change or profile import until the canonical origin is explicitly confirmed and the credential is rebound.
 
 ---
 

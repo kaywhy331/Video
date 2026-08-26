@@ -15,6 +15,7 @@ import {
   StorageCleanupSchema,
   CatalogUpdateAssetSchema,
   PathChoiceRequestSchema,
+  ProviderEndpointActionSchema,
   ProjectExportSchema,
   ProjectRebuildSchema,
   RenderRequestSchema,
@@ -49,6 +50,10 @@ describe('IPC request contracts', () => {
     expect(SettingsPatchSchema.safeParse({ autopilotCadenceDays: 0, autopilotPublicationHourUtc: 24 }).success).toBe(false);
     expect(SettingsPatchSchema.safeParse({ musicEnabled: true, musicTargetGainDb: -24, musicDuckingDb: -12, automaticDerivativeCleanup: true, derivativeCleanupTargetGb: 5 }).success).toBe(true);
     expect(SettingsPatchSchema.safeParse({ musicTargetGainDb: 0, derivativeCleanupTargetGb: 0 }).success).toBe(false);
+    expect(SettingsPatchSchema.safeParse({ llmEndpointTrust: 'custom_local', researchEndpointTrust: 'managed' }).success).toBe(true);
+    expect(SettingsPatchSchema.safeParse({ visionEndpointTrust: 'trust_everything' }).success).toBe(false);
+    expect(ProviderEndpointActionSchema.safeParse({ provider: 'tavily' }).success).toBe(true);
+    expect(ProviderEndpointActionSchema.safeParse({ provider: 'youtube', apiKey: 'secret' }).success).toBe(false);
   });
 
   it('requires explicit music licensing and bounded cleanup requests', () => {

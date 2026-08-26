@@ -5,8 +5,9 @@
 | Field | Value |
 |---|---|
 | Product | VideoFactory Desktop |
-| Document status | Proposed remediation baseline; implementation not started |
+| Document status | Remediation in progress; RG-VAL, RG-CLAIMS, and RG-OAUTH merged |
 | Baseline reviewed | `fb291abd401ec1e06bbc6494cc60d145d28ac024` |
+| Current implementation baseline | `ab0fda9aac447c7bd9b2d0cf1918dfc9af76722d` |
 | Audit date | 2026-08-25 |
 | Target | Next security/integrity prerelease after alpha.7 |
 | Qualification effect | `production_ready` remains `false` until this plan and the existing external gates pass |

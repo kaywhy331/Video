@@ -46,6 +46,7 @@ import {
   LanguageVoiceProfileSchema,
   ProjectExportSchema,
   ProjectRebuildSchema,
+  ProviderEndpointActionSchema,
   RenderRequestSchema,
   SecretPatchSchema,
   SemanticVerificationRetrySchema,
@@ -151,6 +152,18 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     const patch = SettingsPatchSchema.parse(payload) as Partial<AppSettings>;
     return context.updateSettings(patch);
   });
+  handle(IPC.providerEndpointTrust, async (_event, payload) => {
+    const request = ProviderEndpointActionSchema.parse(payload);
+    const state = await context.providerEndpoints.trust(request.provider);
+    context.emitState();
+    return state;
+  });
+  handle(IPC.providerEndpointClearTrust, (_event, payload) => {
+    const request = ProviderEndpointActionSchema.parse(payload);
+    const state = context.providerEndpoints.clearTrust(request.provider);
+    context.emitState();
+    return state;
+  });
   handle(IPC.settingsProfileExport, async (_event, payload) => {
     let path = SettingsProfilePathSchema.parse(payload);
     if (path && !pathIsInside(path, [context.settings().backupFolder])) {
@@ -190,15 +203,7 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
   });
   handle(IPC.secretsUpdate, (_event, payload) => {
     const patch = SecretPatchSchema.parse(payload);
-    const status = context.secrets.update(patch);
-    const providers = [
-      ...(patch.researchApiKey !== undefined ? ['tavily'] : []),
-      ...(patch.llmApiKey !== undefined ? ['openai_compatible'] : []),
-      ...(patch.visionApiKey !== undefined ? ['openai_compatible_vision'] : []),
-      ...(patch.httpTtsApiKey !== undefined ? ['http_tts'] : [])
-    ];
-    for (const provider of providers) context.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
-    return status;
+    return context.updateSecrets(patch);
   });
   handle(IPC.pathsChoose, async (_event, payload) => {
     const request = PathChoiceRequestSchema.parse(payload);

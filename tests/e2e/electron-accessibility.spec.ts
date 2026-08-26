@@ -384,6 +384,18 @@ test('[SEC-001][SEC-008] boots the isolated production renderer and scans every 
     await navigation.click();
     await expect(navigation).toHaveClass(/nav-active/);
     await assertNoSeriousAxe(`${view} view`);
+    if (view === 'Settings') {
+      const scriptPanel = page.getByRole('heading', { name: 'Script intelligence' })
+        .locator('xpath=ancestor::section');
+      await scriptPanel.getByLabel('Endpoint trust').selectOption('custom_local');
+      await scriptPanel.getByLabel('Base URL').fill('http://127.0.0.1:11434/v1');
+      await expect(scriptPanel.getByRole('button', { name: /Confirm endpoint/i })).toHaveCount(0);
+      await expect(scriptPanel.getByText(/Save endpoint and trust-mode changes before confirming them/i)).toBeVisible();
+      await page.getByRole('button', { name: /Save settings/i }).click();
+      await expect(scriptPanel.getByText(/Confirm this endpoint before any provider request is sent/i)).toBeVisible();
+      await scriptPanel.getByRole('button', { name: /Confirm endpoint/i }).click();
+      await expect(scriptPanel.getByText(/Loopback endpoint is confirmed; requests carry no reusable API credential/i)).toBeVisible();
+    }
   }
 });
 

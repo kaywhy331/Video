@@ -84,7 +84,7 @@ export function assertPlanningCapacity(db: AppDatabase, settings: AppSettings, p
   ]);
   const health = (db.raw.prepare(`
     SELECT provider, status, message FROM provider_health
-    WHERE status IN ('auth_invalid','quota_exhausted')
+    WHERE status IN ('auth_invalid','quota_exhausted','invalid_endpoint','endpoint_untrusted','credential_origin_mismatch')
     ORDER BY checked_at DESC
   `).all() as Array<{ provider: string; status: string; message: string | null }>)
     .find(row => configuredProviders.has(row.provider));

@@ -9,6 +9,7 @@ import { ProviderPolicyService } from '@main/services/provider-policy';
 import { requireSuccess } from '@main/services/process-utils';
 import { TtsService } from '@main/services/tts-service';
 import type { AppSettings } from '@shared/types';
+import { providerEndpointTestPolicy } from './provider-endpoint-test-utils';
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'videofactory-tts-fixture-'));
 const fixtureAudio = join(fixtureRoot, 'voice.wav');
@@ -36,7 +37,7 @@ afterEach(() => {
 });
 afterAll(() => rmSync(fixtureRoot, { recursive: true, force: true }));
 
-function fixture(key = 'secret') {
+async function fixture(key = 'secret') {
   const root = mkdtempSync(join(tmpdir(), 'videofactory-tts-'));
   roots.push(root);
   const db = new AppDatabase(join(root, 'db.sqlite'));
@@ -51,18 +52,23 @@ function fixture(key = 'secret') {
   const settings = {
     narratorProvider: 'http_tts',
     narratorBaseUrl: 'https://tts.example/v1/synthesize',
+    narratorEndpointTrust: 'custom_remote',
     narratorModel: 'voice-test',
     narratorVoice: 'narrator-1',
     narratorRate: 0,
     ffprobePath: ffprobeStatic.path,
     monthlyBudgetUsd: 100
   } as AppSettings;
+  const secrets = { getAll: () => key ? ({ httpTtsApiKey: key }) : ({}) } as never;
   const policy = new ProviderPolicyService(db, () => settings);
+  const endpoints = providerEndpointTestPolicy(db, secrets, () => settings);
+  await endpoints.trust('http_tts');
   const service = new TtsService(
     db,
-    { getAll: () => key ? ({ httpTtsApiKey: key }) : ({}) } as never,
+    secrets,
     () => settings,
-    policy
+    policy,
+    endpoints
   );
   const directory = join(root, 'voice');
   mkdirSync(directory, { recursive: true });
@@ -82,7 +88,7 @@ function response(wordTimings: unknown, audioPath = fixtureAudio, durationMs = 2
 
 describe('HTTP TTS section adapter', () => {
   it('sends pronunciation and timing requests, persists the receipt, and reuses immutable cache', async () => {
-    const { db, service, outputPath } = fixture();
+    const { db, service, outputPath } = await fixture();
     const fetchMock = vi.fn().mockResolvedValue(response([
       { word: 'wah-HAH-kah', startMs: 0, endMs: 900, confidence: 0.98 },
       { word: 'shines.', startMs: 900, endMs: 1_900, confidence: 0.97 }
@@ -119,7 +125,7 @@ describe('HTTP TTS section adapter', () => {
   });
 
   it('fails closed and records a billed provider failure when word timing is absent', async () => {
-    const { db, service, outputPath } = fixture();
+    const { db, service, outputPath } = await fixture();
     const fetchMock = vi.fn().mockResolvedValue(response(undefined));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -136,7 +142,7 @@ describe('HTTP TTS section adapter', () => {
   });
 
   it('[AUD-004] rejects an implausibly short provider section before timeline use', async () => {
-    const { db, service, outputPath } = fixture();
+    const { db, service, outputPath } = await fixture();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([
       { word: 'Too', startMs: 0, endMs: 80, confidence: 0.98 },
       { word: 'short.', startMs: 80, endMs: 180, confidence: 0.98 }
@@ -150,7 +156,7 @@ describe('HTTP TTS section adapter', () => {
   });
 
   it('does not send a request when the configured encrypted key is missing', async () => {
-    const { db, service, outputPath } = fixture('');
+    const { db, service, outputPath } = await fixture('');
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 

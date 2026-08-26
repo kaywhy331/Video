@@ -9,6 +9,7 @@ import {
 } from '@shared/contracts';
 import type { VisionFootageAssessment } from '@shared/footage-verification';
 import { ProviderPolicyService } from './provider-policy';
+import { ProviderEndpointPolicy } from './provider-endpoint-policy';
 
 export interface VisionSceneContract {
   projectId: string;
@@ -47,25 +48,27 @@ function imageMime(path: string): string {
 
 export class VisionService {
   private readonly policy: ProviderPolicyService;
+  private readonly endpoints: ProviderEndpointPolicy;
 
   constructor(
     private readonly db: AppDatabase,
     private readonly secrets: SecretStore,
-    private readonly settings: () => AppSettings
+    private readonly settings: () => AppSettings,
+    endpoints?: ProviderEndpointPolicy
   ) {
     this.policy = new ProviderPolicyService(db, settings);
+    this.endpoints = endpoints ?? new ProviderEndpointPolicy(db, secrets, settings);
   }
 
   configured(): boolean {
     const settings = this.settings();
     return settings.visionProvider === 'openai_compatible'
-      && Boolean(this.secrets.getAll().visionApiKey);
+      && this.endpoints.isReady('openai_compatible_vision');
   }
 
   async assess(input: VisionSceneContract): Promise<VisionAssessmentResult> {
     const settings = this.settings();
-    const secret = this.secrets.getAll().visionApiKey;
-    if (settings.visionProvider !== 'openai_compatible' || !secret) {
+    if (settings.visionProvider !== 'openai_compatible' || !this.endpoints.isReady('openai_compatible_vision')) {
       throw new Error('Semantic vision provider is not configured.');
     }
     const prompt = this.prompt(input);
@@ -112,9 +115,9 @@ export class VisionService {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         attemptsSent += 1;
-        const response = await fetch(endpoint, {
+        const response = await this.endpoints.request('openai_compatible_vision', endpoint, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             model: settings.visionModel,
             temperature: 0,
@@ -135,10 +138,14 @@ export class VisionService {
               }
             ]
           })
+        }, {
+          timeoutMs: 90_000,
+          maxRequestBytes: 32 * 1024 * 1024,
+          maxResponseBytes: 8 * 1024 * 1024
         });
         requestId = response.headers.get('x-request-id');
         if (!response.ok) {
-          const message = `Vision provider returned ${response.status}: ${await response.text()}`;
+          const message = `Vision provider returned HTTP ${response.status}.`;
           this.policy.classifyHttpFailure('openai_compatible_vision', response.status, message);
           throw new Error(message);
         }

@@ -6,6 +6,7 @@ import { StructuredScriptSchema, type StructuredScript } from '@shared/contracts
 import { FinalScriptRewriteSchema, type FinalScriptRewrite } from '@shared/contracts';
 import { ExtractedClaimPackSchema, type ExtractedClaim } from '@shared/research';
 import type { ProviderPolicyService } from './provider-policy';
+import { ProviderEndpointPolicy } from './provider-endpoint-policy';
 import {
   assertNoUnsupportedEditorialFacts,
   createSafeEditorialGuidance,
@@ -96,23 +97,30 @@ function assetEvidence(asset: CatalogAsset): string[] {
 }
 
 export class AiService {
+  private readonly endpoints: ProviderEndpointPolicy;
+
   constructor(
     private readonly db: AppDatabase,
     private readonly secretStore: SecretStore,
     private readonly settings: () => AppSettings,
-    private readonly policy?: ProviderPolicyService
-  ) {}
+    private readonly policy?: ProviderPolicyService,
+    endpoints?: ProviderEndpointPolicy
+  ) {
+    this.endpoints = endpoints ?? new ProviderEndpointPolicy(db, secretStore, settings);
+  }
 
   configured(): boolean {
     const settings = this.settings();
     return settings.llmProvider === 'mock'
-      || (settings.llmProvider === 'openai_compatible' && Boolean(this.secretStore.getAll().llmApiKey));
+      || (settings.llmProvider === 'openai_compatible' && this.endpoints.isReady('openai_compatible'));
   }
 
   async extractClaims(input: ExtractClaimsInput): Promise<ExtractedClaim[]> {
     const settings = this.settings();
-    const secret = this.secretStore.getAll().llmApiKey;
-    if (settings.llmProvider !== 'openai_compatible' || !secret) return [];
+    if (settings.llmProvider !== 'openai_compatible') return [];
+    if (!this.endpoints.isReady('openai_compatible')) {
+      throw new Error('The configured language provider endpoint or credential is not ready; claim extraction was not skipped silently.');
+    }
     const allowedSourceIds = new Set(input.sources.map(source => source.id));
     const system = [
       'Extract atomic travel facts only from the supplied sources.',
@@ -142,13 +150,16 @@ export class AiService {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         attemptsSent += 1;
-        const response = await fetch(endpoint, {
-          method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+        const response = await this.endpoints.request('openai_compatible', endpoint, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ model: settings.llmModel, temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify({ ...prompt, correction: attempt ? 'Prior output was invalid. Return exactly the required schema and supplied source IDs.' : undefined }) }] })
+        }, {
+          timeoutMs: 60_000,
+          maxResponseBytes: 8 * 1024 * 1024
         });
         requestId = response.headers.get('x-request-id');
         if (!response.ok) {
-          const message = `LLM provider returned ${response.status}: ${await response.text()}`;
+          const message = `LLM provider returned HTTP ${response.status}.`;
           this.policy?.classifyHttpFailure('openai_compatible', response.status, message);
           throw new Error(message);
         }
@@ -172,7 +183,6 @@ export class AiService {
 
   async generateScript(input: GenerateScriptInput): Promise<StructuredScript> {
     const settings = this.settings();
-    const secrets = this.secretStore.getAll();
     const independentEvidence = [
       ...(input.acceptedClaims ?? []).map(claim => claim.text),
       ...input.assets.flatMap(assetEvidence)
@@ -192,8 +202,8 @@ export class AiService {
       });
       return script;
     }
-    if (!secrets.llmApiKey) {
-      throw new Error('The configured language provider API key is missing; local fallback was not used.');
+    if (!this.endpoints.isReady('openai_compatible')) {
+      throw new Error('The configured language provider endpoint or credential is not ready; local fallback was not used.');
     }
 
     const eligible = input.assets.slice(0, 180).map(asset => ({
@@ -310,9 +320,9 @@ export class AiService {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         attemptsSent += 1;
-        const response = await fetch(endpoint, {
+        const response = await this.endpoints.request('openai_compatible', endpoint, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${secrets.llmApiKey}` },
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             model: settings.llmModel,
             temperature: 0.35,
@@ -322,10 +332,13 @@ export class AiService {
               { role: 'user', content: JSON.stringify({ ...prompt, correction: attempt ? 'The prior response was invalid. Return exactly the required schema, app-issued claim IDs, and verbatim accepted claim text.' : undefined }) }
             ]
           })
+        }, {
+          timeoutMs: 60_000,
+          maxResponseBytes: 8 * 1024 * 1024
         });
         requestId = response.headers.get('x-request-id');
         if (!response.ok) {
-          const message = `LLM provider returned ${response.status}: ${await response.text()}`;
+          const message = `LLM provider returned HTTP ${response.status}.`;
           this.policy?.classifyHttpFailure('openai_compatible', response.status, message);
           throw new Error(message);
         }
@@ -401,8 +414,9 @@ export class AiService {
         }))
       });
     }
-    const secret = this.secretStore.getAll().llmApiKey;
-    if (!secret) throw new Error('The configured language provider API key is missing; final-script fallback was not used.');
+    if (!this.endpoints.isReady('openai_compatible')) {
+      throw new Error('The configured language provider endpoint or credential is not ready; final-script fallback was not used.');
+    }
     const system = [
       'You finalize a sourced exact-location video script after footage verification.',
       'Return JSON only. Use every supplied scene ID exactly once and never invent a scene, fact, claim, visual, or pronunciation.',
@@ -444,9 +458,9 @@ export class AiService {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         attemptsSent += 1;
-        const response = await fetch(endpoint, {
+        const response = await this.endpoints.request('openai_compatible', endpoint, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             model: settings.llmModel,
             temperature: 0.15,
@@ -456,10 +470,13 @@ export class AiService {
               { role: 'user', content: JSON.stringify({ ...prompt, correction: attempt ? 'Correct the prior invalid response. Preserve all supplied IDs and accepted claim text exactly.' : undefined }) }
             ]
           })
+        }, {
+          timeoutMs: 60_000,
+          maxResponseBytes: 8 * 1024 * 1024
         });
         requestId = response.headers.get('x-request-id');
         if (!response.ok) {
-          const message = `LLM provider returned ${response.status}: ${await response.text()}`;
+          const message = `LLM provider returned HTTP ${response.status}.`;
           this.policy?.classifyHttpFailure('openai_compatible', response.status, message);
           throw new Error(message);
         }

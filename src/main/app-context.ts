@@ -2,11 +2,20 @@ import { app, BrowserWindow, Notification } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { statfsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AppSettings, AppBootstrap, AppStateSnapshot, OperationsHealth, QueueSummary, ProgressEvent } from '@shared/types';
+import type {
+  AppSettings,
+  AppBootstrap,
+  AppStateSnapshot,
+  OperationsHealth,
+  ProviderEndpointId,
+  QueueSummary,
+  ProgressEvent,
+  SecretStatus
+} from '@shared/types';
 import { buildDefaultSettings, ensureSettingsPaths } from './app-paths';
 import { AppDatabase } from './database/database';
 import { Logger } from './logger';
-import { SecretStore } from './secret-store';
+import { SecretStore, type Secrets } from './secret-store';
 import { CatalogService } from './services/catalog-service';
 import { CatalogImportWorkerService } from './services/catalog-import-worker-service';
 import { DiagnosticsService } from './services/diagnostics-service';
@@ -29,6 +38,10 @@ import { VisionService } from './services/vision-service';
 import { FootageVerificationService } from './services/footage-verification-service';
 import { ResearchService } from './services/research-service';
 import { ProviderPolicyService } from './services/provider-policy';
+import {
+  normalizeLegacyProviderEndpointSettings,
+  ProviderEndpointPolicy
+} from './services/provider-endpoint-policy';
 import { ScriptFinalizationService } from './services/script-finalization-service';
 import { NarrationService } from './services/narration-service';
 import { ProjectArtifactService } from './services/project-artifact-service';
@@ -52,6 +65,7 @@ export class AppContext {
   readonly vision: VisionService;
   readonly footageVerification: FootageVerificationService;
   readonly providerPolicy: ProviderPolicyService;
+  readonly providerEndpoints: ProviderEndpointPolicy;
   readonly research: ResearchService;
   readonly catalog: CatalogService;
   readonly catalogImports: CatalogImportWorkerService;
@@ -102,12 +116,17 @@ export class AppContext {
     ensureSettingsPaths(defaults);
     BackupService.applyPendingRestore(defaults.databasePath);
     this.db = new AppDatabase(defaults.databasePath);
-    this.settingsValue = this.db.getAppSettings(defaults);
+    this.settingsValue = normalizeLegacyProviderEndpointSettings(this.db.getAppSettings(defaults));
     ensureSettingsPaths(this.settingsValue);
     this.db.saveAppSettings(this.settingsValue);
 
     this.logger = new Logger(join(this.settingsValue.dataRoot, 'logs', 'videofactory.jsonl'));
     this.secrets = new SecretStore(join(app.getPath('userData'), 'secrets.vf'));
+    this.providerEndpoints = new ProviderEndpointPolicy(
+      this.db,
+      this.secrets,
+      () => this.settingsValue
+    );
     this.places = new PlaceService(this.db);
     this.places.syncAssetsMissingAssertions();
     this.catalog = new CatalogService(this.db, this.places);
@@ -120,9 +139,25 @@ export class AppContext {
     this.exceptions = new ExceptionService(this.db);
     this.diagnostics = new DiagnosticsService(this.db, () => this.settingsValue, app.getVersion());
     this.providerPolicy = new ProviderPolicyService(this.db, () => this.settingsValue);
-    this.ai = new AiService(this.db, this.secrets, () => this.settingsValue, this.providerPolicy);
-    this.research = new ResearchService(this.db, this.secrets, () => this.settingsValue);
-    this.vision = new VisionService(this.db, this.secrets, () => this.settingsValue);
+    this.ai = new AiService(
+      this.db,
+      this.secrets,
+      () => this.settingsValue,
+      this.providerPolicy,
+      this.providerEndpoints
+    );
+    this.research = new ResearchService(
+      this.db,
+      this.secrets,
+      () => this.settingsValue,
+      this.providerEndpoints
+    );
+    this.vision = new VisionService(
+      this.db,
+      this.secrets,
+      () => this.settingsValue,
+      this.providerEndpoints
+    );
     this.footageVerification = new FootageVerificationService(
       this.db,
       () => this.settingsValue,
@@ -162,7 +197,8 @@ export class AppContext {
       this.db,
       this.secrets,
       () => this.settingsValue,
-      this.providerPolicy
+      this.providerPolicy,
+      this.providerEndpoints
     );
     this.narration = new NarrationService(
       this.db,
@@ -269,7 +305,8 @@ export class AppContext {
       () => this.settingsValue,
       () => this.secrets.status(),
       this.catalogImports,
-      this.google
+      this.google,
+      provider => this.providerEndpoints.state(provider)
     );
   }
 
@@ -302,24 +339,39 @@ export class AppContext {
     if (next.databasePath !== this.settingsValue.databasePath) {
       throw new Error('Changing the active database path requires a controlled migration and is not supported in this alpha.');
     }
+    this.providerEndpoints.validateSettings(next);
     ensureSettingsPaths(next);
     const healthToReset = new Set<string>();
-    if (next.researchProvider !== this.settingsValue.researchProvider || next.researchBaseUrl !== this.settingsValue.researchBaseUrl) healthToReset.add('tavily');
-    if (next.llmProvider !== this.settingsValue.llmProvider || next.llmBaseUrl !== this.settingsValue.llmBaseUrl) healthToReset.add('openai_compatible');
-    if (next.visionProvider !== this.settingsValue.visionProvider || next.visionBaseUrl !== this.settingsValue.visionBaseUrl) healthToReset.add('openai_compatible_vision');
-    if (next.narratorProvider !== this.settingsValue.narratorProvider || next.narratorBaseUrl !== this.settingsValue.narratorBaseUrl) healthToReset.add('http_tts');
-    if (next.narratorProvider === 'http_tts' && !this.secrets.getAll().httpTtsApiKey) {
-      throw new Error('HTTP TTS cannot be enabled until its encrypted API key is configured.');
-    }
-    for (const provider of healthToReset) this.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
+    if (next.researchProvider !== this.settingsValue.researchProvider) healthToReset.add('tavily');
+    if (next.llmProvider !== this.settingsValue.llmProvider) healthToReset.add('openai_compatible');
+    if (next.visionProvider !== this.settingsValue.visionProvider) healthToReset.add('openai_compatible_vision');
+    if (next.narratorProvider !== this.settingsValue.narratorProvider) healthToReset.add('http_tts');
+    this.db.raw.transaction(() => {
+      this.providerEndpoints.applySettingsChange(this.settingsValue, next);
+      for (const provider of healthToReset) this.db.raw.prepare('DELETE FROM provider_health WHERE provider = ?').run(provider);
+      this.db.saveAppSettings(next);
+    })();
     this.settingsValue = next;
-    this.db.saveAppSettings(next);
+    this.providerEndpoints.refreshConfigurationHealth();
     if (this.operationGate.isAccepting) await this.watcher.start();
     if (this.started) this.startBackupScheduler();
     if (this.started) this.startOperationsSchedulers();
     this.refreshDiagnosticsInBackground();
     this.emitState();
     return this.settings();
+  }
+
+  updateSecrets(patch: Partial<Secrets>): SecretStatus {
+    const status = this.secrets.update(patch);
+    const providers: ProviderEndpointId[] = [
+      ...(patch.researchApiKey !== undefined ? ['tavily' as const] : []),
+      ...(patch.llmApiKey !== undefined ? ['openai_compatible' as const] : []),
+      ...(patch.visionApiKey !== undefined ? ['openai_compatible_vision' as const] : []),
+      ...(patch.httpTtsApiKey !== undefined ? ['http_tts' as const] : [])
+    ];
+    this.providerEndpoints.reconcileCredentialChanges(providers);
+    this.emitState();
+    return status;
   }
 
   queueSummary(): QueueSummary {
@@ -412,6 +464,7 @@ export class AppContext {
       latestUpdateCheck: this.updates.latest(),
       scheduler: this.scheduler.status(),
       operationsHealth: this.operationsHealth(),
+      providerEndpoints: this.providerEndpoints.states(),
       learningRecommendations: this.analytics.recommendations(),
       musicTracks: this.music.list(),
       latestStorageCleanup: this.storage.latest(),

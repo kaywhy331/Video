@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import { VisionService, type VisionSceneContract } from '@main/services/vision-service';
 import type { AppSettings } from '@shared/types';
+import { providerEndpointTestPolicy } from './provider-endpoint-test-utils';
 
 const roots: string[] = [];
 
@@ -30,14 +31,17 @@ function fixture() {
   writeFileSync(image, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
   const settings = {
     visionProvider: 'openai_compatible',
-    visionBaseUrl: 'https://vision.example/v1',
+    visionBaseUrl: 'https://api.openai.com/v1',
+    visionEndpointTrust: 'managed',
     visionModel: 'vision-test',
     monthlyBudgetUsd: 10
   } as AppSettings;
+  const secrets = { getAll: () => ({ visionApiKey: 'secret' }) } as never;
   const service = new VisionService(
     db,
-    { getAll: () => ({ visionApiKey: 'secret' }) } as never,
-    () => settings
+    secrets,
+    () => settings,
+    providerEndpointTestPolicy(db, secrets, () => settings)
   );
   const input: VisionSceneContract = {
     projectId: 'project-1',

@@ -4,6 +4,8 @@ Updated 2026-08-25 for clean exact-HEAD/tree release admission, separate runtime
 
 Alpha.7 carries forward the alpha.6 durability, security, rendering, backup, publishing, and hosted ZIP/NSIS lifecycle-smoke evidence while rolling the final publication receipts into the versioned documentation. It adds no runtime behavior and changes no qualification status. Its immutable publication facts are in the [historical evidence index](release-evidence/v0.1.0-alpha.7.json); that later documentation receipt does not validate the current checkout or move the alpha.7 tag. Current release evidence must come from a clean `npm run validate:release` run or the matching exact-workflow-SHA CI artifact.
 
+Post-alpha.7 remediation now routes Tavily, language, vision, and HTTP TTS traffic through one main-process endpoint policy. Managed origins are fixed; custom remote origins require explicit confirmation and credential rebinding; local mode is loopback-only and credential-free. DNS answers and redirects are revalidated, connections are pinned to admitted addresses, and requests have tested abort, timeout, redirect, and response-size bounds. These local controls do not replace the live-provider rehearsals below.
+
 ## P0 before production qualification
 
 - Run a clean Windows 10/11 install and first-run diagnostic on a machine without Node, Python, or developer tools. Hosted CI now exercises ZIP launch and silent NSIS install/launch/uninstall, but its preinstalled developer tooling means it is supporting evidence rather than this qualification.
