@@ -532,14 +532,14 @@ Required tests:
 
 ### 10.6 Completion criteria
 
-- [ ] Runtime inputs include normative product/security/acceptance documents.
-- [ ] All release-claim documents and the evidence index are covered by a deterministic claims digest.
-- [ ] Release provenance records both digests and their source commits without a hash cycle.
-- [ ] Claim validation rejects every tested false or stale machine-checkable claim.
-- [ ] Post-publication docs receipts explicitly distinguish docs commit from immutable release commit.
-- [ ] The truthful-release rule cannot be overridden by CI success or narrative text.
-- [ ] `REL-004` through `REL-006` have exact automated bindings.
-- [ ] Existing alpha.7 evidence is migrated into the new historical index and validates without moving its tag/release.
+- [x] Runtime inputs include normative product/security/acceptance documents.
+- [x] All release-claim documents and the evidence index are covered by a deterministic claims digest.
+- [x] Release provenance records both digests and their source commits without a hash cycle.
+- [x] Claim validation rejects every tested false or stale machine-checkable claim.
+- [x] Post-publication docs receipts explicitly distinguish docs commit from immutable release commit.
+- [x] The truthful-release rule cannot be overridden by CI success or narrative text.
+- [x] `REL-004` through `REL-006` have exact automated bindings.
+- [x] Existing alpha.7 evidence is migrated into the new historical index and validates without moving its tag/release.
 
 ---
 

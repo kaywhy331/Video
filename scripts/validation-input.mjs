@@ -23,13 +23,32 @@ export const RUNTIME_INPUTS = Object.freeze([
   'vitest.config.ts'
 ]);
 
-export const CLAIMS_INPUTS = Object.freeze([
+export const RUNTIME_NORMATIVE_DOCUMENTS = Object.freeze([
+  'docs/prd/01-PRD.md',
+  'docs/prd/02-TECHNICAL-SPEC.md',
+  'docs/prd/03-DATA-MODEL.sql',
+  'docs/prd/04-STATE-MACHINE.md',
+  'docs/prd/05-IPC-AND-PROVIDER-CONTRACTS.md',
+  'docs/prd/06-ACCEPTANCE-TESTS.md',
+  'docs/prd/07-IMPLEMENTATION-PLAN.md',
+  'docs/prd/08-CRITICAL-GAP-REMEDIATION-PRD.md',
+  'docs/prd/config/default-autopilot-policy.json',
+  'docs/prd/config/render-profiles.json',
+  'docs/prd/schemas/render-manifest.schema.json',
+  'docs/prd/schemas/scene-contract.schema.json'
+]);
+
+export const RELEASE_CLAIM_DOCUMENTS = Object.freeze([
   'ALPHA-OPERATING-GUIDE.md',
   'README.md',
   'VALIDATION_REPORT.md',
   'docs/DEPENDENCY-SECURITY.md',
   'docs/IMPLEMENTATION-COVERAGE.md',
-  'docs/PRODUCTION-HARDENING.md',
+  'docs/PRODUCTION-HARDENING.md'
+]);
+
+export const CLAIMS_INPUTS = Object.freeze([
+  ...RELEASE_CLAIM_DOCUMENTS,
   'docs/release-evidence'
 ]);
 
