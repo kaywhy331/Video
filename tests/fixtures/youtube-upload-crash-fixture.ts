@@ -70,7 +70,10 @@ function terminateAt(mode: UploadCrashMode): never {
   throw new Error(`Upload crash fixture could not terminate at ${mode}.`);
 }
 
-function uploadRuntime(db: AppDatabase, crashMode: UploadCrashMode | null): YouTubeApiRuntime {
+export function createUploadFixtureRuntime(
+  db: AppDatabase,
+  crashMode: UploadCrashMode | null = null
+): YouTubeApiRuntime {
   const request = async (input: {
     url?: string;
     method?: string;
@@ -171,6 +174,21 @@ function uploadRuntime(db: AppDatabase, crashMode: UploadCrashMode | null): YouT
   };
 }
 
+export function seedUploadProtocolState(db: AppDatabase): void {
+  db.raw.exec(`
+    CREATE TABLE upload_crash_fixture_state(
+      singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+      session_creates INTEGER NOT NULL DEFAULT 0,
+      status_queries INTEGER NOT NULL DEFAULT 0,
+      chunk_attempts INTEGER NOT NULL DEFAULT 0,
+      remote_bytes INTEGER NOT NULL DEFAULT 0,
+      remote_video_id TEXT,
+      last_content_range TEXT
+    );
+    INSERT INTO upload_crash_fixture_state(singleton_id) VALUES(1);
+  `);
+}
+
 export function uploadProtocolState(db: AppDatabase): UploadProtocolState {
   return db.raw.prepare(`
     SELECT session_creates, status_queries, chunk_attempts, remote_bytes,
@@ -192,18 +210,7 @@ export function seedUploadCrashFixture(root: string): void {
   const db = new AppDatabase(join(root, 'videofactory.sqlite'));
   try {
     const now = new Date().toISOString();
-    db.raw.exec(`
-      CREATE TABLE upload_crash_fixture_state(
-        singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
-        session_creates INTEGER NOT NULL DEFAULT 0,
-        status_queries INTEGER NOT NULL DEFAULT 0,
-        chunk_attempts INTEGER NOT NULL DEFAULT 0,
-        remote_bytes INTEGER NOT NULL DEFAULT 0,
-        remote_video_id TEXT,
-        last_content_range TEXT
-      );
-      INSERT INTO upload_crash_fixture_state(singleton_id) VALUES(1);
-    `);
+    seedUploadProtocolState(db);
     db.raw.prepare(`
       INSERT INTO projects(
         id, sequence, slug, title, topic, state, progress, envato_project_name,
@@ -274,7 +281,7 @@ export function openUploadCrashFixture(
     async () => undefined,
     undefined,
     undefined,
-    uploadRuntime(db, crashMode)
+    createUploadFixtureRuntime(db, crashMode)
   );
   const workflow = new WorkflowService(
     db,

@@ -125,6 +125,7 @@ interface OutputProbe {
     height?: number;
     pix_fmt?: string;
     profile?: string;
+    r_frame_rate?: string;
     avg_frame_rate?: string;
     field_order?: string;
     color_space?: string;
@@ -167,6 +168,22 @@ function rationalRate(value: string | undefined): number {
   if (!value) return 0;
   const [numerator, denominator] = value.split('/').map(Number);
   return denominator ? (numerator ?? 0) / denominator : Number(value);
+}
+
+export function outputFrameRateEvidence(stream: {
+  r_frame_rate?: string;
+  avg_frame_rate?: string;
+} | undefined): { nominal: number; average: number; valid: boolean } {
+  const nominal = rationalRate(stream?.r_frame_rate);
+  const average = rationalRate(stream?.avg_frame_rate);
+  return {
+    nominal,
+    average,
+    valid: Number.isFinite(nominal)
+      && Math.abs(nominal - 30) < 0.01
+      && Number.isFinite(average)
+      && Math.abs(average - 30) < 0.1
+  };
 }
 
 function colorTreatmentForSource(row: SourceSceneRow): SourceColorTreatment {
@@ -828,96 +845,148 @@ export class RenderService {
       const outputAnalysis = await this.analyzeOutput(ffmpeg, outputPath, elapsed);
 
       const outputHash = await sha256(outputPath);
-      const manifest = {
-        schemaVersion: '1.0',
-        projectId,
-        renderId,
-        projectTitle: project.title,
-        scriptVersionId: project.scriptVersionId,
-        profile,
-        outputProfileKey: effectiveProfileKey,
-        artifactVersion,
-        output: {
-          container: 'mp4',
-          videoCodec: 'h264',
-          audioCodec: 'aac',
-          width: outputWidth,
-          height: outputHeight,
-          frameRate: 30,
-          pixelFormat: 'yuv420p',
-          colorSpace: 'bt709',
-          fastStart: true
-        },
-        captions: { srtPath, vttPath },
-        music: musicSelection ? {
-          trackId: musicSelection.musicTrackId,
-          sha256: musicSelection.track.sha256,
-          title: musicSelection.track.title,
-          license: musicSelection.licenseSnapshot,
-          targetGainDb: musicSelection.targetGainDb,
-          duckingDb: musicSelection.duckingDb,
-          fadeInMs: musicSelection.fadeInMs,
-          fadeOutMs: musicSelection.fadeOutMs
-        } : null,
-        scope,
-        baseRenderId: baseRender?.id ?? null,
-        reusedFragmentCount: timeline.filter(scene => scene.reusedFragment).length,
-        scenes: timeline,
-        createdAt: new Date().toISOString()
-      };
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
-      const manifestHash = createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
-      const manifestId = randomUUID();
-      this.db.raw.prepare(`
-        INSERT INTO render_manifests(
-          id, project_id, script_version_id, profile, manifest_json,
-          manifest_hash, path, created_at
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        manifestId,
-        projectId,
-        project.scriptVersionId,
-        profile,
-        JSON.stringify(manifest),
-        manifestHash,
-        manifestPath,
-        new Date().toISOString()
-      );
-
       const completed = new Date().toISOString();
-      this.db.raw.prepare(`
-        UPDATE renders SET state = 'SUCCEEDED', manifest_id = ?, sha256 = ?,
-          duration_ms = ?, width = ?, height = ?, completed_at = ?
-        WHERE id = ?
-      `).run(
-        manifestId,
+      const reusable = this.db.raw.prepare(`
+        SELECT r.*
+        FROM renders r
+        JOIN render_manifests m ON m.id = r.manifest_id
+        WHERE r.id <> ? AND r.project_id = ? AND r.kind = ? AND r.profile = ?
+          AND r.state = 'SUCCEEDED' AND r.sha256 = ?
+          AND m.script_version_id IS ? AND r.scope_json = ?
+        ORDER BY r.completed_at DESC, r.id DESC LIMIT 1
+      `).get(
+        renderId,
+        projectId,
+        kind,
+        profile,
         outputHash,
-        elapsed,
-        outputWidth,
-        outputHeight,
-        completed,
-        renderId
-      );
+        project.scriptVersionId,
+        JSON.stringify(scope ?? {})
+      ) as Record<string, unknown> | undefined;
+      let committedRenderId: string = renderId;
+      let committedOutputPath = outputPath;
+      let committedArtifactVersion = artifactVersion;
+      if (reusable) {
+        const reusableOutputPath = reusable.output_path ? String(reusable.output_path) : '';
+        const reusableManifestPath = reusable.manifest_path ? String(reusable.manifest_path) : '';
+        if (
+          !reusableOutputPath
+          || !reusableManifestPath
+          || !existsSync(reusableOutputPath)
+          || !existsSync(reusableManifestPath)
+          || await sha256(reusableOutputPath) !== outputHash
+        ) {
+          throw new Error('An identical prior render record exists, but its managed artifact or manifest no longer verifies.');
+        }
+        committedRenderId = String(reusable.id);
+        committedOutputPath = reusableOutputPath;
+        committedArtifactVersion = Number(reusable.artifact_version ?? 1);
+        this.db.raw.transaction(() => {
+          this.db.raw.prepare(`DELETE FROM renders WHERE id = ? AND state = 'RUNNING'`).run(renderId);
+          this.db.raw.prepare(`
+            INSERT INTO audit_log(
+              project_id, action, actor, entity_type, entity_id, metadata_json, created_at
+            ) VALUES(?, 'render.identical_artifact_reused', 'system', 'render', ?, ?, ?)
+          `).run(projectId, committedRenderId, JSON.stringify({
+            discardedRenderId: renderId,
+            kind,
+            profile,
+            outputHash,
+            artifactVersion: committedArtifactVersion
+          }), completed);
+        })();
+        rmSync(outputPath, { force: true });
+        rmSync(workDirectory, { recursive: true, force: true });
+      } else {
+        const manifest = {
+          schemaVersion: '1.0',
+          projectId,
+          renderId,
+          projectTitle: project.title,
+          scriptVersionId: project.scriptVersionId,
+          profile,
+          outputProfileKey: effectiveProfileKey,
+          artifactVersion,
+          output: {
+            container: 'mp4',
+            videoCodec: 'h264',
+            audioCodec: 'aac',
+            width: outputWidth,
+            height: outputHeight,
+            frameRate: 30,
+            pixelFormat: 'yuv420p',
+            colorSpace: 'bt709',
+            fastStart: true
+          },
+          captions: { srtPath, vttPath },
+          music: musicSelection ? {
+            trackId: musicSelection.musicTrackId,
+            sha256: musicSelection.track.sha256,
+            title: musicSelection.track.title,
+            license: musicSelection.licenseSnapshot,
+            targetGainDb: musicSelection.targetGainDb,
+            duckingDb: musicSelection.duckingDb,
+            fadeInMs: musicSelection.fadeInMs,
+            fadeOutMs: musicSelection.fadeOutMs
+          } : null,
+          scope,
+          baseRenderId: baseRender?.id ?? null,
+          reusedFragmentCount: timeline.filter(scene => scene.reusedFragment).length,
+          scenes: timeline,
+          createdAt: new Date().toISOString()
+        };
+        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+        const manifestHash = createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+        const manifestId = randomUUID();
+        this.db.raw.prepare(`
+          INSERT INTO render_manifests(
+            id, project_id, script_version_id, profile, manifest_json,
+            manifest_hash, path, created_at
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          manifestId,
+          projectId,
+          project.scriptVersionId,
+          profile,
+          JSON.stringify(manifest),
+          manifestHash,
+          manifestPath,
+          new Date().toISOString()
+        );
+        this.db.raw.prepare(`
+          UPDATE renders SET state = 'SUCCEEDED', manifest_id = ?, sha256 = ?,
+            duration_ms = ?, width = ?, height = ?, completed_at = ?
+          WHERE id = ?
+        `).run(
+          manifestId,
+          outputHash,
+          elapsed,
+          outputWidth,
+          outputHeight,
+          completed,
+          renderId
+        );
+      }
 
       if (kind === 'final') {
         this.projects.states.transition(projectId, 'QC_FINAL', {
           progress: 0.88,
-          finalRenderId: renderId,
+          finalRenderId: committedRenderId,
           reason: 'Final render completed and automated QC recorded',
-          prerequisites: { renderId, outputHash }
+          prerequisites: { renderId: committedRenderId, outputHash }
         });
         this.projects.generatePackaging(projectId, timeline.map(scene => ({
           ordinal: scene.ordinal,
           chapter: scene.chapter,
           timelineStartMs: scene.timelineStartMs
         })));
-        await this.generateThumbnailCandidates(projectId, outputPath, elapsed);
-        this.runQc(projectId, renderId, kind, profile, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
+        await this.generateThumbnailCandidates(projectId, committedOutputPath, elapsed);
+        this.runQc(projectId, committedRenderId, kind, profile, timeline, committedOutputPath, outputProbe, outputLoudness, outputAnalysis);
         const blockers = this.db.raw.prepare(`
           SELECT id, code, category, severity, message, evidence_json FROM qc_results
           WHERE project_id = ? AND render_id = ? AND status = 'fail' AND severity IN ('BLOCKER','HIGH')
           ORDER BY CASE severity WHEN 'BLOCKER' THEN 0 ELSE 1 END, code
-        `).all(projectId, renderId) as Array<{
+        `).all(projectId, committedRenderId) as Array<{
           id: string;
           code: string;
           category: string;
@@ -926,7 +995,7 @@ export class RenderService {
           evidence_json: string;
         }>;
         if (blockers.length) {
-          const route = this.projects.repairs.routeQcFailures(projectId, renderId, blockers.map(failure => ({
+          const route = this.projects.repairs.routeQcFailures(projectId, committedRenderId, blockers.map(failure => ({
             id: failure.id,
             code: failure.code,
             category: failure.category,
@@ -940,8 +1009,8 @@ export class RenderService {
               reason: 'Final QC selected a bounded footage alternate that requires acquisition',
               prerequisites: {
                 blockerCount: blockers.length,
-                failedRenderId: renderId,
-                failedArtifactVersion: artifactVersion,
+                failedRenderId: committedRenderId,
+                failedArtifactVersion: committedArtifactVersion,
                 retrySequence: route.retrySequence,
                 targetState: route.targetState
               }
@@ -953,15 +1022,15 @@ export class RenderService {
               reason: 'Correctable final QC failures routed to the smallest safe rebuild stage',
               prerequisites: {
                 blockerCount: blockers.length,
-                failedRenderId: renderId,
-                failedArtifactVersion: artifactVersion,
+                failedRenderId: committedRenderId,
+                failedArtifactVersion: committedArtifactVersion,
                 retrySequence: route.retrySequence,
                 targetState: route.targetState
               }
             });
             await this.prepareRepair(projectId, route.targetState);
           } else {
-            this.recordQcExceptions(projectId, renderId, blockers);
+            this.recordQcExceptions(projectId, committedRenderId, blockers);
             this.projects.states.transition(projectId, 'BLOCKED_EXCEPTION', {
               progress: 0.88,
               reason: route.exhausted
@@ -975,25 +1044,25 @@ export class RenderService {
             });
           }
         } else {
-          this.projects.repairs.completeClearedRenderRepairs(projectId, renderId, new Set());
-          this.resolveSupersededRenderExceptions(projectId, renderId);
+          this.projects.repairs.completeClearedRenderRepairs(projectId, committedRenderId, new Set());
+          this.resolveSupersededRenderExceptions(projectId, committedRenderId);
           // Stay in QC_FINAL. WorkflowService owns the automatic private-upload boundary
           // so WAITING_FINAL_APPROVAL remains an unambiguous human publication gate.
         }
       } else if (kind === 'draft') {
-        this.runQc(projectId, renderId, kind, profile, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
+        this.runQc(projectId, committedRenderId, kind, profile, timeline, committedOutputPath, outputProbe, outputLoudness, outputAnalysis);
         this.projects.states.transition(projectId, 'QC_DRAFT', {
           progress: 0.72,
           reason: 'Draft render completed and automated QC recorded',
-          prerequisites: { renderId }
+          prerequisites: { renderId: committedRenderId }
         });
       } else {
-        this.runQc(projectId, renderId, kind, profile, timeline, outputPath, outputProbe, outputLoudness, outputAnalysis);
+        this.runQc(projectId, committedRenderId, kind, profile, timeline, committedOutputPath, outputProbe, outputLoudness, outputAnalysis);
         const rangeBlockers = this.db.raw.prepare(`
           SELECT id, code, category, severity, message, evidence_json FROM qc_results
           WHERE project_id = ? AND render_id = ? AND status = 'fail'
             AND severity IN ('BLOCKER','HIGH')
-        `).all(projectId, renderId) as Array<{
+        `).all(projectId, committedRenderId) as Array<{
           id: string;
           code: string;
           category: string;
@@ -1002,11 +1071,11 @@ export class RenderService {
           evidence_json: string;
         }>;
         if (rangeBlockers.length) {
-          this.recordQcExceptions(projectId, renderId, rangeBlockers);
+          this.recordQcExceptions(projectId, committedRenderId, rangeBlockers);
           this.projects.states.transition(projectId, 'BLOCKED_EXCEPTION', {
             progress: 0.72,
             reason: 'The bounded range render failed automated verification',
-            prerequisites: { renderId, scope, blockerCount: rangeBlockers.length }
+            prerequisites: { renderId: committedRenderId, scope, blockerCount: rangeBlockers.length }
           });
           retryAutomatically = false;
         } else {
@@ -1022,19 +1091,19 @@ export class RenderService {
           WHERE project_id = ? AND status = 'routed' AND repair_class = 'regenerate_range'
             AND range_start_ordinal <= ? AND range_end_ordinal >= ?
         `).run(
-          renderId, JSON.stringify(scope), projectId,
+          committedRenderId, JSON.stringify(scope), projectId,
           scope!.endSceneOrdinal, scope!.startSceneOrdinal
         );
         this.projects.states.transition(projectId, 'QC_DRAFT', {
           progress: 0.72,
           reason: 'Requested scene range rendered and passed automated media checks',
-          prerequisites: { renderId, scope, baseRenderId: baseRender?.id ?? null }
+          prerequisites: { renderId: committedRenderId, scope, baseRenderId: baseRender?.id ?? null }
         });
         retryAutomatically = routedRangeRepairs > 0;
         }
       }
 
-      const result = renderFromRow(this.db.raw.prepare('SELECT * FROM renders WHERE id = ?').get(renderId) as Record<string, unknown>);
+      const result = renderFromRow(this.db.raw.prepare('SELECT * FROM renders WHERE id = ?').get(committedRenderId) as Record<string, unknown>);
       this.jobs.succeed(job.id, result);
       currentAttemptCommitted = true;
       if (retryAutomatically) {
@@ -1211,13 +1280,13 @@ export class RenderService {
         Math.min(scene.timelineEndMs, interval.endMs) - Math.max(scene.timelineStartMs, interval.startMs) >= 750
       ) ? [scene.ordinal] : [];
     }))];
-    const frameRate = rationalRate(video?.avg_frame_rate);
+    const frameRate = outputFrameRateEvidence(video);
     const profileValid = Boolean(
       video?.codec_name === 'h264'
       && video.width === expectedWidth
       && video.height === expectedHeight
       && video.pix_fmt === 'yuv420p'
-      && Math.abs(frameRate - 30) < 0.01
+      && frameRate.valid
       && (!video.field_order || video.field_order === 'progressive')
       && video.color_space === 'bt709'
       && video.color_transfer === 'bt709'

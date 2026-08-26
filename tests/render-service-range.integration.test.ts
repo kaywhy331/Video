@@ -274,6 +274,44 @@ describe('real range render fragment reuse', () => {
     `).get()).toEqual({ profile: 'final_1080p', width: 1920, height: 1080 });
   });
 
+  it('reuses an identical verified final artifact during an automatic repair', async () => {
+    const original = db.raw.prepare(`
+      SELECT id, sha256, output_path FROM renders
+      WHERE project_id = 'project-1' AND kind = 'final' AND state = 'SUCCEEDED'
+      ORDER BY completed_at DESC LIMIT 1
+    `).get() as { id: string; sha256: string; output_path: string };
+    const now = new Date().toISOString();
+    db.raw.prepare(`
+      INSERT INTO repair_attempts(
+        id, project_id, render_id, failure_code, repair_class, action, status,
+        attempt_number, maximum_attempts, target_state, evidence_json, created_at
+      ) VALUES('identical-final-repair', 'project-1', ?, 'FINAL_MEDIA_PROFILE',
+        'automatic', 'Rebuild the final artifact.', 'routed', 1, 2,
+        'QC_DRAFT', '{}', ?)
+    `).run(original.id, now);
+    db.raw.prepare(`UPDATE projects SET state = 'QC_DRAFT', updated_at = ? WHERE id = 'project-1'`).run(now);
+
+    const repaired = await service.render('project-1', 'final');
+
+    expect(repaired).toMatchObject({
+      id: original.id,
+      sha256: original.sha256,
+      outputPath: original.output_path,
+      state: 'SUCCEEDED'
+    });
+    expect(db.raw.prepare(`
+      SELECT count(*) AS count FROM renders
+      WHERE project_id = 'project-1' AND kind = 'final'
+    `).get()).toEqual({ count: 1 });
+    expect(db.raw.prepare(`
+      SELECT status FROM repair_attempts WHERE id = 'identical-final-repair'
+    `).get()).toEqual({ status: 'verified' });
+    expect(db.raw.prepare(`
+      SELECT count(*) AS count FROM audit_log
+      WHERE project_id = 'project-1' AND action = 'render.identical_artifact_reused'
+    `).get()).toEqual({ count: 1 });
+  }, 60_000);
+
   it('renders a coordinate-backed generated graphic without stock media', async () => {
     const now = new Date().toISOString();
     db.raw.prepare(`
