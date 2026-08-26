@@ -1466,10 +1466,32 @@ export interface FinalReview {
 }
 
 export interface YouTubeConnectionStatus {
+  state: 'not_configured' | 'authorization_required' | 'confirmation_required' | 'confirmed';
   configured: boolean;
   authorized: boolean;
   channelTitle: string | null;
   channelId: string | null;
+  confirmedAt: string | null;
+  pendingAuthorization: {
+    pendingAuthorizationId: string;
+    phase: 'awaiting_callback' | 'exchanging' | 'confirmation_required';
+    expiresAt: string;
+    channelTitle: string | null;
+    channelId: string | null;
+    replacement: boolean;
+    previousChannelTitle: string | null;
+    previousChannelId: string | null;
+  } | null;
+  error: {
+    code: 'authorization_failed' | 'authorization_expired' | 'browser_open_failed' | 'credential_mismatch';
+    message: string;
+  } | null;
+}
+
+export interface YouTubeAuthorizationConfirmation {
+  pendingAuthorizationId: string;
+  expectedChannelId: string;
+  replaceExisting: boolean;
 }
 
 export interface PublicationApprovalResult {

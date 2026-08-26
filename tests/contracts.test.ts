@@ -26,7 +26,9 @@ import {
   StoryboardSplitBeatSchema,
   StoryboardUseGraphicSchema,
   StoryboardVerifyLocationSchema,
-  SettingsPatchSchema
+  SettingsPatchSchema,
+  YouTubeAuthorizationCancellationSchema,
+  YouTubeAuthorizationConfirmationSchema
 } from '@shared/contracts';
 
 describe('IPC request contracts', () => {
@@ -60,6 +62,23 @@ describe('IPC request contracts', () => {
     }).success).toBe(false);
     expect(StorageCleanupSchema.safeParse({ dryRun: true, trigger: 'manual' }).success).toBe(true);
     expect(StorageCleanupSchema.safeParse({ recursiveDelete: true }).success).toBe(false);
+  });
+
+  it('requires exact pending and channel identities for YouTube confirmation or cancellation', () => {
+    expect(YouTubeAuthorizationConfirmationSchema.safeParse({
+      pendingAuthorizationId: 'pending-1', expectedChannelId: 'UC-exact', replaceExisting: false
+    }).success).toBe(true);
+    expect(YouTubeAuthorizationConfirmationSchema.safeParse({
+      pendingAuthorizationId: 'pending-1', expectedChannelId: 'UC-exact', replaceExisting: false,
+      refreshToken: 'renderer-must-not-send-this'
+    }).success).toBe(false);
+    expect(YouTubeAuthorizationConfirmationSchema.safeParse({
+      pendingAuthorizationId: '', expectedChannelId: 'UC-exact', replaceExisting: true
+    }).success).toBe(false);
+    expect(YouTubeAuthorizationCancellationSchema.safeParse({ pendingAuthorizationId: 'pending-1' }).success)
+      .toBe(true);
+    expect(YouTubeAuthorizationCancellationSchema.safeParse({ pendingAuthorizationId: 'pending-1', force: true }).success)
+      .toBe(false);
   });
 
   it('bounds analytics snapshots and evidence-gated learning requests', () => {

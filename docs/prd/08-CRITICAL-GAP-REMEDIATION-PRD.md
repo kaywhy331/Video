@@ -243,14 +243,14 @@ Required tests:
 
 ### 6.6 Completion criteria
 
-- [ ] Every authorization URL contains unique `state`, `code_challenge`, and `code_challenge_method=S256` values.
-- [ ] Missing, mismatched, expired, and replayed callbacks fail before token exchange.
-- [ ] The callback listener closes on success, error, timeout, cancellation, and shutdown.
-- [ ] Tokens remain memory-only until the operator confirms the exact channel ID.
-- [ ] Cancelling or rejecting a new connection preserves the prior confirmed connection.
-- [ ] Upload and approval reject an unconfirmed or mismatched channel binding.
-- [ ] OAuth secrets and callback query data are absent from logs, audit history, renderer payloads, and receipts.
-- [ ] `YT-009`, `YT-010`, and `SEC-009` have exact automated bindings.
+- [x] Every authorization URL contains unique `state`, `code_challenge`, and `code_challenge_method=S256` values.
+- [x] Missing, mismatched, expired, and replayed callbacks fail before token exchange.
+- [x] The callback listener closes on success, error, timeout, cancellation, and shutdown.
+- [x] Tokens remain memory-only until the operator confirms the exact channel ID.
+- [x] Cancelling or rejecting a new connection preserves the prior confirmed connection.
+- [x] Upload and approval reject an unconfirmed or mismatched channel binding.
+- [x] OAuth secrets and callback query data are absent from logs, audit history, renderer payloads, and receipts.
+- [x] `YT-009`, `YT-010`, and `SEC-009` have exact automated bindings.
 - [ ] A live OAuth rehearsal is repeated after the automated suite passes and remains an external production-qualification receipt.
 
 ---

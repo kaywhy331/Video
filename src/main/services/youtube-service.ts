@@ -1,13 +1,24 @@
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
-import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
 import { shell } from 'electron';
 import { google, type Auth, type youtube_v3 } from 'googleapis';
 import type { AppDatabase } from '../database/database';
-import type { AppSettings, PublicationApprovalResult, YouTubeConnectionStatus } from '@shared/types';
+import type {
+  AppSettings,
+  PublicationApprovalResult,
+  YouTubeAuthorizationConfirmation,
+  YouTubeConnectionStatus
+} from '@shared/types';
 import type { SecretStore } from '../secret-store';
 import type { ProjectService } from './project-service';
 import { approvalFingerprint } from '@shared/approval';
+import {
+  createGoogleYouTubeOAuthProvider,
+  YouTubeOAuthSessionManager,
+  type YouTubeOAuthCredentials,
+  type YouTubeOAuthSessionPort,
+  type YouTubeOAuthSessionSnapshot
+} from './youtube-oauth-session';
 import {
   parseCommittedRange,
   reusableEnglishCaptionId,
@@ -36,12 +47,34 @@ interface UploadRow {
   channel_id: string | null;
 }
 
+interface YouTubeBindingRow {
+  channel_id: string;
+  channel_title: string;
+  credential_fingerprint: string;
+  confirmed_at: string;
+}
+
+export function youtubeCredentialFingerprint(clientId: string, refreshToken: string): string {
+  return createHash('sha256')
+    .update(`videofactory-youtube-binding-v1\0${clientId}\0${refreshToken}`)
+    .digest('hex');
+}
+
 export function assertPublicationUploadOwner(
   existing: Pick<UploadRow, 'project_id'> | undefined,
   projectId: string
 ): void {
   if (existing && existing.project_id !== projectId) {
     throw new Error('This final render hash is already assigned to a different project upload.');
+  }
+}
+
+export function assertPublicationChannelBinding(
+  publicationChannelId: string | null | undefined,
+  confirmedChannelId: string
+): void {
+  if (publicationChannelId !== confirmedChannelId) {
+    throw new Error('The YouTube publication destination does not match the confirmed channel.');
   }
 }
 
@@ -157,6 +190,9 @@ export async function awaitUsableYouTubeProcessing(options: {
 }
 
 export class YouTubeService {
+  private readonly oauthSessions: YouTubeOAuthSessionPort;
+  private legacyInspectionAttempted = false;
+
   constructor(
     private readonly db: AppDatabase,
     private readonly settings: () => AppSettings,
@@ -170,8 +206,86 @@ export class YouTubeService {
       });
       return result.data.status ?? null;
     },
-    private readonly openExternal: (url: string) => Promise<unknown> = url => shell.openExternal(url, { activate: true })
-  ) {}
+    private readonly openExternal: (url: string) => Promise<unknown> = url => shell.openExternal(url, { activate: true }),
+    oauthSessions?: YouTubeOAuthSessionPort
+  ) {
+    this.oauthSessions = oauthSessions ?? new YouTubeOAuthSessionManager({
+      openExternal: this.openExternal,
+      createProvider: input => createGoogleYouTubeOAuthProvider({ ...input, scopes: SCOPES })
+    });
+  }
+
+  private binding(): YouTubeBindingRow | null {
+    return (this.db.raw.prepare(`
+      SELECT channel_id, channel_title, credential_fingerprint, confirmed_at
+      FROM youtube_connection_binding WHERE singleton_id = 1
+    `).get() as YouTubeBindingRow | undefined) ?? null;
+  }
+
+  private credentials(secret = this.secrets.getAll()): YouTubeOAuthCredentials {
+    return {
+      refreshToken: secret.youtubeRefreshToken,
+      accessToken: secret.youtubeAccessToken,
+      expiryDate: secret.youtubeTokenExpiry
+    };
+  }
+
+  private matchingBinding(secret = this.secrets.getAll()): YouTubeBindingRow | null {
+    const binding = this.binding();
+    if (!binding || !secret.youtubeRefreshToken) return null;
+    if (!secret.youtubeClientId) return null;
+    return binding.credential_fingerprint === youtubeCredentialFingerprint(
+      secret.youtubeClientId,
+      secret.youtubeRefreshToken
+    )
+      ? binding
+      : null;
+  }
+
+  private requireConfirmedBinding(secret = this.secrets.getAll()): YouTubeBindingRow {
+    const binding = this.matchingBinding(secret);
+    if (!binding) {
+      throw new Error('Confirm the exact YouTube destination channel in Settings before upload or publication.');
+    }
+    return binding;
+  }
+
+  private connectionStatus(pending = this.oauthSessions.snapshot()): YouTubeConnectionStatus {
+    const secret = this.secrets.getAll();
+    const configured = Boolean(secret.youtubeClientId && secret.youtubeClientSecret);
+    const storedBinding = this.binding();
+    const confirmedBinding = this.matchingBinding(secret);
+    const confirmationRequired = pending?.phase === 'confirmation_required';
+    const safeError = this.oauthSessions.safeError();
+    const credentialMismatch = Boolean(storedBinding && secret.youtubeRefreshToken && !confirmedBinding);
+    const state: YouTubeConnectionStatus['state'] = !configured
+      ? 'not_configured'
+      : confirmationRequired
+        ? 'confirmation_required'
+        : confirmedBinding
+          ? 'confirmed'
+          : 'authorization_required';
+    return {
+      state,
+      configured,
+      authorized: Boolean(confirmedBinding),
+      channelTitle: confirmedBinding?.channel_title ?? storedBinding?.channel_title ?? null,
+      channelId: confirmedBinding?.channel_id ?? storedBinding?.channel_id ?? null,
+      confirmedAt: confirmedBinding?.confirmed_at ?? null,
+      pendingAuthorization: pending ? {
+        ...pending,
+        replacement: Boolean(
+          pending.channelId && storedBinding && pending.channelId !== storedBinding.channel_id
+        ),
+        previousChannelTitle: storedBinding?.channel_title ?? null,
+        previousChannelId: storedBinding?.channel_id ?? null
+      } : null,
+      error: safeError ?? (credentialMismatch ? {
+        code: 'credential_mismatch',
+        message: 'Stored YouTube credentials no longer match the confirmed channel. Confirm or reconnect the destination.'
+      } : null)
+    };
+  }
 
   uploadReadiness(): {
     ready: boolean;
@@ -179,13 +293,13 @@ export class YouTubeService {
     title: string;
     message: string;
   } {
-    const status = this.secrets.status();
-    if (!status.youtubeClientConfigured || !status.youtubeAuthorized) {
+    const secret = this.secrets.getAll();
+    if (!secret.youtubeClientId || !secret.youtubeClientSecret || !this.matchingBinding(secret)) {
       return {
         ready: false,
         code: 'YOUTUBE_AUTH_REQUIRED',
         title: 'YouTube connection is required',
-        message: 'Configure the Google OAuth desktop client and connect YouTube before automatic private upload.'
+        message: 'Configure Google OAuth and confirm the exact destination channel before automatic private upload.'
       };
     }
     const health = this.db.raw.prepare(`
@@ -214,6 +328,7 @@ export class YouTubeService {
     if (!secret.youtubeClientId || !secret.youtubeClientSecret) {
       throw new Error('YouTube OAuth client ID and secret are not configured.');
     }
+    this.requireConfirmedBinding(secret);
     const client = new google.auth.OAuth2(secret.youtubeClientId, secret.youtubeClientSecret);
     if (secret.youtubeRefreshToken || secret.youtubeAccessToken) {
       client.setCredentials({
@@ -233,87 +348,121 @@ export class YouTubeService {
   }
 
   async status(): Promise<YouTubeConnectionStatus> {
-    const status = this.secrets.status();
-    if (!status.youtubeClientConfigured || !status.youtubeAuthorized) {
-      return { configured: status.youtubeClientConfigured, authorized: false, channelTitle: null, channelId: null };
+    const secret = this.secrets.getAll();
+    const configured = Boolean(secret.youtubeClientId && secret.youtubeClientSecret);
+    const hasStoredAuthorization = Boolean(secret.youtubeRefreshToken);
+    if (configured && hasStoredAuthorization && !this.matchingBinding(secret)
+      && !this.oauthSessions.snapshot() && !this.legacyInspectionAttempted) {
+      this.legacyInspectionAttempted = true;
+      try {
+        await this.oauthSessions.stageStored({
+          clientId: secret.youtubeClientId as string,
+          clientSecret: secret.youtubeClientSecret as string,
+          credentials: this.credentials(secret)
+        });
+      } catch {
+        // The session manager exposes only a stable, secret-free recovery error.
+      }
     }
-    try {
-      const auth = await this.client();
-      const youtube = google.youtube({ version: 'v3', auth });
-      const response = await youtube.channels.list({ part: ['snippet'], mine: true });
-      const channel = response.data.items?.[0];
-      return {
-        configured: true,
-        authorized: true,
-        channelTitle: channel?.snippet?.title ?? null,
-        channelId: channel?.id ?? null
-      };
-    } catch {
-      return { configured: true, authorized: false, channelTitle: null, channelId: null };
-    }
+    return this.connectionStatus();
   }
 
-  async authorize(): Promise<YouTubeConnectionStatus> {
+  async beginAuthorization(): Promise<YouTubeConnectionStatus> {
     const secret = this.secrets.getAll();
     if (!secret.youtubeClientId || !secret.youtubeClientSecret) {
       throw new Error('Save a Google OAuth desktop client ID and secret in Settings first.');
     }
+    this.legacyInspectionAttempted = true;
+    const pending = await this.oauthSessions.begin({
+      clientId: secret.youtubeClientId,
+      clientSecret: secret.youtubeClientSecret
+    });
+    return this.connectionStatus(pending);
+  }
 
-    const result = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
-      const server = createServer((request, response) => {
-        try {
-          const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
-          if (url.pathname !== '/oauth2callback') {
-            response.writeHead(404).end('Not found');
-            return;
-          }
-          const error = url.searchParams.get('error');
-          const code = url.searchParams.get('code');
-          if (error || !code) {
-            response.writeHead(400, { 'content-type': 'text/html; charset=utf-8' });
-            response.end('<h1>Authorization failed</h1><p>You can close this window.</p>');
-            server.close();
-            reject(new Error(error ?? 'OAuth callback did not include a code.'));
-            return;
-          }
-          const address = server.address();
-          const port = typeof address === 'object' && address ? address.port : 0;
-          response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-          response.end('<h1>VideoFactory is connected</h1><p>You can close this window and return to the app.</p>');
-          server.close();
-          resolve({ code, redirectUri: `http://127.0.0.1:${port}/oauth2callback` });
-        } catch (error) {
-          server.close();
-          reject(error);
+  async confirmAuthorization(request: YouTubeAuthorizationConfirmation): Promise<YouTubeConnectionStatus> {
+    const pending = this.oauthSessions.snapshot();
+    const existingBinding = this.binding();
+    const replacement = Boolean(
+      existingBinding && pending?.channelId && pending.channelId !== existingBinding.channel_id
+    );
+    if (replacement && !request.replaceExisting) {
+      if (pending) {
+        const source = await this.oauthSessions.cancel(pending.pendingAuthorizationId);
+        if (source === 'stored') this.secrets.replaceYouTubeCredentials(null);
+      }
+      throw new Error('Replacing the confirmed YouTube channel requires explicit replacement confirmation.');
+    }
+
+    const previousSecrets = this.secrets.getAll();
+    await this.oauthSessions.confirm(
+      request.pendingAuthorizationId,
+      request.expectedChannelId,
+      async candidate => {
+        const refreshToken = candidate.credentials.refreshToken;
+        if (!refreshToken) throw new Error('YouTube authorization did not provide a durable refresh credential.');
+        if (!previousSecrets.youtubeClientId || candidate.clientId !== previousSecrets.youtubeClientId) {
+          throw new Error('The OAuth client configuration changed during authorization. Start the connection again.');
         }
-      });
-      server.on('error', reject);
-      server.listen(0, '127.0.0.1', async () => {
-        const address = server.address();
-        const port = typeof address === 'object' && address ? address.port : 0;
-        const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
-        const auth = new google.auth.OAuth2(secret.youtubeClientId, secret.youtubeClientSecret, redirectUri);
-        const authUrl = auth.generateAuthUrl({
-          access_type: 'offline',
-          prompt: 'consent',
-          scope: SCOPES
-        });
-        await shell.openExternal(authUrl, { activate: true });
-      });
-      setTimeout(() => {
-        server.close();
-        reject(new Error('YouTube authorization timed out.'));
-      }, 5 * 60_000).unref();
-    });
+        let secretsReplaced = false;
+        try {
+          if (candidate.source === 'authorization') {
+            this.secrets.replaceYouTubeCredentials({
+              youtubeRefreshToken: refreshToken,
+              youtubeAccessToken: candidate.credentials.accessToken,
+              youtubeTokenExpiry: candidate.credentials.expiryDate
+            });
+            secretsReplaced = true;
+          }
+          const confirmedAt = new Date().toISOString();
+          this.db.raw.transaction(() => {
+            this.db.raw.prepare(`
+              INSERT INTO youtube_connection_binding(
+                singleton_id, channel_id, channel_title, credential_fingerprint, confirmed_at
+              ) VALUES(1, ?, ?, ?, ?)
+              ON CONFLICT(singleton_id) DO UPDATE SET
+                channel_id = excluded.channel_id,
+                channel_title = excluded.channel_title,
+                credential_fingerprint = excluded.credential_fingerprint,
+                confirmed_at = excluded.confirmed_at
+            `).run(
+              candidate.channelId,
+              candidate.channelTitle,
+              youtubeCredentialFingerprint(candidate.clientId, refreshToken),
+              confirmedAt
+            );
+            this.db.raw.prepare(`
+              INSERT INTO audit_log(action, actor, entity_type, entity_id, metadata_json, created_at)
+              VALUES('youtube.channel_confirmed', 'human', 'youtube_channel', ?, ?, ?)
+            `).run(candidate.channelId, JSON.stringify({
+              channelId: candidate.channelId,
+              channelTitle: candidate.channelTitle,
+              replacedChannelId: replacement ? existingBinding?.channel_id ?? null : null
+            }), confirmedAt);
+          })();
+        } catch (error) {
+          if (secretsReplaced) {
+            this.secrets.replaceYouTubeCredentials({
+              youtubeRefreshToken: previousSecrets.youtubeRefreshToken,
+              youtubeAccessToken: previousSecrets.youtubeAccessToken,
+              youtubeTokenExpiry: previousSecrets.youtubeTokenExpiry
+            });
+          }
+          throw error;
+        }
+      }
+    );
+    return this.connectionStatus();
+  }
 
-    const auth = new google.auth.OAuth2(secret.youtubeClientId, secret.youtubeClientSecret, result.redirectUri);
-    const tokenResponse = await auth.getToken(result.code);
-    this.secrets.update({
-      youtubeAccessToken: tokenResponse.tokens.access_token ?? undefined,
-      youtubeRefreshToken: tokenResponse.tokens.refresh_token ?? undefined,
-      youtubeTokenExpiry: tokenResponse.tokens.expiry_date ?? undefined
-    });
-    return this.status();
+  async cancelAuthorization(pendingAuthorizationId: string): Promise<YouTubeConnectionStatus> {
+    const source = await this.oauthSessions.cancel(pendingAuthorizationId);
+    if (source === 'stored') this.secrets.replaceYouTubeCredentials(null);
+    return this.connectionStatus();
+  }
+
+  async shutdown(): Promise<void> {
+    await this.oauthSessions.shutdown();
   }
 
   async uploadPrivate(projectId: string): Promise<{ videoId: string; url: string }> {
@@ -330,6 +479,7 @@ export class YouTubeService {
     if (!selected.thumbnailPath || !existsSync(selected.thumbnailPath)) {
       throw new Error('The selected publishing package requires a generated thumbnail before upload.');
     }
+    const binding = this.requireConfirmedBinding();
 
     const existing = this.db.raw.prepare(`
       SELECT id, project_id, video_id, upload_session_uri, caption_id, thumbnail_uploaded, channel_id
@@ -338,6 +488,16 @@ export class YouTubeService {
       ORDER BY created_at DESC LIMIT 1
     `).get(render.sha256) as UploadRow | undefined;
     assertPublicationUploadOwner(existing, projectId);
+    if (existing && (existing.video_id || existing.upload_session_uri)) {
+      assertPublicationChannelBinding(existing.channel_id, binding.channel_id);
+    } else if (existing?.channel_id && existing.channel_id !== binding.channel_id) {
+      assertPublicationChannelBinding(existing.channel_id, binding.channel_id);
+    } else if (existing && !existing.channel_id) {
+      this.db.raw.prepare(`
+        UPDATE publication_records SET channel_id = ?, updated_at = ? WHERE id = ?
+      `).run(binding.channel_id, new Date().toISOString(), existing.id);
+      existing.channel_id = binding.channel_id;
+    }
 
     const auth = await this.client();
     const youtube = google.youtube({ version: 'v3', auth });
@@ -423,12 +583,12 @@ export class YouTubeService {
       const now = new Date().toISOString();
       this.db.raw.prepare(`
         INSERT INTO publication_records(
-          id, project_id, video_id, privacy_status, final_sha256, processing_status,
+          id, project_id, channel_id, video_id, privacy_status, final_sha256, processing_status,
           selected_package_id, thumbnail_uploaded, approval_hash, synthetic_media,
           created_at, updated_at
-        ) VALUES(?, ?, NULL, 'private', ?, 'initializing', ?, 0, ?, ?, ?, ?)
+        ) VALUES(?, ?, ?, NULL, 'private', ?, 'initializing', ?, 0, ?, ?, ?, ?)
       `).run(
-        publicationId, projectId, render.sha256, selected.id, approvalHash,
+        publicationId, projectId, binding.channel_id, render.sha256, selected.id, approvalHash,
         Number(this.settings().youtubeSyntheticMediaDisclosure), now, now
       );
     }
@@ -477,8 +637,6 @@ export class YouTubeService {
     const captionId = await this.ensureCaption(youtube, videoId, render.manifestPath, null);
     await this.ensurePlaylist(youtube, videoId);
 
-    const channel = await youtube.channels.list({ part: ['id'], mine: true });
-    const channelId = channel.data.items?.[0]?.id ?? null;
     const now = new Date().toISOString();
     this.db.raw.prepare(`
       UPDATE publication_records SET channel_id = ?, video_id = ?, privacy_status = 'private',
@@ -486,7 +644,7 @@ export class YouTubeService {
         thumbnail_uploaded = ?, approval_hash = ?, error = NULL, updated_at = ?
       WHERE id = ?
     `).run(
-      channelId,
+      binding.channel_id,
       videoId,
       selected.id,
       captionId,
@@ -696,6 +854,7 @@ export class YouTubeService {
     if (!project.youtubeVideoId) {
       throw new Error('Project has not been uploaded to YouTube.');
     }
+    const binding = this.requireConfirmedBinding();
 
     const render = project.renders.find(item => item.kind === 'final' && item.state === 'SUCCEEDED');
     const selected = project.packaging.find(candidate => candidate.selected) ?? project.packaging[0];
@@ -710,13 +869,14 @@ export class YouTubeService {
       thumbnailSha256: selected.thumbnailPath && existsSync(selected.thumbnailPath) ? fileSha256(selected.thumbnailPath) : null
     });
     const publication = this.db.raw.prepare(`
-      SELECT approval_hash, processing_status, caption_id, thumbnail_uploaded
+      SELECT approval_hash, processing_status, caption_id, thumbnail_uploaded, channel_id
       FROM publication_records WHERE project_id = ? AND video_id = ?
     `).get(projectId, project.youtubeVideoId) as {
       approval_hash: string | null;
       processing_status: string | null;
       caption_id: string | null;
       thumbnail_uploaded: number;
+      channel_id: string | null;
     } | undefined;
     if (!publication?.approval_hash || publication.approval_hash !== currentApprovalHash) {
       throw new Error('The final render or publishing package changed after upload. Upload the current package before approval.');
@@ -724,6 +884,7 @@ export class YouTubeService {
     if (publication.processing_status !== 'succeeded' || !publication.caption_id || !publication.thumbnail_uploaded) {
       throw new Error('YouTube processing, thumbnail, and timed captions must all succeed before approval.');
     }
+    assertPublicationChannelBinding(publication.channel_id, binding.channel_id);
 
     if (action === 'keep_private') {
       const now = new Date().toISOString();

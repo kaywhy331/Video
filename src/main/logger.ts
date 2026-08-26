@@ -2,6 +2,9 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /(https?:\/\/[^\s"'?]+\/oauth2callback)\?[^\s"']+/gi, replacement: '$1?[REDACTED]' },
+  { pattern: /([?&](?:code|state|code_verifier|code_challenge)=)[^\s,"'&}]+/gi, replacement: '$1[REDACTED]' },
+  { pattern: /("?(?:authorizationCode|oauthState|codeVerifier|codeChallenge|oauth_state|code_verifier|code_challenge)"?\s*[:=]\s*"?)[^\s,"'&}]+/gi, replacement: '$1[REDACTED]' },
   { pattern: /("?authorization"?\s*[:=]\s*"?bearer\s+)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },
   { pattern: /("?(?:api[-_ ]?key|llmApiKey|youtubeApiKey)"?\s*[:=]\s*"?)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },
   { pattern: /("?(?:refresh[-_ ]?token|youtubeRefreshToken)"?\s*[:=]\s*"?)[^\s,"'}]+/gi, replacement: '$1[REDACTED]' },

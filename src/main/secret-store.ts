@@ -16,6 +16,12 @@ export interface Secrets {
   youtubeTokenExpiry?: number;
 }
 
+export interface YouTubeStoredCredentials {
+  youtubeRefreshToken?: string;
+  youtubeAccessToken?: string;
+  youtubeTokenExpiry?: number;
+}
+
 export class SecretStore {
   constructor(private readonly filePath: string) {
     mkdirSync(dirname(filePath), { recursive: true });
@@ -42,9 +48,28 @@ export class SecretStore {
       if (value === '') delete (next as Record<string, unknown>)[key];
       else if (value !== undefined) (next as Record<string, unknown>)[key] = value;
     }
-    const encrypted = safeStorage.encryptString(JSON.stringify(next));
-    writeFileSync(this.filePath, encrypted.toString('base64'), { encoding: 'utf8', mode: 0o600 });
+    this.write(next);
     return this.status(next);
+  }
+
+  replaceYouTubeCredentials(credentials: YouTubeStoredCredentials | null): SecretStatus {
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error('Operating-system encryption is unavailable. Secrets were not saved.');
+    }
+    const next = this.getAll();
+    delete next.youtubeRefreshToken;
+    delete next.youtubeAccessToken;
+    delete next.youtubeTokenExpiry;
+    if (credentials?.youtubeRefreshToken) next.youtubeRefreshToken = credentials.youtubeRefreshToken;
+    if (credentials?.youtubeAccessToken) next.youtubeAccessToken = credentials.youtubeAccessToken;
+    if (credentials?.youtubeTokenExpiry !== undefined) next.youtubeTokenExpiry = credentials.youtubeTokenExpiry;
+    this.write(next);
+    return this.status(next);
+  }
+
+  private write(secrets: Secrets): void {
+    const encrypted = safeStorage.encryptString(JSON.stringify(secrets));
+    writeFileSync(this.filePath, encrypted.toString('base64'), { encoding: 'utf8', mode: 0o600 });
   }
 
   status(secrets = this.getAll()): SecretStatus {

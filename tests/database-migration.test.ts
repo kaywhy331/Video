@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AppDatabase } from '@main/database/database';
+import { AppDatabase, SqliteConnection } from '@main/database/database';
 
 const roots: string[] = [];
 
@@ -36,7 +36,8 @@ describe('application database migrations', () => {
       { version: 15, name: 'project_guidance' },
       { version: 16, name: 'job_resource_leases' },
       { version: 17, name: 'deferred_lifecycle' },
-      { version: 18, name: 'perceptual_matching' }
+      { version: 18, name: 'perceptual_matching' },
+      { version: 19, name: 'youtube_channel_binding' }
     ]);
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('projects') WHERE name = 'resume_state'
@@ -146,6 +147,9 @@ describe('application database migrations', () => {
     expect(database.raw.prepare(`
       SELECT name FROM pragma_table_info('asset_files') WHERE name = 'perceptual_hash'
     `).get()).toEqual({ name: 'perceptual_hash' });
+    expect(database.raw.prepare(`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'youtube_connection_binding'
+    `).get()).toEqual({ name: 'youtube_connection_binding' });
     const now = new Date().toISOString();
     database.raw.prepare(`INSERT INTO projects(id, sequence, slug, title, topic, state, progress, envato_project_name, target_duration_ms, created_at, updated_at) VALUES('claim-project', 99, 'claim-project', 'Claims', 'Claims', 'CREATED', 0, 'YT-CLAIMS', 1000, ?, ?)`).run(now, now);
     database.raw.prepare(`
@@ -166,8 +170,43 @@ describe('application database migrations', () => {
 
     const reopened = new AppDatabase(join(root, 'videofactory.sqlite'));
     expect(reopened.raw.prepare('SELECT count(*) AS count FROM schema_migrations').get())
-      .toEqual({ count: 18 });
+      .toEqual({ count: 19 });
     expect(reopened.integrityCheck()).toBe('ok');
     reopened.close();
+  });
+
+  it('upgrades an existing schema-18 database without changing its application records', () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-migrations-upgrade-'));
+    roots.push(root);
+    const path = join(root, 'videofactory.sqlite');
+    const legacy = new SqliteConnection(path);
+    const migrations = readdirSync(join(process.cwd(), 'src', 'main', 'database'))
+      .filter(name => /^\d{3}_.+\.sql$/.test(name) && Number(name.slice(0, 3)) <= 18)
+      .sort();
+    for (const name of migrations) {
+      legacy.exec(readFileSync(join(process.cwd(), 'src', 'main', 'database', name), 'utf8'));
+      legacy.prepare(`INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)`).run(
+        Number(name.slice(0, 3)), name.replace(/^\d{3}_|\.sql$/g, '')
+      );
+    }
+    const now = new Date().toISOString();
+    legacy.prepare(`
+      INSERT INTO projects(
+        id, sequence, slug, title, topic, state, progress, envato_project_name,
+        target_duration_ms, created_at, updated_at
+      ) VALUES('legacy-project', 1, 'legacy-project', 'Legacy', 'Legacy', 'CREATED', 0,
+        'YT-LEGACY', 60000, ?, ?)
+    `).run(now, now);
+    legacy.close();
+
+    const upgraded = new AppDatabase(path);
+    expect(upgraded.raw.prepare(`SELECT title FROM projects WHERE id = 'legacy-project'`).get())
+      .toEqual({ title: 'Legacy' });
+    expect(upgraded.raw.prepare(`SELECT version, name FROM schema_migrations ORDER BY version DESC LIMIT 1`).get())
+      .toEqual({ version: 19, name: 'youtube_channel_binding' });
+    expect(upgraded.raw.prepare(`SELECT count(*) AS count FROM youtube_connection_binding`).get())
+      .toEqual({ count: 0 });
+    expect(upgraded.integrityCheck()).toBe('ok');
+    upgraded.close();
   });
 });

@@ -547,6 +547,14 @@ Configured disclosure is included and recorded.
 
 Scheduling request uses private status and valid future time; invalid past/unsupported request is caught before API call.
 
+### YT-009 - OAuth callback state and PKCE
+
+Loopback OAuth accepts only the fixed callback route and method, requires an unexpired single-use 256-bit state, and exchanges the code with the matching S256 PKCE verifier.
+
+### YT-010 - Explicit YouTube channel confirmation
+
+OAuth credentials remain temporary until the operator confirms the exact returned channel; replacement shows both identities and requires a separate explicit confirmation.
+
 ---
 
 ## 15. Analytics tests
@@ -646,6 +654,10 @@ Diagnostic bundle contains no provider keys, OAuth tokens, or auth headers.
 ### SEC-008 - CSP
 
 Renderer loads with restrictive CSP and no unsafe remote script execution.
+
+### SEC-009 - OAuth callback-data redaction
+
+Authorization codes, state, PKCE values, tokens, and callback query strings never reach renderer payloads, logs, audit records, or user-facing errors.
 
 ---
 

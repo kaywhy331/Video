@@ -522,6 +522,16 @@ export const ApprovePublicationSchema = z.object({
   scheduledAt: z.string().datetime().optional()
 });
 
+export const YouTubeAuthorizationConfirmationSchema = z.object({
+  pendingAuthorizationId: IdSchema,
+  expectedChannelId: IdSchema,
+  replaceExisting: z.boolean()
+}).strict();
+
+export const YouTubeAuthorizationCancellationSchema = z.object({
+  pendingAuthorizationId: IdSchema
+}).strict();
+
 export const FinalReviewRevisionSchema = z.object({
   projectId: IdSchema,
   category: z.enum([

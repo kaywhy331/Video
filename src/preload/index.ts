@@ -51,6 +51,7 @@ import type {
   StoryboardRecoveryScene,
   StorageCleanupReport,
   UpdateCheckResult,
+  YouTubeAuthorizationConfirmation,
   YouTubeConnectionStatus,
   ExpansionRegistrySnapshot,
   ChannelProfile,
@@ -376,7 +377,12 @@ const api = {
   },
   youtube: {
     status: (): Promise<YouTubeConnectionStatus> => ipcRenderer.invoke(IPC.youtubeStatus),
-    authorize: (): Promise<YouTubeConnectionStatus> => ipcRenderer.invoke(IPC.youtubeAuthorize),
+    beginAuthorization: (): Promise<YouTubeConnectionStatus> =>
+      ipcRenderer.invoke(IPC.youtubeAuthorizationBegin),
+    confirmAuthorization: (request: YouTubeAuthorizationConfirmation): Promise<YouTubeConnectionStatus> =>
+      ipcRenderer.invoke(IPC.youtubeAuthorizationConfirm, request),
+    cancelAuthorization: (pendingAuthorizationId: string): Promise<YouTubeConnectionStatus> =>
+      ipcRenderer.invoke(IPC.youtubeAuthorizationCancel, { pendingAuthorizationId }),
     uploadPrivate: (projectId: string): Promise<{ videoId: string; url: string }> =>
       ipcRenderer.invoke(IPC.youtubeUploadPrivate, projectId),
     approve: (request: {
