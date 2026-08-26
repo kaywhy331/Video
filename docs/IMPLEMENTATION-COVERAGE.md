@@ -111,6 +111,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - exactly five deduplicated analytics checkpoints at days 1/3/7/28/90, scheduled-publication visibility confirmation, retry-free private deferral, and normal provider-failure retry accounting;
 - audited pause/resume/cancel/archive behavior, blocker-aware resume, queued-job cancellation, and backend-authoritative Guided destination/topic/duration validation and provenance.
 - deterministic simulated prior-process render-crash reconciliation, including job requeue, lock release, stale-render failure, completed-render preservation, idempotency, and database integrity.
+- real service-host `SIGKILL` at the media managed-original/derivative boundary, followed by hash-bound startup resumption, regenerated FFmpeg derivatives, acquisition completion, fail-closed unmanaged-path handling, and database integrity verification;
 - managed-only interrupted-render cleanup that preserves completed and out-of-root artifacts;
 - atomic project licensing/certificate upgrades, rollback and verification failure, protected terminal decisions, and media-ingest licensing regression coverage;
 - bounded Guided starting-script provenance, raw-seed/provider separation, deterministic unsupported-fact rejection, and export/rebuild persistence;

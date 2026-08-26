@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
@@ -116,6 +116,60 @@ describe('download watcher shutdown', () => {
       fileName: 'download.mp4',
       activeIds: ['acquisition-1']
     });
+    db.close();
+  });
+
+  it('recovers interrupted rows before scanning stable files that predate watcher startup', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-watcher-startup-'));
+    roots.push(root);
+    const ingestFolder = join(root, 'ingest');
+    mkdirSync(ingestFolder, { recursive: true });
+    const filePath = join(ingestFolder, 'download-before-restart.mp4');
+    writeFileSync(filePath, 'stable startup fixture');
+    const db = new AppDatabase(join(root, 'db.sqlite'));
+    const now = new Date().toISOString();
+    db.raw.prepare(`
+      INSERT INTO projects(
+        id, sequence, slug, title, topic, state, progress, envato_project_name,
+        target_duration_ms, created_at, updated_at
+      ) VALUES('project-1', 1, 'project-1', 'Project', 'Topic',
+        'WAITING_FOR_DOWNLOADS', 0.3, 'YT-TEST-1', 300000, ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO assets(
+        id, stable_key, title, orientation, location_granularity,
+        location_confidence, verification_status, availability_status,
+        raw_row_json, imported_at, updated_at
+      ) VALUES('asset-1', 'asset-1', 'Expected clip', 'landscape', 'unknown',
+        0.5, 'metadata', 'available', '{}', ?, ?)
+    `).run(now, now);
+    db.raw.prepare(`
+      INSERT INTO acquisition_items(
+        id, project_id, asset_id, ordinal, role, state, source_url,
+        required_scene_ordinals_json, match_score, reasons_json, active_at,
+        created_at, updated_at
+      ) VALUES('acquisition-1', 'project-1', 'asset-1', 1, 'primary',
+        'WAITING_FOR_FILE', 'https://elements.envato.com/expected', '[1]', 99,
+        '[]', ?, ?, ?)
+    `).run(now, now, now);
+    const recoverInterruptedIngests = vi.fn(async () => ({ recovered: 0, failed: 0, reconciledProjects: 0 }));
+    const ingestAcquisition = vi.fn(async () => undefined);
+    const watcher = new DownloadWatcher(
+      db,
+      { recoverInterruptedIngests, ingestAcquisition } as never,
+      () => ({ ingestFolder }) as AppSettings,
+      vi.fn(),
+      async () => true
+    );
+
+    await watcher.start();
+    await watcher.stop();
+
+    expect(recoverInterruptedIngests).toHaveBeenCalledOnce();
+    expect(ingestAcquisition).toHaveBeenCalledOnce();
+    expect(ingestAcquisition).toHaveBeenCalledWith('acquisition-1', filePath);
+    expect(db.raw.prepare(`SELECT state, detected_path FROM acquisition_items WHERE id = 'acquisition-1'`).get())
+      .toEqual({ state: 'FILE_STABLE', detected_path: filePath });
     db.close();
   });
 });

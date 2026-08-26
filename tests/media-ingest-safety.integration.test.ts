@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import ffmpegPath from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import { AppDatabase } from '@main/database/database';
 import { DownloadWatcher } from '@main/services/download-watcher';
 import { MediaService } from '@main/services/media-service';
+import { requireSuccess } from '@main/services/process-utils';
 import type { AppSettings } from '@shared/types';
 
 const roots: string[] = [];
@@ -19,6 +21,8 @@ afterEach(() => {
 function fixture(assetCount: number) {
   const root = mkdtempSync(join(tmpdir(), 'videofactory-ingest-safety-'));
   roots.push(root);
+  const ingestFolder = join(root, 'ingest');
+  mkdirSync(ingestFolder, { recursive: true });
   const mediaLibraryFolder = join(root, 'media');
   const db = new AppDatabase(join(root, 'db.sqlite'));
   const now = new Date().toISOString();
@@ -48,7 +52,7 @@ function fixture(assetCount: number) {
       'https://elements.envato.com/safety-fixture', '[1]', 99, '[]', ?, ?, ?)
   `).run(targetAssetId, now, now, now);
   const settings = () => ({
-    ingestFolder: root,
+    ingestFolder,
     mediaLibraryFolder,
     ffmpegPath: ffmpegPath ?? '',
     ffprobePath: ffprobeStatic.path
@@ -56,7 +60,7 @@ function fixture(assetCount: number) {
   const media = new MediaService(db, settings, {} as never, () => undefined);
   const notify = vi.fn();
   const watcher = new DownloadWatcher(db, media, settings, notify, async () => true);
-  return { root, mediaLibraryFolder, db, watcher, notify, targetAssetId };
+  return { root, ingestFolder, mediaLibraryFolder, db, media, watcher, notify, targetAssetId };
 }
 
 describe('media ingest failure isolation', () => {
@@ -141,4 +145,117 @@ describe('media ingest failure isolation', () => {
     expect(value.db.integrityCheck()).toBe('ok');
     value.db.close();
   }, 30_000);
+
+  it('[E2E-004] resumes a real media ingest after the service host is killed at the derivative boundary', async () => {
+    if (!ffmpegPath) throw new Error('ffmpeg-static binary is unavailable.');
+    const value = fixture(1);
+    const detectedPath = join(value.ingestFolder, 'crash-source.mp4');
+    await requireSuccess(ffmpegPath, [
+      '-y', '-hide_banner',
+      '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=15:duration=4',
+      '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart', detectedPath
+    ]);
+    value.db.raw.prepare(`
+      UPDATE acquisition_items SET state = 'FILE_STABLE', detected_path = ?,
+        mapping_confidence = 1, mapping_evidence_json = ?, updated_at = ?
+      WHERE id = 'acquisition-1'
+    `).run(
+      detectedPath,
+      JSON.stringify({ method: 'forced_termination_fixture', fileName: 'crash-source.mp4' }),
+      new Date().toISOString()
+    );
+    value.db.close();
+
+    const child = spawnSync(process.execPath, [
+      resolve('node_modules/vite-node/vite-node.mjs'),
+      `--config=${resolve('vitest.config.ts')}`,
+      resolve('tests/fixtures/media-ingest-crash-host.ts')
+    ], {
+      cwd: process.cwd(),
+      env: { ...process.env, VIDEOFACTORY_INGEST_CRASH_ROOT: value.root },
+      encoding: 'utf8',
+      timeout: 60_000
+    });
+    expect(child.error, child.stderr).toBeUndefined();
+    expect(child.stdout, child.stderr).toContain('VIDEOFACTORY_INGEST_CHECKPOINT_READY');
+    expect(child.status, child.stderr).not.toBe(0);
+
+    const restartedDb = new AppDatabase(join(value.root, 'db.sqlite'));
+    const interrupted = restartedDb.raw.prepare(`
+      SELECT state, detected_path, mapping_evidence_json
+      FROM acquisition_items WHERE id = 'acquisition-1'
+    `).get() as Record<string, unknown>;
+    const checkpoint = JSON.parse(String(interrupted.mapping_evidence_json)).ingestCheckpoint as {
+      sha256: string;
+      originalPath: string;
+      sourceFileName: string;
+      phase: string;
+    };
+    expect(interrupted).toMatchObject({ state: 'FILE_STABLE', detected_path: detectedPath });
+    expect(checkpoint, child.stderr).toMatchObject({ sourceFileName: 'crash-source.mp4', phase: 'original_preserved' });
+    expect(existsSync(detectedPath)).toBe(false);
+    expect(existsSync(checkpoint.originalPath)).toBe(true);
+
+    const settings = () => ({
+      ingestFolder: value.ingestFolder,
+      mediaLibraryFolder: value.mediaLibraryFolder,
+      ffmpegPath,
+      ffprobePath: ffprobeStatic.path
+    } as AppSettings);
+    const restartedMedia = new MediaService(restartedDb, settings, {} as never, () => undefined);
+    await expect(restartedMedia.recoverInterruptedIngests()).resolves.toEqual({
+      recovered: 1,
+      failed: 0,
+      reconciledProjects: 0
+    });
+    const completed = restartedDb.raw.prepare(`
+      SELECT state, mapped_file_id, mapping_evidence_json
+      FROM acquisition_items WHERE id = 'acquisition-1'
+    `).get() as Record<string, unknown>;
+    expect(completed).toMatchObject({ state: 'COMPLETE', mapped_file_id: expect.any(String) });
+    expect(JSON.parse(String(completed.mapping_evidence_json)).ingestCheckpoint)
+      .toMatchObject({ sha256: checkpoint.sha256, originalPath: checkpoint.originalPath, phase: 'complete' });
+    expect(restartedDb.raw.prepare(`SELECT count(*) AS count FROM asset_files`).get()).toEqual({ count: 1 });
+    const segmentCount = restartedDb.raw.prepare(`SELECT count(*) AS count FROM media_segments`).get() as { count: number };
+    expect(segmentCount.count).toBeGreaterThan(0);
+    expect(restartedDb.integrityCheck()).toBe('ok');
+    restartedDb.close();
+  }, 120_000);
+
+  it('fails closed when an interrupted ingest checkpoint points outside managed storage', async () => {
+    const value = fixture(1);
+    const outsidePath = join(value.root, 'outside-managed-storage.mp4');
+    writeFileSync(outsidePath, 'must remain untouched');
+    value.db.raw.prepare(`
+      UPDATE acquisition_items SET state = 'PROCESSING', detected_path = ?,
+        mapping_evidence_json = ?, updated_at = ? WHERE id = 'acquisition-1'
+    `).run(
+      join(value.root, 'missing-detected.mp4'),
+      JSON.stringify({
+        method: 'recovery_fixture',
+        ingestCheckpoint: {
+          sha256: 'a'.repeat(64),
+          originalPath: outsidePath,
+          sourceFileName: 'outside-managed-storage.mp4',
+          phase: 'original_preserved',
+          updatedAt: new Date().toISOString()
+        }
+      }),
+      new Date().toISOString()
+    );
+
+    await expect(value.media.recoverInterruptedIngests()).resolves.toEqual({
+      recovered: 0,
+      failed: 1,
+      reconciledProjects: 0
+    });
+    expect(existsSync(outsidePath)).toBe(true);
+    expect(value.db.raw.prepare(`SELECT state, error FROM acquisition_items WHERE id = 'acquisition-1'`).get())
+      .toMatchObject({ state: 'FAILED', error: expect.stringContaining('missing') });
+    expect(value.db.raw.prepare(`SELECT code, status FROM exceptions WHERE project_id = 'project-1'`).get())
+      .toEqual({ code: 'INGEST_RECOVERY_FAILED', status: 'OPEN' });
+    expect(value.db.integrityCheck()).toBe('ok');
+    value.db.close();
+  });
 });

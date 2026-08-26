@@ -8,7 +8,7 @@ import {
   unlinkSync,
   statSync
 } from 'node:fs';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { cpus } from 'node:os';
 import type { AppDatabase } from '../database/database';
 import type {
@@ -43,6 +43,7 @@ import {
   backgroundFfmpegGlobalArguments,
   backgroundFfmpegVideoArguments
 } from '@shared/ffmpeg-resource-policy';
+import { pathIsInside } from '../security-policy';
 
 const LOGICAL_CPU_COUNT = cpus().length;
 
@@ -73,6 +74,59 @@ interface ProbeOutput {
   streams?: ProbeStream[];
 }
 
+type IngestCheckpointPhase =
+  | 'source_verified'
+  | 'original_preserved'
+  | 'catalog_committed'
+  | 'complete';
+
+interface IngestCheckpoint {
+  sha256: string;
+  originalPath: string;
+  sourceFileName: string;
+  phase: IngestCheckpointPhase;
+  updatedAt: string;
+}
+
+export interface IngestRecoveryReport {
+  recovered: number;
+  failed: number;
+  reconciledProjects: number;
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(String(value ?? '{}'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function ingestCheckpoint(value: unknown): IngestCheckpoint | null {
+  const checkpoint = jsonRecord(value).ingestCheckpoint;
+  if (!checkpoint || typeof checkpoint !== 'object' || Array.isArray(checkpoint)) return null;
+  const candidate = checkpoint as Record<string, unknown>;
+  if (
+    typeof candidate.sha256 !== 'string'
+    || !/^[a-f0-9]{64}$/.test(candidate.sha256)
+    || typeof candidate.originalPath !== 'string'
+    || !candidate.originalPath
+    || typeof candidate.sourceFileName !== 'string'
+    || !candidate.sourceFileName
+    || !['source_verified', 'original_preserved', 'catalog_committed', 'complete'].includes(String(candidate.phase))
+  ) return null;
+  return {
+    sha256: candidate.sha256,
+    originalPath: candidate.originalPath,
+    sourceFileName: candidate.sourceFileName,
+    phase: candidate.phase as IngestCheckpointPhase,
+    updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : ''
+  };
+}
+
 function rational(value?: string): number {
   if (!value) return 0;
   if (!value.includes('/')) return Number(value) || 0;
@@ -91,6 +145,7 @@ async function hashFile(path: string): Promise<string> {
 }
 
 function movePreservingBytes(source: string, destination: string): void {
+  if (resolve(source) === resolve(destination)) return;
   mkdirSync(dirname(destination), { recursive: true });
   if (existsSync(destination)) return;
   try {
@@ -552,6 +607,21 @@ export class MediaService {
     const assetId = String(acquisition.asset_id);
     const settings = this.settings();
     const now = new Date().toISOString();
+    const priorCheckpoint = ingestCheckpoint(acquisition.mapping_evidence_json);
+    let sourcePath = detectedPath;
+    if (!existsSync(sourcePath)) {
+      const managedOriginal = priorCheckpoint?.originalPath;
+      if (
+        !managedOriginal
+        || !pathIsInside(managedOriginal, [settings.mediaLibraryFolder])
+        || resolve(managedOriginal) === resolve(settings.mediaLibraryFolder)
+        || !existsSync(managedOriginal)
+      ) {
+        throw new Error('Interrupted ingest source is missing from both the detected and managed-original paths.');
+      }
+      sourcePath = managedOriginal;
+    }
+    const sourceFileName = priorCheckpoint?.sourceFileName ?? basename(sourcePath);
 
     const currentProject = this.db.raw.prepare('SELECT state FROM projects WHERE id = ?').get(projectId) as { state: import('@shared/types').ProjectState };
     if (currentProject.state === 'WAITING_FOR_DOWNLOADS') {
@@ -563,17 +633,29 @@ export class MediaService {
     }
 
     this.progress(projectId, 'hashing', 0.08, `Hashing ${String(acquisition.asset_title)}`);
-    const sha256 = await hashFile(detectedPath);
+    const sha256 = await hashFile(sourcePath);
+    if (priorCheckpoint && priorCheckpoint.sha256 !== sha256) {
+      throw new Error('Interrupted ingest source no longer matches its durable SHA-256 checkpoint.');
+    }
     const existing = this.db.raw.prepare('SELECT * FROM asset_files WHERE sha256 = ?').get(sha256) as
       | Record<string, unknown>
       | undefined;
     if (existing) {
       const expectedAssetId = String(existing.asset_id);
       if (expectedAssetId !== assetId) {
-        const quarantinePath = join(settings.mediaLibraryFolder, 'quarantine', `${sha256.slice(0, 12)}-${basename(detectedPath)}`);
-        movePreservingBytes(detectedPath, quarantinePath);
+        if (resolve(sourcePath) === resolve(String(existing.original_path))) {
+          throw new Error('The managed original belongs to a different catalog asset; it was left untouched.');
+        }
+        const quarantinePath = join(settings.mediaLibraryFolder, 'quarantine', `${sha256.slice(0, 12)}-${sourceFileName}`);
+        movePreservingBytes(sourcePath, quarantinePath);
         throw new Error(`This physical file is already assigned to a different catalog asset and was quarantined at ${quarantinePath}.`);
       }
+      this.recordIngestCheckpoint(acquisitionId, {
+        sha256,
+        originalPath: String(existing.original_path),
+        sourceFileName,
+        phase: 'catalog_committed'
+      });
       if (
         existing.pipeline_version !== MediaService.PIPELINE_VERSION
         || !(this.db.raw.prepare(`
@@ -584,22 +666,27 @@ export class MediaService {
       }
       const current = this.db.raw.prepare('SELECT * FROM asset_files WHERE id = ?').get(existing.id) as Record<string, unknown>;
       const file = toAssetFile(current);
-      if (existsSync(detectedPath)) unlinkSync(detectedPath);
+      if (resolve(sourcePath) !== resolve(file.originalPath) && existsSync(sourcePath)) unlinkSync(sourcePath);
       await this.attachExisting(acquisitionId, assetId, projectId, file.id);
       return file;
     }
 
-    const sourceFileName = basename(detectedPath);
-    const extension = extname(detectedPath).toLowerCase() || '.mov';
+    const extension = extname(sourceFileName).toLowerCase() || '.mov';
     const originalPath = join(settings.mediaLibraryFolder, 'originals', sha256.slice(0, 2), sha256.slice(2, 4), `${sha256}${extension}`);
+    this.recordIngestCheckpoint(acquisitionId, {
+      sha256,
+      originalPath,
+      sourceFileName,
+      phase: 'source_verified'
+    });
 
     this.progress(projectId, 'probing', 0.2, 'Inspecting actual media metadata');
     let probe: ProbeOutput;
     try {
-      probe = await this.probe(detectedPath);
+      probe = await this.probe(sourcePath);
     } catch (error) {
       const quarantinePath = join(settings.mediaLibraryFolder, 'quarantine', `${sha256.slice(0, 12)}-${sourceFileName}`);
-      movePreservingBytes(detectedPath, quarantinePath);
+      movePreservingBytes(sourcePath, quarantinePath);
       throw new Error(`Downloaded media is corrupt or unsupported and was quarantined at ${quarantinePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
     const video = probe.streams?.find(stream => stream.codec_type === 'video');
@@ -618,9 +705,16 @@ export class MediaService {
       colorTransfer: video.color_transfer,
       colorPrimaries: video.color_primaries
     });
-    movePreservingBytes(detectedPath, originalPath);
+    movePreservingBytes(sourcePath, originalPath);
     const preservedHash = await hashFile(originalPath);
     if (preservedHash !== sha256) throw new Error('Original file hash changed during centralization.');
+    if (resolve(sourcePath) !== resolve(originalPath) && existsSync(sourcePath)) unlinkSync(sourcePath);
+    this.recordIngestCheckpoint(acquisitionId, {
+      sha256,
+      originalPath,
+      sourceFileName,
+      phase: 'original_preserved'
+    });
     const fileId = randomUUID();
     const proxyPath = join(settings.mediaLibraryFolder, 'proxies', sha256.slice(0, 2), `${sha256}.mp4`);
     const contactSheetPath = join(settings.mediaLibraryFolder, 'keyframes', sha256.slice(0, 2), `${sha256}-contact.jpg`);
@@ -702,7 +796,7 @@ export class MediaService {
       `).run(fileId, now, assetId);
       this.db.raw.prepare(`
         UPDATE acquisition_items SET
-          state = 'COMPLETE', mapped_file_id = ?, mapping_confidence = 1,
+          state = 'PROCESSING', mapped_file_id = ?, mapping_confidence = 1,
           updated_at = ?, error = NULL
         WHERE id = ?
       `).run(fileId, now, acquisitionId);
@@ -714,9 +808,16 @@ export class MediaService {
       });
     });
     transaction();
+    this.recordIngestCheckpoint(acquisitionId, {
+      sha256,
+      originalPath,
+      sourceFileName,
+      phase: 'catalog_committed'
+    });
     this.progress(projectId, 'semantic-verification', 0.78, 'Verifying footage against current scene contracts');
     await this.assignSegments(projectId, assetId, fileId, segments);
     this.repairs.reconcileFootageRepairs(projectId);
+    this.completeIngest(acquisitionId, fileId);
     this.progress(projectId, 'verification-complete', 0.9, 'Footage ingest and scene-contract verification completed');
     await this.updateProjectAfterAcquisition(projectId);
     return toAssetFile(this.db.raw.prepare('SELECT * FROM asset_files WHERE id = ?').get(fileId) as Record<string, unknown>);
@@ -925,7 +1026,7 @@ export class MediaService {
         UPDATE assets SET local_file_id = ?, updated_at = ? WHERE id = ?
       `).run(fileId, now, assetId);
       this.db.raw.prepare(`
-        UPDATE acquisition_items SET state = 'COMPLETE', mapped_file_id = ?,
+        UPDATE acquisition_items SET state = 'PROCESSING', mapped_file_id = ?,
           mapping_confidence = 1, updated_at = ?, error = NULL
         WHERE id = ?
       `).run(fileId, now, acquisitionId);
@@ -933,7 +1034,134 @@ export class MediaService {
     transaction();
     await this.assignSegments(projectId, assetId, fileId, segments);
     this.repairs.reconcileFootageRepairs(projectId);
+    this.completeIngest(acquisitionId, fileId);
     await this.updateProjectAfterAcquisition(projectId);
+  }
+
+  async recoverInterruptedIngests(): Promise<IngestRecoveryReport> {
+    const interrupted = this.db.raw.prepare(`
+      SELECT id, project_id, detected_path, mapping_evidence_json
+      FROM acquisition_items
+      WHERE state IN ('FILE_STABLE','MAPPED','PROCESSING')
+      ORDER BY updated_at, id
+    `).all() as Array<Record<string, unknown>>;
+    let recovered = 0;
+    let failed = 0;
+
+    for (const row of interrupted) {
+      const checkpoint = ingestCheckpoint(row.mapping_evidence_json);
+      const detectedPath = row.detected_path ? String(row.detected_path) : '';
+      const managedPath = checkpoint?.originalPath ?? '';
+      const sourcePath = detectedPath && existsSync(detectedPath)
+        ? detectedPath
+        : managedPath
+          && pathIsInside(managedPath, [this.settings().mediaLibraryFolder])
+          && resolve(managedPath) !== resolve(this.settings().mediaLibraryFolder)
+          && existsSync(managedPath)
+          ? managedPath
+          : '';
+      if (!sourcePath) {
+        this.recordIngestRecoveryFailure(
+          String(row.id),
+          String(row.project_id),
+          'Interrupted ingest cannot resume because its detected and managed-original files are missing.'
+        );
+        failed += 1;
+        continue;
+      }
+      try {
+        await this.ingestAcquisition(String(row.id), sourcePath);
+        recovered += 1;
+      } catch (error) {
+        this.recordIngestRecoveryFailure(
+          String(row.id),
+          String(row.project_id),
+          error instanceof Error ? error.message : String(error)
+        );
+        failed += 1;
+      }
+    }
+
+    const resumableProjects = this.db.raw.prepare(`
+      SELECT p.id
+      FROM projects p
+      WHERE p.state IN ('INGESTING_MEDIA','VERIFYING_FOOTAGE')
+        AND EXISTS (SELECT 1 FROM acquisition_items a WHERE a.project_id = p.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM acquisition_items a
+          WHERE a.project_id = p.id AND a.state NOT IN ('COMPLETE','SKIPPED')
+        )
+      ORDER BY p.updated_at, p.id
+    `).all() as Array<{ id: string }>;
+    let reconciledProjects = 0;
+    for (const project of resumableProjects) {
+      await this.reconcileAcquisition(project.id);
+      reconciledProjects += 1;
+    }
+    return { recovered, failed, reconciledProjects };
+  }
+
+  private recordIngestCheckpoint(
+    acquisitionId: string,
+    checkpoint: Omit<IngestCheckpoint, 'updatedAt'>
+  ): void {
+    const row = this.db.raw.prepare(`
+      SELECT mapping_evidence_json FROM acquisition_items WHERE id = ?
+    `).get(acquisitionId) as { mapping_evidence_json: string | null } | undefined;
+    if (!row) throw new Error('Acquisition item disappeared while recording its ingest checkpoint.');
+    const now = new Date().toISOString();
+    this.db.raw.prepare(`
+      UPDATE acquisition_items SET mapping_evidence_json = ?, updated_at = ? WHERE id = ?
+    `).run(JSON.stringify({
+      ...jsonRecord(row.mapping_evidence_json),
+      ingestCheckpoint: { ...checkpoint, updatedAt: now }
+    }), now, acquisitionId);
+  }
+
+  private completeIngest(acquisitionId: string, fileId: string): void {
+    const row = this.db.raw.prepare(`
+      SELECT mapping_evidence_json FROM acquisition_items WHERE id = ?
+    `).get(acquisitionId) as { mapping_evidence_json: string | null } | undefined;
+    if (!row) throw new Error('Acquisition item disappeared before ingest completion.');
+    const evidence = jsonRecord(row.mapping_evidence_json);
+    const checkpoint = ingestCheckpoint(row.mapping_evidence_json);
+    const now = new Date().toISOString();
+    this.db.raw.prepare(`
+      UPDATE acquisition_items SET state = 'COMPLETE', mapped_file_id = ?,
+        mapping_confidence = 1, mapping_evidence_json = ?, error = NULL, updated_at = ?
+      WHERE id = ?
+    `).run(
+      fileId,
+      JSON.stringify({
+        ...evidence,
+        ...(checkpoint ? { ingestCheckpoint: { ...checkpoint, phase: 'complete', updatedAt: now } } : {})
+      }),
+      now,
+      acquisitionId
+    );
+  }
+
+  private recordIngestRecoveryFailure(acquisitionId: string, projectId: string, message: string): void {
+    const now = new Date().toISOString();
+    this.db.raw.transaction(() => {
+      this.db.raw.prepare(`
+        UPDATE acquisition_items SET state = 'FAILED', error = ?, updated_at = ? WHERE id = ?
+      `).run(message, now, acquisitionId);
+      this.db.raw.prepare(`
+        INSERT INTO exceptions(
+          id, project_id, severity, stage, code, title, message, evidence_json,
+          recommended_action, status, created_at
+        ) VALUES(?, ?, 'BLOCKER', 'media', 'INGEST_RECOVERY_FAILED',
+          'Interrupted media ingest could not resume', ?, ?,
+          'Restore the original download or map a verified replacement file.', 'OPEN', ?)
+      `).run(
+        randomUUID(),
+        projectId,
+        message,
+        JSON.stringify({ acquisitionId, recovery: 'startup' }),
+        now
+      );
+    })();
   }
 
   async verifyLocalAsset(projectId: string, assetId: string, fileId: string): Promise<void> {
