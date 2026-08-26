@@ -112,6 +112,7 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 - audited pause/resume/cancel/archive behavior, blocker-aware resume, queued-job cancellation, and backend-authoritative Guided destination/topic/duration validation and provenance.
 - deterministic simulated prior-process render-crash reconciliation, plus a real service-host `SIGKILL` after FFmpeg scene normalization at the draft assembly boundary, including durable job requeue, lock release, managed stale-work cleanup, successful second-attempt rendering, idempotency, and database integrity;
 - real service-host `SIGKILL` at the media managed-original/derivative boundary, followed by hash-bound startup resumption, regenerated FFmpeg derivatives, acquisition completion, fail-closed unmanaged-path handling, and database integrity verification;
+- real service-host `SIGKILL` at resumable-upload session persistence and after simulated remote video commit but before local receipt persistence, followed by full-snapshot reconciliation, exact session/video reuse, attachment completion, final-approval recovery, and no duplicate remote upload;
 - managed-only interrupted-render cleanup that preserves completed and out-of-root artifacts;
 - atomic project licensing/certificate upgrades, rollback and verification failure, protected terminal decisions, and media-ingest licensing regression coverage;
 - bounded Guided starting-script provenance, raw-seed/provider separation, deterministic unsupported-fact rejection, and export/rebuild persistence;

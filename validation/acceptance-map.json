@@ -277,11 +277,12 @@
     },
     {
       "ids": ["E2E-004"],
-      "reason": "Real SIGKILL-and-restart drills now cover FFmpeg-backed ingest checkpoint recovery without source loss and a draft-render assembly-boundary recovery through a successful second durable attempt; forced termination at every representative render stage and the live YouTube resumable-upload stage remain production drills.",
+      "reason": "Real SIGKILL-and-restart drills cover FFmpeg-backed ingest recovery and a draft-render assembly-boundary retry. A protocol-faithful upload fixture now also proves durable session reuse both before the first committed byte and after the remote video commits but before its local receipt; representative production-stage and live YouTube interruption drills remain external.",
       "evidence": [
         "tests/job-service.test.ts",
         "tests/media-ingest-safety.integration.test.ts",
         "tests/render-recovery.test.ts",
+        "tests/youtube-upload-recovery.integration.test.ts",
         "tests/workflow-service.test.ts"
       ]
     },
