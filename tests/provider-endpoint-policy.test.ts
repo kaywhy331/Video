@@ -112,7 +112,10 @@ describe('provider endpoint trust boundary', () => {
       secrets: { llmApiKey: 'first-secret' }
     });
     await expect(value.policy.request('openai_compatible', 'https://first.example/v1/chat/completions'))
-      .rejects.toMatchObject({ code: 'ENDPOINT_UNTRUSTED' });
+      .rejects.toMatchObject({
+        code: 'ENDPOINT_UNTRUSTED',
+        recovery: expect.stringContaining('confirm')
+      });
     expect(value.transport).not.toHaveBeenCalled();
 
     expect(await value.policy.trust('openai_compatible')).toMatchObject({ status: 'confirmed', ready: true });
@@ -150,6 +153,23 @@ describe('provider endpoint trust boundary', () => {
     `).get() as { metadata: string };
     expect(audit.metadata).not.toContain('first-secret');
     expect(audit.metadata).not.toContain('replacement-secret');
+    const rejection = value.db.raw.prepare(`
+      SELECT metadata_json FROM audit_log
+      WHERE action = 'security.privileged_rejected' AND entity_id = 'openai_compatible'
+      ORDER BY id DESC LIMIT 1
+    `).get() as { metadata_json: string };
+    expect(JSON.parse(rejection.metadata_json)).toMatchObject({
+      schemaVersion: 1,
+      flow: 'provider',
+      operation: 'request.admission',
+      code: 'ENDPOINT_UNTRUSTED',
+      outcome: 'rejected',
+      context: {
+        canonicalOrigin: 'https://second.example',
+        trustMode: 'custom_remote',
+        healthStatus: 'endpoint_untrusted'
+      }
+    });
     value.db.close();
   });
 

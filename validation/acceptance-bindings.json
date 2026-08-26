@@ -843,6 +843,42 @@
       "file": "tests/operations-service.test.ts",
       "title": "[SEC-012] exports a secret-free portable profile and imports validated settings without replacing active storage"
     },
+    {
+      "ids": ["SEC-013"],
+      "runner": "vitest",
+      "file": "tests/security-events.test.ts",
+      "title": "[SEC-013] records a stable, redacted, structured event with actionable recovery"
+    },
+    {
+      "ids": ["SEC-013"],
+      "runner": "vitest",
+      "file": "tests/provider-endpoint-policy.test.ts",
+      "title": "[SEC-011] blocks unconfirmed and origin-mismatched credentials, then binds an explicit replacement"
+    },
+    {
+      "ids": ["SEC-013"],
+      "runner": "vitest",
+      "file": "tests/job-service.test.ts",
+      "title": "[JOB-011] preserves every invalid state and its job, lock, and lease fields"
+    },
+    {
+      "ids": ["SEC-013"],
+      "runner": "vitest",
+      "file": "tests/media-tool-service.test.ts",
+      "title": "[SYS-007][SYS-008] inspects without execution, probes after confirmation, and blocks a changed executable"
+    },
+    {
+      "ids": ["SEC-013"],
+      "runner": "vitest",
+      "file": "tests/youtube-oauth-session.test.ts",
+      "title": "[YT-009][SEC-009] enforces state, PKCE, callback shape, replay protection, and secret-free snapshots"
+    },
+    {
+      "ids": ["SEC-013"],
+      "runner": "vitest",
+      "file": "tests/active-final-service.test.ts",
+      "title": "[YT-012] revalidates pointer, missing-file, and hash changes at every publication side-effect boundary"
+    },
 
     {
       "ids": ["BAK-001", "BAK-004"],

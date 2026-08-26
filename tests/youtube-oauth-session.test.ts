@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   YouTubeOAuthSessionManager,
   type YouTubeOAuthProvider,
-  type YouTubeOAuthProviderFactory
+  type YouTubeOAuthProviderFactory,
+  type YouTubeOAuthSecurityRejection
 } from '@main/services/youtube-oauth-session';
 
 interface CallbackResponse {
@@ -54,6 +55,7 @@ function harness(now?: () => number) {
     codeVerifier
   }));
   const revoke = vi.fn(async () => undefined);
+  const securityRejections: YouTubeOAuthSecurityRejection[] = [];
   const provider: YouTubeOAuthProvider = {
     authorizationUrl: input => {
       authorizationInput = input;
@@ -74,6 +76,7 @@ function harness(now?: () => number) {
   const manager = new YouTubeOAuthSessionManager({
     createProvider,
     openExternal: async url => { openedUrl = url; },
+    onSecurityRejection: rejection => { securityRejections.push(rejection); },
     now,
     ttlMs: 1_000
   });
@@ -81,6 +84,7 @@ function harness(now?: () => number) {
     manager,
     exchangeCode,
     revoke,
+    securityRejections,
     get redirectUri() { return redirectUri; },
     get authorizationInput() { return authorizationInput; },
     get openedUrl() { return openedUrl; }
@@ -94,12 +98,14 @@ afterEach(() => {
 describe('YouTube OAuth loopback session', () => {
   it('[YT-009][SEC-009] enforces state, PKCE, callback shape, replay protection, and secret-free snapshots', async () => {
     const rejectedStates: string[] = [];
+    const callbackRejections: YouTubeOAuthSecurityRejection[] = [];
     const assertRejected = async (path: (state: string) => string, method = 'GET', status = 400) => {
       const rejected = harness();
       await rejected.manager.begin({ clientId: 'client-id', clientSecret: 'client-secret' });
       const rejectedState = new URL(rejected.openedUrl).searchParams.get('state') as string;
       rejectedStates.push(rejectedState);
       expect((await callback(rejected.redirectUri, path(rejectedState), method)).status).toBe(status);
+      callbackRejections.push(...rejected.securityRejections);
       expect(rejected.exchangeCode).not.toHaveBeenCalled();
       const afterFailure = await callback(
         rejected.redirectUri,
@@ -112,6 +118,14 @@ describe('YouTube OAuth loopback session', () => {
     await assertRejected(() => '/oauth2callback?code=secret');
     await assertRejected(() => '/oauth2callback?code=secret&state=wrong');
     expect(new Set(rejectedStates).size).toBe(rejectedStates.length);
+    expect(callbackRejections.map(rejection => rejection.code)).toEqual([
+      'OAUTH_CALLBACK_PATH_INVALID',
+      'OAUTH_CALLBACK_METHOD_INVALID',
+      'OAUTH_STATE_INVALID',
+      'OAUTH_STATE_INVALID'
+    ]);
+    expect(callbackRejections.every(rejection => typeof rejection.recovery === 'string')).toBe(true);
+    expect(JSON.stringify(callbackRejections)).not.toMatch(/client-secret|refresh-secret|access-for|code=secret|state=secret/i);
 
     const value = harness();
     const started = await value.manager.begin({ clientId: 'client-id', clientSecret: 'client-secret' });
@@ -175,7 +189,14 @@ describe('YouTube OAuth loopback session', () => {
       mismatchStarted.pendingAuthorizationId,
       'UC-wrong-channel',
       vi.fn()
-    )).rejects.toThrow(/did not match.*discarded/i);
+    )).rejects.toMatchObject({
+      code: 'OAUTH_CONFIRMATION_MISMATCH',
+      recovery: expect.stringContaining('confirm the exact channel')
+    });
+    expect(mismatch.securityRejections.at(-1)).toMatchObject({
+      operation: 'confirmation.identity_check',
+      code: 'OAUTH_CONFIRMATION_MISMATCH'
+    });
     expect(mismatch.revoke).toHaveBeenCalledWith(expect.objectContaining({ refreshToken: 'refresh-secret' }));
     expect(mismatch.manager.snapshot()).toBeNull();
 

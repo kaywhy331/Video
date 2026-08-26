@@ -227,16 +227,16 @@ describe('durable job engine', () => {
   it('[JOB-011] preserves every invalid state and its job, lock, and lease fields', () => {
     const { raw, service } = fixture();
     const cases = [
-      ['QUEUED', 'invalid_state'],
-      ['READY', 'invalid_state'],
-      ['RUNNING', 'invalid_state'],
-      ['WAITING_EXTERNAL', 'reconciliation_required'],
-      ['WAITING_HUMAN', 'reconciliation_required'],
-      ['RETRY_SCHEDULED', 'already_scheduled'],
-      ['SUCCEEDED', 'invalid_state'],
-      ['CANCELLED', 'invalid_state']
+      ['QUEUED', 'invalid_state', 'JOB_RETRY_INVALID_STATE'],
+      ['READY', 'invalid_state', 'JOB_RETRY_INVALID_STATE'],
+      ['RUNNING', 'invalid_state', 'JOB_RETRY_INVALID_STATE'],
+      ['WAITING_EXTERNAL', 'reconciliation_required', 'JOB_RETRY_RECONCILIATION_REQUIRED'],
+      ['WAITING_HUMAN', 'reconciliation_required', 'JOB_RETRY_RECONCILIATION_REQUIRED'],
+      ['RETRY_SCHEDULED', 'already_scheduled', 'JOB_RETRY_ALREADY_SCHEDULED'],
+      ['SUCCEEDED', 'invalid_state', 'JOB_RETRY_INVALID_STATE'],
+      ['CANCELLED', 'invalid_state', 'JOB_RETRY_INVALID_STATE']
     ] as const;
-    for (const [state, expectedOutcome] of cases) {
+    for (const [state, expectedOutcome, expectedCode] of cases) {
       const job = service.create(`invalid-${state}`, 'p1', { state });
       const availableAt = '2031-01-02T03:04:05.000Z';
       const completedAt = '2026-01-02T03:04:05.000Z';
@@ -256,8 +256,14 @@ describe('durable job engine', () => {
           available_at, lease_owner, lease_until, completed_at, transition_version
         FROM jobs WHERE id = ?
       `).get(job.id);
-      expect(service.retry({ jobId: job.id, expectedState: state, expectedVersion: 9 }).outcome)
-        .toBe(expectedOutcome);
+      const rejection = service.retry({ jobId: job.id, expectedState: state, expectedVersion: 9 });
+      expect(rejection).toMatchObject({
+        outcome: expectedOutcome,
+        code: expectedCode,
+        recovery: expect.any(String)
+      });
+      expect(rejection.message).toContain(`[${expectedCode}]`);
+      expect(rejection.message).toContain('Recovery:');
       expect(raw.prepare(`
         SELECT state, error, output_json, attempt, max_attempts, manual_attempt_grants,
           available_at, lease_owner, lease_until, completed_at, transition_version
@@ -270,6 +276,25 @@ describe('durable job engine', () => {
       raw.prepare(`UPDATE projects SET locked_by_job_id = NULL WHERE id = 'p1'`).run();
       raw.prepare(`DELETE FROM job_resource_leases WHERE resource_key = ?`).run(`lease-${state}`);
     }
+    const securityEvents = raw.prepare(`
+      SELECT actor, metadata_json FROM audit_log
+      WHERE action = 'security.privileged_rejected' AND entity_type = 'job'
+      ORDER BY id
+    `).all() as Array<{ actor: string; metadata_json: string }>;
+    expect(securityEvents).toHaveLength(cases.length);
+    expect(securityEvents.every(event => event.actor === 'human')).toBe(true);
+    expect(securityEvents.map(event => JSON.parse(event.metadata_json))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          schemaVersion: 1,
+          flow: 'retry',
+          operation: 'manual_retry.state_check',
+          code: 'JOB_RETRY_RECONCILIATION_REQUIRED',
+          outcome: 'rejected'
+        })
+      ])
+    );
+    expect(securityEvents.map(event => event.metadata_json).join(' ')).not.toContain('preserve-error');
     raw.close();
   });
 

@@ -711,6 +711,10 @@ A stored provider credential is unusable after an endpoint-origin change or prof
 
 Portable settings profiles cannot export or import executable paths, binary identity, trust receipts, or developer fallback flags; safe version-1 settings still import with explicit exclusion warnings.
 
+### SEC-013 - Privileged rejection observability
+
+OAuth, provider admission, publication identity, manual retry, and media-tool trust/execution rejections expose a stable code and actionable recovery guidance while writing a versioned structured security event that retains the decision category and safe state context but no credentials, callback data, operator reasons, content, or device paths.
+
 ---
 
 ## 18. Backup and restore tests

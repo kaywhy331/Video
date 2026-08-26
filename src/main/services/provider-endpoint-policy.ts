@@ -5,6 +5,7 @@ import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import type { AppDatabase } from '../database/database';
 import type { SecretStore, Secrets } from '../secret-store';
+import { formatSecurityError, recordSecurityRejection } from '../security-events';
 import type {
   AppSettings,
   ProviderEndpointId,
@@ -75,13 +76,37 @@ export type ProviderEndpointErrorCode =
   | 'RESPONSE_TOO_LARGE'
   | 'NETWORK_FAILURE';
 
+function providerEndpointRecovery(code: ProviderEndpointErrorCode): string {
+  const recovery: Record<ProviderEndpointErrorCode, string> = {
+    ENDPOINT_INVALID: 'Review the provider URL and trust mode, then save a canonical endpoint.',
+    ENDPOINT_UNTRUSTED: 'Inspect and explicitly confirm the configured endpoint before retrying.',
+    CREDENTIAL_REQUIRED: 'Add the encrypted provider credential, then retry the operation.',
+    CREDENTIAL_ORIGIN_MISMATCH: 'Re-enter the credential or reconfirm it for the current endpoint origin.',
+    LOCAL_CREDENTIAL_FORBIDDEN: 'Remove the reusable credential before using a loopback provider.',
+    PRIVATE_ADDRESS_BLOCKED: 'Use a public remote endpoint or explicitly configure a loopback-only local provider.',
+    DNS_RESOLUTION_FAILED: 'Verify DNS and the configured hostname, then confirm the endpoint again.',
+    REDIRECT_BLOCKED: 'Use an endpoint that keeps every redirect on the confirmed origin and path.',
+    REDIRECT_LIMIT: 'Correct the provider redirect loop or reduce redirects before retrying.',
+    REQUEST_TIMEOUT: 'Check provider availability and network connectivity, then retry the operation.',
+    REQUEST_ABORTED: 'Retry only if the cancellation was unintended and the provider is still trusted.',
+    REQUEST_TOO_LARGE: 'Reduce the request payload or raise the explicit bounded-request limit.',
+    RESPONSE_TOO_LARGE: 'Reduce the requested response or raise the explicit bounded-response limit.',
+    NETWORK_FAILURE: 'Check provider availability, DNS, and network connectivity before retrying.'
+  };
+  return recovery[code];
+}
+
 export class ProviderEndpointError extends Error {
+  readonly recovery: string;
+
   constructor(
     readonly code: ProviderEndpointErrorCode,
-    message: string
+    readonly detail: string,
+    recovery = providerEndpointRecovery(code)
   ) {
-    super(message);
+    super(formatSecurityError(code, detail, recovery));
     this.name = 'ProviderEndpointError';
+    this.recovery = recovery;
   }
 }
 
@@ -508,7 +533,14 @@ export class ProviderEndpointPolicy {
   validateSettings(settings: AppSettings): void {
     for (const provider of PROVIDER_IDS) {
       const config = configuration(settings, provider);
-      staticallyValidate(provider, config.baseUrl, config.trustMode);
+      try {
+        staticallyValidate(provider, config.baseUrl, config.trustMode);
+      } catch (error) {
+        this.recordEndpointError(provider, error, 'settings.validation', {
+          proposedTrustMode: config.trustMode
+        }, false);
+        throw error;
+      }
     }
   }
 
@@ -565,7 +597,7 @@ export class ProviderEndpointPolicy {
       try {
         parsed = staticallyValidate(provider, config.baseUrl, config.trustMode);
       } catch (error) {
-        this.recordEndpointError(provider, error);
+        this.recordEndpointError(provider, error, 'credential.reconciliation');
         continue;
       }
       const row = this.binding(provider);
@@ -648,7 +680,7 @@ export class ProviderEndpointPolicy {
       return {
         ...base,
         status: 'invalid_endpoint',
-        message: error instanceof Error ? error.message : 'Provider endpoint is invalid.'
+        message: error instanceof ProviderEndpointError ? error.detail : 'Provider endpoint is invalid.'
       };
     }
     const row = this.binding(provider);
@@ -721,7 +753,7 @@ export class ProviderEndpointPolicy {
       const normalized = error instanceof ProviderEndpointError
         ? error
         : new ProviderEndpointError('NETWORK_FAILURE', 'Provider endpoint confirmation failed safely.');
-      this.recordEndpointError(provider, normalized);
+      this.recordEndpointError(provider, normalized, 'endpoint.confirmation');
       throw normalized;
     }
   }
@@ -806,7 +838,13 @@ export class ProviderEndpointPolicy {
       throw error;
     }
     const config = configuration(this.settings(), provider);
-    const base = staticallyValidate(provider, config.baseUrl, config.trustMode);
+    let base: ReturnType<typeof staticallyValidate>;
+    try {
+      base = staticallyValidate(provider, config.baseUrl, config.trustMode);
+    } catch (error) {
+      this.recordEndpointError(provider, error);
+      throw error;
+    }
     let target: URL;
     try {
       target = input instanceof URL ? new URL(input) : new URL(input);
@@ -825,11 +863,21 @@ export class ProviderEndpointPolicy {
     const secret = credential(this.secrets.getAll(), provider);
     const credentialSnapshot = providerCredentialFingerprint(provider, state.canonicalOrigin, secret);
     if (config.trustMode !== 'custom_local') {
-      if (!secret) throw new ProviderEndpointError('CREDENTIAL_REQUIRED', 'The provider credential is not configured.');
+      if (!secret) {
+        const error = new ProviderEndpointError('CREDENTIAL_REQUIRED', 'The provider credential is not configured.');
+        this.recordEndpointError(provider, error);
+        throw error;
+      }
       headers.set('authorization', `Bearer ${secret}`);
     }
     const maxRequestBytes = limits.maxRequestBytes ?? 32 * 1024 * 1024;
-    const body = requestBody(init.body);
+    let body: Buffer | null;
+    try {
+      body = requestBody(init.body);
+    } catch (error) {
+      this.recordEndpointError(provider, error);
+      throw error;
+    }
     if (body && body.length > maxRequestBytes) {
       const error = new ProviderEndpointError('REQUEST_TOO_LARGE', 'Provider request exceeded the configured safety limit.');
       this.recordEndpointError(provider, error);
@@ -923,7 +971,7 @@ export class ProviderEndpointPolicy {
       try {
         parsed = staticallyValidate(provider, config.baseUrl, config.trustMode);
       } catch (error) {
-        this.recordEndpointError(provider, error);
+        this.recordEndpointError(provider, error, 'settings.reconciliation');
         continue;
       }
       const row = this.binding(provider);
@@ -1102,7 +1150,13 @@ export class ProviderEndpointPolicy {
     }
   }
 
-  private recordEndpointError(provider: ProviderEndpointId, error: unknown): void {
+  private recordEndpointError(
+    provider: ProviderEndpointId,
+    error: unknown,
+    operation = 'request.admission',
+    context: Record<string, unknown> = {},
+    updateHealth = true
+  ): void {
     const normalized = error instanceof ProviderEndpointError
       ? error
       : new ProviderEndpointError('NETWORK_FAILURE', 'Provider request failed before a trusted response was received.');
@@ -1115,11 +1169,25 @@ export class ProviderEndpointPolicy {
           : normalized.code === 'REQUEST_TIMEOUT'
             ? 'timeout'
             : 'provider_failure';
-    this.recordHealth(provider, status, normalized.message, normalized.code);
+    if (updateHealth) this.recordHealth(provider, status, normalized.message, normalized.code);
     this.audit('provider.endpoint_rejected', provider, {
       code: normalized.code,
       canonicalOrigin: this.safeOrigin(provider),
       trustMode: configuration(this.settings(), provider).trustMode
+    });
+    recordSecurityRejection(this.db, {
+      flow: 'provider',
+      operation,
+      code: normalized.code,
+      recovery: normalized.recovery,
+      entityType: 'provider_endpoint',
+      entityId: provider,
+      context: {
+        canonicalOrigin: this.safeOrigin(provider),
+        trustMode: configuration(this.settings(), provider).trustMode,
+        healthStatus: status,
+        ...context
+      }
     });
   }
 

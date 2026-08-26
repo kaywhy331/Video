@@ -131,6 +131,30 @@ describe('authoritative active-final publication identity', () => {
     addRender(value, { id: 'mismatched-final', persistedSha: sha256('different bytes') });
     value.db.raw.prepare(`UPDATE projects SET final_render_id = 'mismatched-final' WHERE id = 'project-1'`).run();
     expectCode('FINAL_HASH_MISMATCH');
+    const identities = new PublicationIdentityService(value.db, value.service);
+    try {
+      identities.capture('project-1', 'UC-current');
+      throw new Error('Expected publication capture to reject the mismatched active final.');
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: 'FINAL_HASH_MISMATCH',
+        recovery: expect.stringContaining('create and approve a new final render')
+      });
+      expect(String(error)).toContain('[FINAL_HASH_MISMATCH]');
+      expect(String(error)).toContain('Recovery:');
+    }
+    const rejection = value.db.raw.prepare(`
+      SELECT metadata_json FROM audit_log
+      WHERE action = 'security.privileged_rejected' ORDER BY id DESC LIMIT 1
+    `).get() as { metadata_json: string };
+    expect(JSON.parse(rejection.metadata_json)).toMatchObject({
+      schemaVersion: 1,
+      flow: 'publication',
+      operation: 'snapshot.capture',
+      code: 'FINAL_HASH_MISMATCH',
+      outcome: 'rejected'
+    });
+    expect(rejection.metadata_json).not.toContain('mismatched-final.mp4');
     value.db.close();
   });
 
@@ -265,6 +289,24 @@ describe('authoritative active-final publication identity', () => {
       SELECT count(*) AS count FROM exceptions
       WHERE code = 'STALE_PUBLICATION_SNAPSHOT' AND status = 'OPEN'
     `).get()).toEqual({ count: 1 });
+    const securityEvent = value.db.raw.prepare(`
+      SELECT metadata_json FROM audit_log
+      WHERE action = 'security.privileged_rejected' AND entity_id = 'publication-1'
+      ORDER BY id DESC LIMIT 1
+    `).get() as { metadata_json: string };
+    expect(JSON.parse(securityEvent.metadata_json)).toMatchObject({
+      schemaVersion: 1,
+      flow: 'publication',
+      operation: 'snapshot.invalidation',
+      code: 'STALE_PUBLICATION_SNAPSHOT',
+      outcome: 'rejected',
+      context: {
+        projectId: 'project-1',
+        boundary: 'processing',
+        hasRemoteVideo: true
+      }
+    });
+    expect(securityEvent.metadata_json).not.toMatch(/boundary final|\.mp4|[a-f0-9]{64}/i);
     value.db.close();
   });
 });

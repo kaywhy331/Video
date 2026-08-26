@@ -101,10 +101,20 @@ export interface JobRetryRequest {
 
 export interface JobRetryResult {
   outcome: JobRetryOutcome;
+  code: JobRetryResultCode;
+  recovery: string;
   job: JobRecord | null;
   capability: JobRetryCapability | null;
   message: string;
 }
+
+export type JobRetryResultCode =
+  | 'JOB_RETRY_STARTED'
+  | 'JOB_RETRY_ALREADY_SCHEDULED'
+  | 'JOB_RETRY_INVALID_STATE'
+  | 'JOB_RETRY_RECONCILIATION_REQUIRED'
+  | 'JOB_RETRY_CONCURRENT_CHANGE'
+  | 'JOB_RETRY_EXPEDITED';
 
 export interface JobExpediteRequest {
   jobId: string;
@@ -113,6 +123,8 @@ export interface JobExpediteRequest {
 
 export interface JobExpediteResult {
   outcome: 'expedited' | 'invalid_state' | 'concurrent_change';
+  code: JobRetryResultCode;
+  recovery: string;
   job: JobRecord | null;
   capability: JobRetryCapability | null;
   message: string;
@@ -1642,8 +1654,28 @@ export interface YouTubeConnectionStatus {
     previousChannelId: string | null;
   } | null;
   error: {
-    code: 'authorization_failed' | 'authorization_expired' | 'browser_open_failed' | 'credential_mismatch';
+    code:
+      | 'OAUTH_SESSION_EXPIRED'
+      | 'OAUTH_LISTENER_FAILED'
+      | 'OAUTH_PROVIDER_CONFIG_INVALID'
+      | 'OAUTH_AUTHORIZATION_URL_FAILED'
+      | 'OAUTH_BROWSER_OPEN_FAILED'
+      | 'OAUTH_STORED_IDENTITY_FAILED'
+      | 'OAUTH_CALLBACK_METHOD_INVALID'
+      | 'OAUTH_CALLBACK_TARGET_INVALID'
+      | 'OAUTH_CALLBACK_PATH_INVALID'
+      | 'OAUTH_CALLBACK_REPLAYED'
+      | 'OAUTH_STATE_INVALID'
+      | 'OAUTH_CALLBACK_RESPONSE_INVALID'
+      | 'OAUTH_EXCHANGE_FAILED'
+      | 'OAUTH_CANDIDATE_INVALID'
+      | 'OAUTH_SESSION_INACTIVE'
+      | 'OAUTH_CONFIRMATION_MISMATCH'
+      | 'OAUTH_COMMIT_FAILED'
+      | 'OAUTH_CANCELLATION_MISMATCH'
+      | 'YOUTUBE_CREDENTIAL_MISMATCH';
     message: string;
+    recovery: string;
   } | null;
 }
 
