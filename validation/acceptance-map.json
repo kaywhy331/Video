@@ -268,11 +268,15 @@
   "external": [
     {
       "ids": ["E2E-001", "E2E-002"],
-      "reason": "Requires configured live research, generation, acquisition, and YouTube accounts plus licensed production media; local workflow simulations are supporting evidence only.",
+      "reason": "Requires a passing exact-source production-pilot receipt from a representative Windows operator workstation with live research, generation, acquisition, narration, and YouTube providers plus licensed production media; local workflow simulations are supporting evidence only.",
       "evidence": [
+        "scripts/collect-production-pilot-evidence.mjs",
+        "scripts/production-pilot-evidence.mjs",
+        "scripts/run-production-pilot-qualification.mjs",
         "tests/workflow-service.test.ts",
         "tests/final-review-service.test.ts",
-        "tests/render-service-range.integration.test.ts"
+        "tests/render-service-range.integration.test.ts",
+        "tests/production-pilot-collector.integration.test.ts"
       ]
     },
     {
@@ -288,8 +292,15 @@
     },
     {
       "ids": ["E2E-005", "UX-001"],
-      "reason": "Requires the five-video licensed-media pilot and operator activity log review.",
-      "evidence": ["docs/IMPLEMENTATION-COVERAGE.md", "VALIDATION_REPORT.md"]
+      "reason": "Requires a passing exact-source five-video field receipt across three destination clusters, with verified licensed-media bytes and at least four audit projections containing only acquisition and final-approval operator actions.",
+      "evidence": [
+        "docs/IMPLEMENTATION-COVERAGE.md",
+        "scripts/collect-production-pilot-evidence.mjs",
+        "scripts/production-pilot-evidence.mjs",
+        "scripts/run-production-pilot-qualification.mjs",
+        "tests/production-pilot-collector.integration.test.ts",
+        "VALIDATION_REPORT.md"
+      ]
     },
     {
       "ids": ["SYS-001"],

@@ -24,6 +24,8 @@ import { admitValidationSource, assertValidationSource } from './validation-sour
 import {
   ELECTRON_PERFORMANCE_RECEIPT_PATH,
   EXTERNAL_QUALIFICATION_INDEX_PATH,
+  PRODUCTION_PILOT_RECEIPT_KIND,
+  PRODUCTION_PILOT_RECEIPT_PATH,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
   admitExternalQualificationEvidence
@@ -49,6 +51,7 @@ const playwrightPath = resolve(releaseDirectory, 'PLAYWRIGHT_RESULTS.json');
 const sbomPath = resolve(releaseDirectory, 'videofactory-sbom.cdx.json');
 const externalQualificationIndexPath = resolve(releaseDirectory, 'EXTERNAL_QUALIFICATION_INDEX.json');
 const electronPerformanceReceiptPath = resolve(releaseDirectory, 'EXTERNAL_ELECTRON_PERFORMANCE.json');
+const productionPilotReceiptPath = resolve(releaseDirectory, 'EXTERNAL_PRODUCTION_PILOT.json');
 const verify = process.argv.includes('--verify');
 const requirePackageSmoke = process.argv.includes('--require-package-smoke');
 
@@ -135,7 +138,8 @@ function copyAvailableValidationEvidence() {
     [resolve(root, 'validation', 'results', 'playwright.json'), playwrightPath],
     [resolve(root, 'validation', 'results', 'videofactory-sbom.cdx.json'), sbomPath],
     [resolve(root, EXTERNAL_QUALIFICATION_INDEX_PATH), externalQualificationIndexPath],
-    [resolve(root, ELECTRON_PERFORMANCE_RECEIPT_PATH), electronPerformanceReceiptPath]
+    [resolve(root, ELECTRON_PERFORMANCE_RECEIPT_PATH), electronPerformanceReceiptPath],
+    [resolve(root, PRODUCTION_PILOT_RECEIPT_PATH), productionPilotReceiptPath]
   ];
   for (const [source, destination] of copies) {
     if (!existsSync(destination) && existsSync(source)) copyFileSync(source, destination);
@@ -229,7 +233,11 @@ function assertAcceptanceQualification(validation, acceptanceReceipt) {
 function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
   const { external, projection } = assertAcceptanceQualification(validation, acceptanceReceipt);
   if (projection.index === null) {
-    if (existsSync(externalQualificationIndexPath) || existsSync(electronPerformanceReceiptPath)) {
+    if (
+      existsSync(externalQualificationIndexPath)
+      || existsSync(electronPerformanceReceiptPath)
+      || existsSync(productionPilotReceiptPath)
+    ) {
       throw new Error('Release contains unreferenced external qualification attachments.');
     }
     return;
@@ -244,6 +252,11 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
     mkdirSync(resolve(stagedIndex, '..'), { recursive: true });
     copyFileSync(externalQualificationIndexPath, stagedIndex);
     const attachments = {
+      [PRODUCTION_PILOT_RECEIPT_KIND]: {
+        canonicalPath: PRODUCTION_PILOT_RECEIPT_PATH,
+        releasePath: productionPilotReceiptPath,
+        label: 'production pilot receipt'
+      },
       electron_performance: {
         canonicalPath: ELECTRON_PERFORMANCE_RECEIPT_PATH,
         releasePath: electronPerformanceReceiptPath,
@@ -274,11 +287,18 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
     if (existsSync(electronPerformanceReceiptPath) && !referencedKinds.has('electron_performance')) {
       throw new Error('Release contains an unreferenced electron performance attachment.');
     }
+    if (existsSync(productionPilotReceiptPath) && !referencedKinds.has(PRODUCTION_PILOT_RECEIPT_KIND)) {
+      throw new Error('Release contains an unreferenced production pilot attachment.');
+    }
     const admitted = admitExternalQualificationEvidence({
       root: temporaryRoot,
       source: validation.source,
       allowedIds: external.map(item => item.id)
     });
+    const productionPilot = admitted.receipts.find(item => item.kind === PRODUCTION_PILOT_RECEIPT_KIND);
+    if (productionPilot && productionPilot.assessment.appVersion !== validation.release) {
+      throw new Error('Attached production pilot evidence does not match the package version.');
+    }
     const admittedProjection = {
       index: admitted.index,
       receipts: admitted.receipts.map(item => ({

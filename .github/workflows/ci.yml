@@ -49,6 +49,7 @@ jobs:
             validation/results/runtime-input.json
             validation/results/claims-input.json
             validation/results/electron-performance.json
+            validation/results/production-pilot.json
             validation/external-qualification/index.json
             release/videofactory-sbom.cdx.json
           if-no-files-found: error
@@ -141,15 +142,27 @@ jobs:
           Copy-Item "$evidenceRoot/validation/results/playwright.json" validation/results/playwright.json
           Copy-Item "$evidenceRoot/release/videofactory-sbom.cdx.json" release/videofactory-sbom.cdx.json
           $externalIndex = "$evidenceRoot/validation/external-qualification/index.json"
-          $externalReceipt = "$evidenceRoot/validation/results/electron-performance.json"
-          if ((Test-Path $externalIndex) -xor (Test-Path $externalReceipt)) {
+          $externalReceipts = @(
+            @{
+              Source = "$evidenceRoot/validation/results/electron-performance.json"
+              Destination = "validation/results/electron-performance.json"
+            },
+            @{
+              Source = "$evidenceRoot/validation/results/production-pilot.json"
+              Destination = "validation/results/production-pilot.json"
+            }
+          )
+          $presentExternalReceipts = @($externalReceipts | Where-Object { Test-Path $_.Source })
+          if ((Test-Path $externalIndex) -ne ($presentExternalReceipts.Count -gt 0)) {
             throw 'Downloaded external qualification evidence is incomplete.'
           }
           if (Test-Path $externalIndex) {
             New-Item -ItemType Directory -Force validation/external-qualification | Out-Null
             New-Item -ItemType Directory -Force validation/results | Out-Null
             Copy-Item $externalIndex validation/external-qualification/index.json
-            Copy-Item $externalReceipt validation/results/electron-performance.json
+            foreach ($externalReceipt in $presentExternalReceipts) {
+              Copy-Item $externalReceipt.Source $externalReceipt.Destination
+            }
           }
           npm.cmd run qualify:index-windows-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

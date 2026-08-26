@@ -16,6 +16,10 @@ import {
   WINDOWS_PACKAGE_RUNTIME_GATE_IDS,
   assessWindowsPackageRuntimeEvidence
 } from './windows-package-runtime-evidence.mjs';
+import {
+  PRODUCTION_PILOT_GATE_IDS,
+  assessProductionPilotEvidence
+} from './production-pilot-evidence.mjs';
 import { assertValidationSource, captureValidationSource } from './validation-source.mjs';
 
 export const EXTERNAL_QUALIFICATION_INDEX_SCHEMA_VERSION = 1;
@@ -25,8 +29,11 @@ export const ELECTRON_PERFORMANCE_RECEIPT_KIND = 'electron_performance';
 export const ELECTRON_PERFORMANCE_RECEIPT_PATH = 'validation/results/electron-performance.json';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND = 'windows_package_runtime';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH = 'release/WINDOWS_PACKAGE_SMOKE.json';
+export const PRODUCTION_PILOT_RECEIPT_KIND = 'production_pilot';
+export const PRODUCTION_PILOT_RECEIPT_PATH = 'validation/results/production-pilot.json';
 
 export const EXTERNAL_QUALIFICATION_GATE_IDS = Object.freeze([
+  ...PRODUCTION_PILOT_GATE_IDS,
   ...ELECTRON_PERFORMANCE_GATE_IDS,
   ...WINDOWS_PACKAGE_RUNTIME_GATE_IDS
 ]);
@@ -68,6 +75,25 @@ export function writeWindowsPackageRuntimeQualificationIndex({
     kind: WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
     canonicalReceiptPath: WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
     label: 'Windows package runtime'
+  });
+}
+
+export function writeProductionPilotQualificationIndex({
+  root = process.cwd(),
+  source,
+  receiptPath = PRODUCTION_PILOT_RECEIPT_PATH,
+  indexPath = EXTERNAL_QUALIFICATION_INDEX_PATH,
+  now = new Date()
+} = {}) {
+  return writeQualificationIndex({
+    root,
+    source,
+    receiptPath,
+    indexPath,
+    now,
+    kind: PRODUCTION_PILOT_RECEIPT_KIND,
+    canonicalReceiptPath: PRODUCTION_PILOT_RECEIPT_PATH,
+    label: 'Production pilot'
   });
 }
 
@@ -184,6 +210,24 @@ export function admitExternalQualificationEvidence({
           throw new Error(`Windows package runtime receipt did not qualify ${id}.`);
         }
       }
+    } else if (kind === PRODUCTION_PILOT_RECEIPT_KIND) {
+      if (path !== PRODUCTION_PILOT_RECEIPT_PATH) {
+        throw new Error(
+          `Production pilot qualification evidence must use ${PRODUCTION_PILOT_RECEIPT_PATH}.`
+        );
+      }
+      assessed = assessProductionPilotEvidence(parseJson(receiptBytes, 'Production pilot receipt'));
+      assertValidationSource(assessed.source, 'release', 'Production pilot receipt source');
+      assertSameExactSource(assessed.source, index.source, 'Production pilot receipt');
+      if (assessed.externalQualificationPassed !== true) {
+        throw new Error('Production pilot receipt is not eligible external qualification evidence.');
+      }
+      gateIds = PRODUCTION_PILOT_GATE_IDS;
+      for (const id of gateIds) {
+        if (assessed.acceptance[id] !== 'qualified') {
+          throw new Error(`Production pilot receipt did not qualify ${id}.`);
+        }
+      }
     } else {
       throw new Error(`External qualification index contains unknown receipt kind: ${kind}.`);
     }
@@ -253,7 +297,11 @@ function writeQualificationIndex({
     receipts = existing.receipts.filter(item => item.kind !== kind);
   }
   receipts.push(descriptor);
-  const kindOrder = [ELECTRON_PERFORMANCE_RECEIPT_KIND, WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND];
+  const kindOrder = [
+    PRODUCTION_PILOT_RECEIPT_KIND,
+    ELECTRON_PERFORMANCE_RECEIPT_KIND,
+    WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND
+  ];
   receipts.sort((left, right) => kindOrder.indexOf(left.kind) - kindOrder.indexOf(right.kind));
 
   const generatedAt = now instanceof Date ? now.toISOString() : String(now);

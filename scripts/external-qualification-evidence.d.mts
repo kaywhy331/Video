@@ -1,8 +1,12 @@
 import type { ElectronPerformanceEvidence } from './electron-performance-evidence.mjs';
 import type { ValidationSource } from './validation-source.mjs';
 import type { WindowsPackageRuntimeAssessment } from './windows-package-runtime-evidence.mjs';
+import type { ProductionPilotEvidence } from './production-pilot-evidence.mjs';
 
-export type ExternalQualificationReceiptKind = 'electron_performance' | 'windows_package_runtime';
+export type ExternalQualificationReceiptKind =
+  | 'production_pilot'
+  | 'electron_performance'
+  | 'windows_package_runtime';
 
 export interface FileEvidence {
   path: string;
@@ -32,7 +36,7 @@ export interface ExternalQualificationAdmission {
     kind: ExternalQualificationReceiptKind;
     evidence: FileEvidence;
     qualifiedIds: string[];
-    assessment: ElectronPerformanceEvidence | WindowsPackageRuntimeAssessment;
+    assessment: ProductionPilotEvidence | ElectronPerformanceEvidence | WindowsPackageRuntimeAssessment;
   }>;
   qualifiedIds: string[];
   qualifiedById: Record<string, {
@@ -48,6 +52,8 @@ export const ELECTRON_PERFORMANCE_RECEIPT_KIND: 'electron_performance';
 export const ELECTRON_PERFORMANCE_RECEIPT_PATH: 'validation/results/electron-performance.json';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND: 'windows_package_runtime';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH: 'release/WINDOWS_PACKAGE_SMOKE.json';
+export const PRODUCTION_PILOT_RECEIPT_KIND: 'production_pilot';
+export const PRODUCTION_PILOT_RECEIPT_PATH: 'validation/results/production-pilot.json';
 export const EXTERNAL_QUALIFICATION_GATE_IDS: readonly string[];
 
 export function writeElectronPerformanceQualificationIndex(options?: {
@@ -59,6 +65,14 @@ export function writeElectronPerformanceQualificationIndex(options?: {
 }): ExternalQualificationAdmission;
 
 export function writeWindowsPackageRuntimeQualificationIndex(options?: {
+  root?: string;
+  source?: ValidationSource;
+  receiptPath?: string;
+  indexPath?: string;
+  now?: Date;
+}): ExternalQualificationAdmission;
+
+export function writeProductionPilotQualificationIndex(options?: {
   root?: string;
   source?: ValidationSource;
   receiptPath?: string;
