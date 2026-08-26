@@ -14,6 +14,7 @@ export const RUNTIME_INPUTS = Object.freeze([
   'package-lock.json',
   'package.json',
   'playwright.config.ts',
+  'playwright.performance.config.ts',
   'resources',
   'scripts',
   'src',

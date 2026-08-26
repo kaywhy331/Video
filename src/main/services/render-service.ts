@@ -13,6 +13,7 @@ import {
   statSync
 } from 'node:fs';
 import { extname, join } from 'node:path';
+import { cpus } from 'node:os';
 import type { AppDatabase } from '../database/database';
 import type { AppSettings, NarrationWord, OutputProfileKey, RenderRecord, RenderScope, VisualTreatment } from '@shared/types';
 import type { SceneEditingPlan } from '@shared/editing';
@@ -37,6 +38,10 @@ import {
 } from '@shared/color-policy';
 import { buildFootageVideoFilter, buildGeneratedVideoFilter } from '@shared/render-video-policy';
 import {
+  backgroundFfmpegGlobalArguments,
+  backgroundFfmpegVideoArguments
+} from '@shared/ffmpeg-resource-policy';
+import {
   captionViolations,
   duplicateShotPairs,
   insufficientResolutionOrdinals,
@@ -45,6 +50,8 @@ import {
   unsafePromiseIndexes,
   validateChapters
 } from '@shared/qc';
+
+const LOGICAL_CPU_COUNT = cpus().length;
 
 interface TimelineScene {
   sceneId: string;
@@ -681,13 +688,14 @@ export class RenderService {
           const reuse = Boolean(cachedFragment?.output_path && existsSync(cachedFragment.output_path));
           if (!reuse) await requireSuccess(ffmpeg, generatedGraphic ? [
           '-y', '-hide_banner',
+          ...backgroundFfmpegGlobalArguments(LOGICAL_CPU_COUNT),
           '-f', 'lavfi', '-i', `color=c=#07111b:s=${width}x${height}:r=30:d=${durationSeconds.toFixed(3)}`,
           '-i', audioPath,
           '-filter_complex',
           `[0:v]${buildGeneratedVideoFilter({ editingFilter: editingLayer.filter })}[v];[1:a]aresample=48000,apad=pad_dur=${durationSeconds.toFixed(3)},atrim=0:${durationSeconds.toFixed(3)},afade=t=in:st=0:d=0.02,afade=t=out:st=${Math.max(0, durationSeconds - 0.02).toFixed(3)}:d=0.02[a]`,
           '-map', '[v]', '-map', '[a]',
           '-t', durationSeconds.toFixed(3),
-          '-c:v', 'libx264', '-preset', preset,
+          '-c:v', 'libx264', ...backgroundFfmpegVideoArguments(LOGICAL_CPU_COUNT), '-preset', preset,
           '-b:v', videoBitrate, '-maxrate', videoBitrate,
           '-bufsize', use4k ? '70M' : kind === 'draft' ? '10M' : '20M',
           '-color_range', 'tv', '-colorspace', 'bt709',
@@ -697,6 +705,7 @@ export class RenderService {
           '-ar', '48000', '-ac', '2', '-movflags', '+faststart', fragmentPath
           ] : [
           '-y', '-hide_banner',
+          ...backgroundFfmpegGlobalArguments(LOGICAL_CPU_COUNT),
           '-ss', startSeconds.toFixed(3), '-t', durationSeconds.toFixed(3),
           '-i', String(row.original_path),
           '-i', audioPath,
@@ -710,6 +719,7 @@ export class RenderService {
           '-map', '[a]',
           '-t', durationSeconds.toFixed(3),
           '-c:v', 'libx264',
+          ...backgroundFfmpegVideoArguments(LOGICAL_CPU_COUNT),
           '-preset', preset,
           '-b:v', videoBitrate,
           '-maxrate', videoBitrate,

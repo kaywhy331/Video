@@ -9,6 +9,7 @@ import {
   statSync
 } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
+import { cpus } from 'node:os';
 import type { AppDatabase } from '../database/database';
 import type {
   AppSettings,
@@ -38,6 +39,12 @@ import {
 import { canTransitionProject } from '@shared/state-machine';
 import { differenceHash } from '@shared/perceptual-hash';
 import { invalidatePublicationSnapshots } from './active-final-service';
+import {
+  backgroundFfmpegGlobalArguments,
+  backgroundFfmpegVideoArguments
+} from '@shared/ffmpeg-resource-policy';
+
+const LOGICAL_CPU_COUNT = cpus().length;
 
 interface ProbeStream {
   codec_type?: string;
@@ -174,6 +181,7 @@ export class MediaService {
     const args = [
       '-y',
       '-hide_banner',
+      ...backgroundFfmpegGlobalArguments(LOGICAL_CPU_COUNT),
       '-i', originalPath,
       '-map', '0:v:0',
       ...(audioPresent ? ['-map', '0:a:0?'] : []),
@@ -186,6 +194,7 @@ export class MediaService {
         'format=yuv420p'
       ].filter(Boolean).join(','),
       '-c:v', 'libx264',
+      ...backgroundFfmpegVideoArguments(LOGICAL_CPU_COUNT),
       '-preset', 'veryfast',
       '-crf', '24',
       ...(audioPresent ? ['-c:a', 'aac', '-b:a', '128k'] : ['-an']),

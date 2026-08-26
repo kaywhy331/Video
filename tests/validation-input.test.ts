@@ -53,6 +53,7 @@ describe('validation input digests and generated evidence lifecycle', () => {
     const runtimePaths = new Set(first.runtime.files.map(file => file.path));
     const claimsPaths = new Set(first.claims.files.map(file => file.path));
     for (const path of RUNTIME_NORMATIVE_DOCUMENTS) expect(runtimePaths.has(path), path).toBe(true);
+    expect(runtimePaths.has('playwright.performance.config.ts')).toBe(true);
     for (const path of RELEASE_CLAIM_DOCUMENTS) expect(claimsPaths.has(path), path).toBe(true);
     expect(claimsPaths.has('docs/release-evidence/v0.1.0-alpha.7.json')).toBe(true);
     expect(first.runtime.files.map(file => file.path)).toEqual(
@@ -90,7 +91,9 @@ describe('validation input digests and generated evidence lifecycle', () => {
     for (const path of [
       'VALIDATION_ACCEPTANCE_RECEIPT.json',
       'VALIDATION_STATUS.json',
-      'validation/results/pipeline.json'
+      'validation/results/pipeline.json',
+      'validation/results/electron-performance.json',
+      'validation/results/electron-performance-playwright.json'
     ]) {
       const ignored = spawnSync('git', ['check-ignore', '--quiet', path], { cwd: repositoryRoot });
       expect(ignored.status).toBe(0);

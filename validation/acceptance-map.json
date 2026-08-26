@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v7",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v8",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -311,16 +311,26 @@
     },
     {
       "ids": ["CAT-001", "CAT-009"],
-      "reason": "The 26k service and main-process receipts pass; renderer interaction, scrolling, and concurrent background-render responsiveness remain an external Electron performance run.",
+      "reason": "The 26k service and main-process receipts pass; external qualification requires a clean exact Windows x64 production-Electron run of the 26k fixture on recorded representative hardware.",
       "evidence": [
         "VALIDATION_CATALOG_PERFORMANCE.json",
-        "VALIDATION_CATALOG_RESPONSIVENESS.json"
+        "VALIDATION_CATALOG_RESPONSIVENESS.json",
+        "scripts/electron-performance-evidence.mjs",
+        "scripts/run-electron-performance-qualification.mjs",
+        "tests/electron-performance-evidence.test.ts",
+        "tests/qualification/electron-performance.spec.ts"
       ]
     },
     {
       "ids": ["PERF-001", "PERF-002", "PERF-003"],
-      "reason": "Requires recorded production Electron timing, interaction latency, DOM-row count, and memory measurements on the qualification dataset and hardware.",
+      "reason": "Requires passing startup, interaction, DOM-row, memory, and draft-render contention measurements from the clean exact Windows x64 production-Electron qualification run.",
       "evidence": [
+        "playwright.performance.config.ts",
+        "scripts/electron-performance-evidence.mjs",
+        "scripts/run-electron-performance-qualification.mjs",
+        "src/shared/ffmpeg-resource-policy.ts",
+        "tests/electron-performance-evidence.test.ts",
+        "tests/qualification/electron-performance.spec.ts",
         "tests/e2e/electron-accessibility.spec.ts",
         "VALIDATION_CATALOG_PERFORMANCE.json",
         "VALIDATION_CATALOG_RESPONSIVENESS.json"
