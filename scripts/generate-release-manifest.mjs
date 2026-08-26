@@ -1,7 +1,17 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { arch, platform, release as operatingSystemRelease } from 'node:os';
-import { basename, resolve } from 'node:path';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs';
+import { arch, platform, release as operatingSystemRelease, tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { validationInputDigests } from './validation-input.mjs';
 import {
@@ -11,6 +21,11 @@ import {
   assertValidationEvidenceDocument
 } from './validation-evidence.mjs';
 import { admitValidationSource, assertValidationSource } from './validation-source.mjs';
+import {
+  ELECTRON_PERFORMANCE_RECEIPT_PATH,
+  EXTERNAL_QUALIFICATION_INDEX_PATH,
+  admitExternalQualificationEvidence
+} from './external-qualification-evidence.mjs';
 
 const root = process.cwd();
 const releaseDirectory = resolve(root, 'release');
@@ -26,6 +41,8 @@ const claimsInputPath = resolve(releaseDirectory, 'CLAIMS_INPUTS.json');
 const vitestPath = resolve(releaseDirectory, 'VITEST_RESULTS.json');
 const playwrightPath = resolve(releaseDirectory, 'PLAYWRIGHT_RESULTS.json');
 const sbomPath = resolve(releaseDirectory, 'videofactory-sbom.cdx.json');
+const externalQualificationIndexPath = resolve(releaseDirectory, 'EXTERNAL_QUALIFICATION_INDEX.json');
+const electronPerformanceReceiptPath = resolve(releaseDirectory, 'EXTERNAL_ELECTRON_PERFORMANCE.json');
 const verify = process.argv.includes('--verify');
 const requirePackageSmoke = process.argv.includes('--require-package-smoke');
 
@@ -110,10 +127,146 @@ function copyAvailableValidationEvidence() {
     [resolve(root, 'validation', 'results', 'claims-input.json'), claimsInputPath],
     [resolve(root, 'validation', 'results', 'vitest.json'), vitestPath],
     [resolve(root, 'validation', 'results', 'playwright.json'), playwrightPath],
-    [resolve(root, 'validation', 'results', 'videofactory-sbom.cdx.json'), sbomPath]
+    [resolve(root, 'validation', 'results', 'videofactory-sbom.cdx.json'), sbomPath],
+    [resolve(root, EXTERNAL_QUALIFICATION_INDEX_PATH), externalQualificationIndexPath],
+    [resolve(root, ELECTRON_PERFORMANCE_RECEIPT_PATH), electronPerformanceReceiptPath]
   ];
   for (const [source, destination] of copies) {
     if (!existsSync(destination) && existsSync(source)) copyFileSync(source, destination);
+  }
+}
+
+function assertAcceptanceQualification(validation, acceptanceReceipt) {
+  const cases = acceptanceReceipt.cases;
+  const summary = acceptanceReceipt.summary;
+  if (!Array.isArray(cases) || cases.length === 0 || !summary || typeof summary !== 'object') {
+    throw new Error('Attached acceptance receipt has no complete case summary.');
+  }
+  const ids = cases.map(item => item?.id);
+  if (ids.some(id => typeof id !== 'string' || id.length === 0) || new Set(ids).size !== ids.length) {
+    throw new Error('Attached acceptance receipt contains invalid or duplicate case IDs.');
+  }
+  const locallyPassed = cases.filter(item => (
+    item.classification === 'automated' && item.result === 'passed_local_validation'
+  ));
+  const external = cases.filter(item => item.classification === 'external');
+  const qualified = external.filter(item => item.result === 'passed_external_qualification');
+  const pending = external.filter(item => item.result === 'external_pending');
+  if (locallyPassed.length + external.length !== cases.length || qualified.length + pending.length !== external.length) {
+    throw new Error('Attached acceptance receipt contains an unknown classification or result.');
+  }
+  const productionQualified = pending.length === 0;
+  const expectedSummary = {
+    total: cases.length,
+    passedLocalValidation: locallyPassed.length,
+    qualifiedExternal: qualified.length,
+    externalPending: pending.length,
+    productionQualified
+  };
+  if (JSON.stringify(summary) !== JSON.stringify(expectedSummary)) {
+    throw new Error('Attached acceptance summary does not reconcile with its case results.');
+  }
+  for (const [key, value] of Object.entries(expectedSummary)) {
+    if (validation.acceptance?.[key] !== value) {
+      throw new Error(`Attached validation status acceptance ${key} does not match the acceptance receipt.`);
+    }
+  }
+  if (validation.production_ready !== productionQualified) {
+    throw new Error('Attached validation production-ready claim does not reconcile with pending acceptance gates.');
+  }
+
+  if (!Array.isArray(validation.externalQualification) || validation.externalQualification.length !== external.length) {
+    throw new Error('Attached validation status does not enumerate every external qualification gate.');
+  }
+  const statusById = new Map(validation.externalQualification.map(item => [item?.id, item]));
+  if (statusById.size !== external.length) {
+    throw new Error('Attached validation status contains duplicate external qualification gates.');
+  }
+  for (const item of external) {
+    const status = statusById.get(item.id);
+    const expectedStatus = item.result === 'passed_external_qualification' ? 'qualified' : 'pending';
+    if (status?.status !== expectedStatus || JSON.stringify(status?.artifacts) !== JSON.stringify(item.artifacts)) {
+      throw new Error(`Attached validation status does not match external qualification case ${item.id}.`);
+    }
+    if (expectedStatus === 'qualified') {
+      if (!item.externalEvidence || JSON.stringify(status.evidence) !== JSON.stringify(item.externalEvidence)) {
+        throw new Error(`Qualified external case ${item.id} has no matching evidence projection.`);
+      }
+    } else if (!item.pendingReason || status.reason !== item.pendingReason || status.evidence !== undefined) {
+      throw new Error(`Pending external case ${item.id} has an invalid qualification claim.`);
+    }
+  }
+
+  const projection = acceptanceReceipt.externalQualificationEvidence;
+  if (
+    !projection
+    || !Array.isArray(projection.receipts)
+    || !Array.isArray(projection.qualifiedIds)
+    || JSON.stringify(validation.externalQualificationEvidence) !== JSON.stringify(projection)
+  ) {
+    throw new Error('Attached external qualification evidence projection is missing or inconsistent.');
+  }
+  const qualifiedIds = qualified.map(item => item.id).sort();
+  if (JSON.stringify([...projection.qualifiedIds].sort()) !== JSON.stringify(qualifiedIds)) {
+    throw new Error('Attached external qualification evidence does not cover the qualified case IDs exactly.');
+  }
+  if (qualified.length === 0) {
+    if (projection.index !== null || projection.receipts.length !== 0) {
+      throw new Error('Attached validation evidence indexes qualification receipts without qualified cases.');
+    }
+  } else if (!projection.index || projection.receipts.length === 0) {
+    throw new Error('Qualified external cases require an attached evidence index and receipts.');
+  }
+  return { external, projection };
+}
+
+function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
+  const { external, projection } = assertAcceptanceQualification(validation, acceptanceReceipt);
+  if (projection.index === null) {
+    if (existsSync(externalQualificationIndexPath) || existsSync(electronPerformanceReceiptPath)) {
+      throw new Error('Release contains unreferenced external qualification attachments.');
+    }
+    return;
+  }
+  assertEvidenceFile(projection.index, externalQualificationIndexPath, 'external qualification index');
+  if (projection.index.path !== EXTERNAL_QUALIFICATION_INDEX_PATH) {
+    throw new Error('External qualification index has a non-canonical evidence path.');
+  }
+  const temporaryRoot = mkdtempSync(join(tmpdir(), 'videofactory-release-qualification-'));
+  try {
+    const stagedIndex = resolve(temporaryRoot, EXTERNAL_QUALIFICATION_INDEX_PATH);
+    const stagedReceipt = resolve(temporaryRoot, ELECTRON_PERFORMANCE_RECEIPT_PATH);
+    mkdirSync(resolve(stagedIndex, '..'), { recursive: true });
+    mkdirSync(resolve(stagedReceipt, '..'), { recursive: true });
+    copyFileSync(externalQualificationIndexPath, stagedIndex);
+    const electronReceipt = projection.receipts.find(item => item.kind === 'electron_performance');
+    if (!electronReceipt || projection.receipts.length !== 1) {
+      throw new Error('Release contains an unsupported external qualification receipt set.');
+    }
+    if (electronReceipt.evidence?.path !== ELECTRON_PERFORMANCE_RECEIPT_PATH) {
+      throw new Error('Electron performance receipt has a non-canonical evidence path.');
+    }
+    assertEvidenceFile(electronReceipt.evidence, electronPerformanceReceiptPath, 'electron performance receipt');
+    copyFileSync(electronPerformanceReceiptPath, stagedReceipt);
+    const admitted = admitExternalQualificationEvidence({
+      root: temporaryRoot,
+      source: validation.source,
+      allowedIds: external.map(item => item.id)
+    });
+    const admittedProjection = {
+      index: admitted.index,
+      receipts: admitted.receipts.map(item => ({
+        kind: item.kind,
+        evidence: item.evidence,
+        qualifiedIds: item.qualifiedIds
+      })),
+      qualifiedIds: admitted.qualifiedIds
+    };
+    if (JSON.stringify(admittedProjection) !== JSON.stringify(projection)) {
+      throw new Error('Attached external qualification evidence does not re-admit to its recorded projection.');
+    }
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true });
   }
 }
 
@@ -153,9 +306,7 @@ function loadAndValidateEvidence(packageJson, admission) {
   if (sbom.bomFormat !== 'CycloneDX' || sbom.metadata?.component?.version !== packageJson.version) {
     throw new Error('Attached SBOM is invalid or does not match the package version.');
   }
-  if (validation.production_ready !== false) {
-    throw new Error('Attached validation status makes an invalid production-ready claim.');
-  }
+  assertExternalQualificationAttachments(validation, acceptanceReceipt);
 
   const currentInput = validationInputDigests(root);
   const currentEvidence = {

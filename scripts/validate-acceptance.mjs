@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { validationInputDigests } from './validation-input.mjs';
+import { admitExternalQualificationEvidence } from './external-qualification-evidence.mjs';
 import {
   assertCompletedValidationPipeline,
   assertInputManifest,
@@ -185,6 +186,9 @@ if (errors.length > 0) fail(errors);
 const packageJson = readJson(resolve(root, 'package.json'));
 const automatedCount = acceptance.filter(({ id }) => mapped.get(id).classification === 'automated').length;
 const externalCount = acceptance.length - automatedCount;
+const externalIds = acceptance
+  .filter(({ id }) => mapped.get(id).classification === 'external')
+  .map(({ id }) => id);
 
 if (!recordValidated) {
   console.log(
@@ -205,6 +209,7 @@ let playwrightReport;
 let pipeline;
 let runtimeInputManifest;
 let claimsInputManifest;
+let externalAdmission;
 try {
   vitestReport = readJson(vitestPath);
   playwrightReport = readJson(playwrightPath);
@@ -251,6 +256,11 @@ try {
       throw new Error(`Validation pipeline ${kind} input manifest has a different qualification.`);
     }
   }
+  externalAdmission = admitExternalQualificationEvidence({
+    root,
+    source: pipeline.source,
+    allowedIds: externalIds
+  });
 } catch (error) {
   reportErrors.push(error instanceof Error ? error.message : String(error));
 }
@@ -314,6 +324,7 @@ if (reportErrors.length > 0) fail(reportErrors);
 const cases = acceptance.map(({ id, title }) => {
   const coverage = mapped.get(id);
   const caseBindings = bindingsById.get(id) ?? [];
+  const externalEvidence = externalAdmission.qualifiedById[id];
   const assertions = caseBindings.map(binding => ({
     runner: binding.runner,
     file: binding.file,
@@ -327,17 +338,41 @@ const cases = acceptance.map(({ id, title }) => {
     databaseSchemaVersion: schemaVersion,
     fixtureVersion: map.fixtureVersion,
     classification: coverage.classification,
-    result: coverage.classification === 'automated' ? 'passed_local_validation' : 'external_pending',
+    result: coverage.classification === 'automated'
+      ? 'passed_local_validation'
+      : externalEvidence
+        ? 'passed_external_qualification'
+        : 'external_pending',
     artifacts: [...new Set([
       ...coverage.evidence,
-      ...caseBindings.map(binding => binding.file)
+      ...caseBindings.map(binding => binding.file),
+      ...(externalEvidence ? [externalAdmission.index.path, externalEvidence.evidence.path] : [])
     ])],
     ...(assertions.length ? { assertions } : {}),
-    ...(coverage.reason ? { pendingReason: coverage.reason } : {})
+    ...(externalEvidence ? {
+      externalEvidence: {
+        kind: externalEvidence.kind,
+        index: externalAdmission.index,
+        receipt: externalEvidence.evidence
+      }
+    } : {}),
+    ...(coverage.reason && !externalEvidence ? { pendingReason: coverage.reason } : {})
   };
 });
 
 const generatedAt = new Date().toISOString();
+const qualifiedExternal = externalAdmission.qualifiedIds.length;
+const externalPending = externalCount - qualifiedExternal;
+const productionQualified = externalPending === 0;
+const externalQualificationEvidence = {
+  index: externalAdmission.index,
+  receipts: externalAdmission.receipts.map(item => ({
+    kind: item.kind,
+    evidence: item.evidence,
+    qualifiedIds: item.qualifiedIds
+  })),
+  qualifiedIds: externalAdmission.qualifiedIds
+};
 const receipt = {
   generatedAt,
   admittedAt: pipeline.admittedAt,
@@ -391,11 +426,13 @@ const receipt = {
     runtimeInput: fileEvidence(runtimeInputPath),
     claimsInput: fileEvidence(claimsInputPath)
   },
+  externalQualificationEvidence,
   summary: {
     total: acceptance.length,
     passedLocalValidation: automatedCount,
-    externalPending: externalCount,
-    productionQualified: externalCount === 0
+    qualifiedExternal,
+    externalPending,
+    productionQualified
   },
   cases
 };
@@ -421,6 +458,7 @@ const status = {
     runtimeInput: fileEvidence(runtimeInputPath),
     claimsInput: fileEvidence(claimsInputPath)
   },
+  externalQualificationEvidence,
   pipeline: {
     status: 'passed',
     report: 'validation/results/pipeline.json',
@@ -438,11 +476,17 @@ const status = {
   },
   externalQualification: cases
     .filter(item => item.classification === 'external')
-    .map(item => ({ id: item.id, status: 'pending', reason: item.pendingReason, artifacts: item.artifacts })),
-  production_ready: false
+    .map(item => ({
+      id: item.id,
+      status: item.result === 'passed_external_qualification' ? 'qualified' : 'pending',
+      ...(item.pendingReason ? { reason: item.pendingReason } : {}),
+      artifacts: item.artifacts,
+      ...(item.externalEvidence ? { evidence: item.externalEvidence } : {})
+    })),
+  production_ready: productionQualified
 };
 writeJsonAtomic(statusPath, status);
 console.log(
   `Acceptance receipt written from exact reports: ${automatedCount} locally validated, `
-  + `${externalCount} external pending.`
+  + `${qualifiedExternal} externally qualified, ${externalPending} external pending.`
 );

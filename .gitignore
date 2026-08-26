@@ -5,6 +5,7 @@ release/
 coverage/
 test-results/
 validation/results/*.json
+validation/external-qualification/*.json
 /VALIDATION_ACCEPTANCE_RECEIPT.json
 /VALIDATION_STATUS.json
 *.log
