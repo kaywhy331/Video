@@ -30,15 +30,18 @@ import type {
   ProviderEndpointTrustMode,
   YouTubeConnectionStatus
 } from '@shared/types';
+import { initialSetupState } from '@shared/initial-setup';
 import { Button, MetricCard, Panel, StatusPill } from '../components/ui';
 
 export function SettingsView({
   bootstrap,
   onRefresh,
+  onContinue,
   setError
 }: {
   bootstrap: AppBootstrap;
   onRefresh: () => Promise<void>;
+  onContinue: () => void;
   setError: (message: string | null) => void;
 }) {
   const [form, setForm] = useState<AppSettings>(bootstrap.settings);
@@ -395,6 +398,7 @@ export function SettingsView({
 
   const freePath = diagnostics?.paths.find(path => path.key === 'Media library');
   const freeGb = freePath?.freeBytes ? Math.round(freePath.freeBytes / 1024 ** 3) : null;
+  const setup = initialSetupState({ ...bootstrap, diagnostics });
 
   return (
     <div className="view-stack">
@@ -415,6 +419,27 @@ export function SettingsView({
       </div>
 
       <div className="settings-grid">
+        {bootstrap.projects.length === 0 || !setup.ready ? (
+          <Panel
+            title={setup.ready ? 'Setup complete' : 'Finish first-run setup'}
+            subtitle={`${setup.completedSteps} of ${setup.steps.length} autonomous-production prerequisites are ready`}
+          >
+            <div className="diagnostic-list" role="status" aria-label="First-run setup checklist">
+              {setup.steps.map(step => (
+                <div key={step.id} data-setup-step={step.id} data-complete={step.complete ? 'true' : 'false'}>
+                  <Check size={14} className={step.complete ? 'good-icon' : 'bad-icon'} />
+                  <div><strong>{step.label}</strong><span>{step.detail}</span></div>
+                  <StatusPill value={step.complete ? 'ready' : 'action required'} />
+                </div>
+              ))}
+            </div>
+            <Button disabled={!setup.ready} onClick={onContinue}>
+              <Check size={15} /> Continue to Autopilot
+            </Button>
+            <small>The checklist is derived from live diagnostics and configuration. It cannot be dismissed as complete.</small>
+          </Panel>
+        ) : null}
+
         <Panel title="Storage paths" subtitle="Database stays local; originals may live on a large local drive or NAS">
           <div className="settings-form">
             <PathField label="Data root" field="dataRoot" value={form.dataRoot} choose={choose} />

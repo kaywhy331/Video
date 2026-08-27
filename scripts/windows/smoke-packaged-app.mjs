@@ -162,10 +162,24 @@ try {
   });
 
   const page = application.windows()[0] ?? await application.firstWindow({ timeout: timeoutMs });
-  await page.getByRole('heading', { name: /Produce the next accurate video/i }).waitFor({
+  await page.locator('.app-shell').waitFor({
     state: 'visible',
     timeout: timeoutMs
   });
+  const setupObservation = await page.locator('.app-shell').evaluate(element => ({
+    activeView: element.getAttribute('data-active-view'),
+    initialSetupRequired: element.getAttribute('data-initial-setup') === 'true',
+    setupReady: element.getAttribute('data-setup-ready') === 'true',
+    checklistVisible: Boolean(document.querySelector('[aria-label="First-run setup checklist"]'))
+  }));
+  if (
+    setupObservation.activeView !== 'settings'
+    || !setupObservation.initialSetupRequired
+    || setupObservation.setupReady
+    || !setupObservation.checklistVisible
+  ) {
+    throw new Error(`The fresh packaged workspace did not open its fail-closed setup checklist: ${JSON.stringify(setupObservation)}`);
+  }
   const readyAt = new Date();
   const appMetadata = await application.evaluate(({ app }) => ({
     isPackaged: app.isPackaged,
@@ -302,7 +316,8 @@ try {
     app: {
       ...appMetadata,
       windowTitle,
-      dashboardReady: true
+      dashboardReady: true,
+      initialSetup: setupObservation
     },
     database: {
       initialized: true,

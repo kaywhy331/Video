@@ -304,18 +304,36 @@
     },
     {
       "ids": ["SYS-001"],
-      "reason": "Requires install and first-run evidence on a clean supported Windows x64 machine without developer tooling.",
-      "evidence": ["scripts/windows/build-installer.ps1", "scripts/windows/setup-and-run.ps1"]
+      "reason": "Requires a passing exact-source Windows system receipt from the released PowerShell qualifier proving silent install, packaged first-run setup routing, SQLite initialization, and complete uninstall on a non-CI Windows x64 machine without developer tooling.",
+      "evidence": [
+        "scripts/windows/qualify-windows-system.ps1",
+        "scripts/windows-system-evidence.mjs",
+        "scripts/run-windows-system-qualification.mjs",
+        "src/shared/initial-setup.ts",
+        "tests/windows-system-evidence.test.ts"
+      ]
     },
     {
       "ids": ["SYS-003"],
-      "reason": "Software fallback and discovery logic are automated; the NVENC, Quick Sync, and AMD AMF hardware matrix requires representative Windows hardware.",
-      "evidence": ["tests/diagnostics-service.integration.test.ts"]
+      "reason": "Requires one passing packaged diagnostic observation on each of representative NVIDIA NVENC, Intel Quick Sync, and AMD AMF Windows devices, with the corresponding hardware encoder and software H.264 fallback both advertised and exercised.",
+      "evidence": [
+        "scripts/windows/qualify-windows-system.ps1",
+        "scripts/windows-system-evidence.mjs",
+        "src/main/package-runtime-qualification.ts",
+        "tests/diagnostics-service.integration.test.ts",
+        "tests/windows-system-evidence.test.ts"
+      ]
     },
     {
       "ids": ["SYS-004"],
-      "reason": "Requires a target-platform matrix with read-only, disconnected NAS, and genuinely low-space volumes.",
-      "evidence": ["tests/operations-service.test.ts", "tests/storage-service.test.ts"]
+      "reason": "Requires real target-platform probes for read-only, missing, disconnected-NAS, and genuinely low-space paths, independently reclassified with unchanged SQLite total-change and integrity observations.",
+      "evidence": [
+        "scripts/windows/qualify-windows-system.ps1",
+        "scripts/windows-system-evidence.mjs",
+        "src/main/system-storage-qualification.ts",
+        "tests/system-storage-qualification.test.ts",
+        "tests/windows-system-evidence.test.ts"
+      ]
     },
     {
       "ids": ["SYS-005", "SYS-006"],

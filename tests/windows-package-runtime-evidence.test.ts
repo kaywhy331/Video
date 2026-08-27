@@ -45,10 +45,25 @@ function receipt() {
       windowsRuntimeLifecycle: { status: 'passed', qualifiedGateIds: ['SYS-005', 'SYS-006'] }
     },
     checks: {
-      archiveLaunch: { status: 'passed' },
+      archiveLaunch: {
+        status: 'passed',
+        app: {
+          isPackaged: true,
+          initialSetup: {
+            activeView: 'settings', initialSetupRequired: true, setupReady: false, checklistVisible: true
+          }
+        }
+      },
       installerInstall: { status: 'passed' },
       installedLaunch: {
-        status: 'passed', kind: 'installed', app: { isPackaged: true }, lifecycle: { orderlyQuit: true },
+        status: 'passed', kind: 'installed',
+        app: {
+          isPackaged: true,
+          initialSetup: {
+            activeView: 'settings', initialSetupRequired: true, setupReady: false, checklistVisible: true
+          }
+        },
+        lifecycle: { orderlyQuit: true },
         runtimeQualification: {
           schemaVersion: 1, status: 'passed',
           workload: {
@@ -90,6 +105,12 @@ describe('Windows package runtime evidence', () => {
     const value = receipt();
     const stop = value.checks.installedLaunch.runtimeQualification.events[4]!;
     stop.details = { blockerId: 8, wasStarted: true, reason: 'operation_complete' };
+    expect(assessWindowsPackageRuntimeEvidence(value).externalQualificationPassed).toBe(false);
+  });
+
+  it('fails closed when either fresh package form bypasses first-run setup', () => {
+    const value = receipt();
+    value.checks.archiveLaunch.app.initialSetup.activeView = 'autopilot';
     expect(assessWindowsPackageRuntimeEvidence(value).externalQualificationPassed).toBe(false);
   });
 });

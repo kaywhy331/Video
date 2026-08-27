@@ -10,6 +10,7 @@ import { ShutdownCoordinator } from './shutdown-coordinator';
 import { installNavigationGuards } from './window-security';
 import { defaultDataRoot } from './app-paths';
 import { PackageRuntimeQualificationRecorder } from './package-runtime-qualification';
+import { probeSystemStorageMatrix, readSystemStorageMatrix } from './system-storage-qualification';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -211,7 +212,8 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   runtimeQualification = new PackageRuntimeQualificationRecorder({
     dataRoot: defaultDataRoot(),
     isPackaged: app.isPackaged,
-    environmentFlag: process.env.VIDEOFACTORY_PACKAGE_RUNTIME_QUALIFICATION
+    environmentFlag: process.env.VIDEOFACTORY_PACKAGE_RUNTIME_QUALIFICATION,
+    systemEnvironmentFlag: process.env.VIDEOFACTORY_SYSTEM_QUALIFICATION
   });
 
   mainWindow = createWindow();
@@ -228,12 +230,41 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
       stopPowerBlocker('operation_complete');
     }
   });
-  registerIpc(context, () => mainWindow);
+  registerIpc(context, () => mainWindow, {
+    rendererReady: observation => {
+      runtimeQualification?.recordRendererReady(observation);
+      if (runtimeQualification?.systemQualification) {
+        const qualificationExit = setTimeout(() => app.quit(), 250);
+        qualificationExit.unref();
+      }
+    },
+    startBackgroundServices: !runtimeQualification.systemQualification
+  });
   await context.start();
+  if (runtimeQualification.systemQualification) {
+    runtimeQualification.recordSystemDiagnostics(await context.diagnostics.run());
+    const storageCases = readSystemStorageMatrix(process.env.VIDEOFACTORY_SYSTEM_QUALIFICATION_INPUT);
+    const changesBeforeRow = context.db.raw.prepare('SELECT total_changes() AS changes').get() as { changes: number };
+    const storageProbes = await probeSystemStorageMatrix(
+      storageCases,
+      Math.round(context.settings().minFreeDiskGb * 1024 ** 3)
+    );
+    for (const observation of storageProbes) runtimeQualification.recordStorageProbe(observation);
+    const changesAfterRow = context.db.raw.prepare('SELECT total_changes() AS changes').get() as { changes: number };
+    runtimeQualification.recordStorageMatrixComplete({
+      probeCount: storageProbes.length,
+      matchedCount: storageProbes.filter(observation => observation.matched).length,
+      databaseIntegrity: context.db.integrityCheck(),
+      databaseChangesBefore: Number(changesBeforeRow.changes),
+      databaseChangesAfter: Number(changesAfterRow.changes)
+    });
+  }
   setupTray();
   await loadWindow(mainWindow);
-  const backgroundStartupFallback = setTimeout(() => context?.startBackgroundServices(), 10_000);
-  backgroundStartupFallback.unref();
+  if (!runtimeQualification.systemQualification) {
+    const backgroundStartupFallback = setTimeout(() => context?.startBackgroundServices(), 10_000);
+    backgroundStartupFallback.unref();
+  }
 
   mainWindow.on('close', event => {
     if (!shutdown.isQuitting) {

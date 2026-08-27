@@ -10,11 +10,14 @@ import {
   EXTERNAL_QUALIFICATION_INDEX_PATH,
   PRODUCTION_PILOT_RECEIPT_PATH,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+  WINDOWS_SYSTEM_RECEIPT_PATH,
   writeElectronPerformanceQualificationIndex,
   writeProductionPilotQualificationIndex,
-  writeWindowsPackageRuntimeQualificationIndex
+  writeWindowsPackageRuntimeQualificationIndex,
+  writeWindowsSystemQualificationIndex
 } from '../scripts/external-qualification-evidence.mjs';
 import { qualifyingProductionPilotEvidence } from './fixtures/production-pilot-evidence-fixture';
+import { windowsSystemEvidenceFixture } from './fixtures/windows-system-evidence-fixture';
 
 const repositoryRoot = process.cwd();
 const script = resolve(repositoryRoot, 'scripts', 'generate-release-manifest.mjs');
@@ -33,6 +36,7 @@ function fixtureRoot(): string {
   roots.push(root);
   mkdirSync(resolve(root, 'release'));
   mkdirSync(resolve(root, 'validation', 'results'), { recursive: true });
+  mkdirSync(resolve(root, 'scripts', 'windows'), { recursive: true });
   writeFileSync(resolve(root, '.gitignore'), [
     '/release/',
     '/validation/results/',
@@ -42,10 +46,14 @@ function fixtureRoot(): string {
     ''
   ].join('\n'));
   writeFileSync(resolve(root, 'package.json'), JSON.stringify({ version: '9.8.7-alpha.1' }));
+  writeFileSync(
+    resolve(root, 'scripts', 'windows', 'qualify-windows-system.ps1'),
+    readFileSync(resolve(repositoryRoot, 'scripts', 'windows', 'qualify-windows-system.ps1'))
+  );
   runGit(root, ['init', '--initial-branch=main']);
   runGit(root, ['config', 'user.email', 'release@example.invalid']);
   runGit(root, ['config', 'user.name', 'Release Fixture']);
-  runGit(root, ['add', '.gitignore', 'package.json']);
+  runGit(root, ['add', '.gitignore', 'package.json', 'scripts/windows/qualify-windows-system.ps1']);
   runGit(root, ['commit', '-m', 'fixture']);
   writeFileSync(resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.exe'), 'installer');
   writeFileSync(resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip'), 'archive');
@@ -439,12 +447,25 @@ function writePackageSmokeEvidence(root: string, status: 'passed' | 'failed' = '
       archive: packageEvidence(archivePath)
     },
     checks: {
-      archiveLaunch: { status },
+      archiveLaunch: {
+        status,
+        app: {
+          isPackaged: true,
+          initialSetup: {
+            activeView: 'settings', initialSetupRequired: true, setupReady: false, checklistVisible: true
+          }
+        }
+      },
       installerInstall: { status },
       installedLaunch: {
         status,
         kind: 'installed',
-        app: { isPackaged: true },
+        app: {
+          isPackaged: true,
+          initialSetup: {
+            activeView: 'settings', initialSetupRequired: true, setupReady: false, checklistVisible: true
+          }
+        },
         lifecycle: { orderlyQuit: true },
         runtimeQualification: {
           schemaVersion: 1,
@@ -527,6 +548,85 @@ function writeQualifiedWindowsEvidence(root: string): void {
     artifacts: item.artifacts,
     evidence: item.externalEvidence
   })));
+  writeFileSync(statusPath, JSON.stringify(status));
+}
+
+function writeQualifiedWindowsSystemEvidence(root: string, qualifierOverride?: string): void {
+  const identity = gitIdentity(root);
+  const source = {
+    commit: identity.commit,
+    tree: identity.tree,
+    ref: 'refs/tags/v9.8.7-alpha.1',
+    repository: 'fixture/video',
+    workflowCommit: identity.commit,
+    runId: '1',
+    runAttempt: '1',
+    dirty: false
+  };
+  const qualifierSha256 = qualifierOverride ?? createHash('sha256').update(readFileSync(
+    resolve(root, 'scripts', 'windows', 'qualify-windows-system.ps1')
+  )).digest('hex');
+  const receipt = windowsSystemEvidenceFixture();
+  receipt.appVersion = '9.8.7-alpha.1';
+  receipt.source = source;
+  receipt.qualifierSha256 = qualifierSha256;
+  for (const observation of receipt.observations) {
+    (observation.artifacts as Record<string, unknown>).qualifierSha256 = qualifierSha256;
+    const installer = (observation.artifacts as Record<string, Record<string, unknown>>).installer!;
+    installer.name = 'VideoFactory-Desktop-9.8.7-alpha.1-x64.exe';
+  }
+  writeFileSync(resolve(root, WINDOWS_SYSTEM_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+  const admitted = writeWindowsSystemQualificationIndex({
+    root,
+    source,
+    now: new Date('2026-08-26T12:03:00.000Z')
+  });
+  const projection = {
+    index: admitted.index,
+    receipts: admitted.receipts.map(item => ({
+      kind: item.kind,
+      evidence: item.evidence,
+      qualifiedIds: item.qualifiedIds
+    })),
+    qualifiedIds: admitted.qualifiedIds
+  };
+  const qualifiedCases = admitted.qualifiedIds.map(id => ({
+    id,
+    classification: 'external',
+    result: 'passed_external_qualification',
+    artifacts: [EXTERNAL_QUALIFICATION_INDEX_PATH, WINDOWS_SYSTEM_RECEIPT_PATH],
+    externalEvidence: {
+      kind: 'windows_system',
+      index: admitted.index,
+      receipt: admitted.qualifiedById[id]!.evidence
+    }
+  }));
+  const summary = {
+    total: qualifiedCases.length + 1,
+    passedLocalValidation: 1,
+    qualifiedExternal: qualifiedCases.length,
+    externalPending: 0,
+    productionQualified: true
+  };
+
+  const acceptancePath = resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
+  const acceptance = JSON.parse(readFileSync(acceptancePath, 'utf8'));
+  acceptance.cases = [acceptance.cases[0], ...qualifiedCases];
+  acceptance.summary = summary;
+  acceptance.externalQualificationEvidence = projection;
+  writeFileSync(acceptancePath, JSON.stringify(acceptance));
+
+  const statusPath = resolve(root, 'VALIDATION_STATUS.json');
+  const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+  status.acceptance = { receipt: 'VALIDATION_ACCEPTANCE_RECEIPT.json', ...summary };
+  status.externalQualificationEvidence = projection;
+  status.externalQualification = qualifiedCases.map(item => ({
+    id: item.id,
+    status: 'qualified',
+    artifacts: item.artifacts,
+    evidence: item.externalEvidence
+  }));
+  status.production_ready = true;
   writeFileSync(statusPath, JSON.stringify(status));
 }
 
@@ -625,6 +725,31 @@ describe('release artifact provenance', () => {
     expect(manifest.validation.externalQualificationEvidence.receipts.map(
       (item: { kind: string }) => item.kind
     )).toEqual(['electron_performance', 'windows_package_runtime']);
+  });
+
+  it('packages a version- and qualifier-bound Windows system matrix', () => {
+    const root = fixtureRoot();
+    writeValidationEvidence(root);
+    writeQualifiedWindowsSystemEvidence(root);
+    expect(run(root).status).toBe(0);
+    expect(run(root, ['--verify']).status).toBe(0);
+    const manifest = JSON.parse(readFileSync(resolve(root, 'release', 'RELEASE_PROVENANCE.json'), 'utf8'));
+    expect(manifest.validation.externalQualificationEvidence.receipts).toEqual([
+      expect.objectContaining({ kind: 'windows_system' })
+    ]);
+    expect(manifest.artifacts.map((item: { name: string }) => item.name)).toEqual(expect.arrayContaining([
+      'EXTERNAL_WINDOWS_SYSTEM.json',
+      'QUALIFY_WINDOWS_SYSTEM.ps1'
+    ]));
+  });
+
+  it('rejects a Windows system matrix produced by different qualifier bytes', () => {
+    const root = fixtureRoot();
+    writeValidationEvidence(root);
+    writeQualifiedWindowsSystemEvidence(root, '1'.repeat(64));
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('different released qualifier script');
   });
 
   it('fails verification after a published artifact changes', () => {

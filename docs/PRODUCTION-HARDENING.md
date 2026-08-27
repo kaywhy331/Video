@@ -10,7 +10,7 @@ Schema upgrades now fail closed as one pending-migration transaction after an in
 
 ## P0 before production qualification
 
-- Run a clean Windows 10/11 install and first-run diagnostic on a machine without Node, Python, or developer tools. Hosted CI now exercises ZIP launch and silent NSIS install/launch/uninstall, but its preinstalled developer tooling means it is supporting evidence rather than this qualification.
+- Run the released Windows system qualifier across representative NVIDIA, Intel, and AMD Windows 10/11 x64 machines without Node, Python, Git, or other developer tools; include the real four-mode storage matrix. Hosted CI exercises ZIP launch and silent NSIS install/launch/uninstall, but its preinstalled tooling remains supporting evidence.
 - Run the canonical five-video representative pilot with real licensed footage and preserve its exact-source receipt for location grounding, rights, render QC, upload state, and human approval.
 - Rehearse live Envato account handoff, license naming, download watcher mapping, ambiguity handling, and certificate attachment.
 - Rehearse live YouTube OAuth, resumable interruption/restart, active-final/package changes during upload and processing, stale-private cleanup, thumbnail, timed captions, optional playlist, processing failure, keep-private, schedule, and publish/private-reset races.
@@ -23,13 +23,15 @@ The renderer gate has a canonical target runner. From a clean exact Windows x64 
 
 The production field gate also has a canonical runner. Close every app instance, use `npm run qualify:production-pilot -- --database="<videofactory.sqlite>" --list-candidates` to select five eligible records, then run `npm run qualify:production-pilot -- --mode=qualification --database="<videofactory.sqlite>" --projects="<id1>,<id2>,<id3>,<id4>,<id5>" --device-class="<non-sensitive hardware class>"` from a clean exact Windows x64 checkout outside CI. The runner holds a checkpointed database snapshot, checks schema 24 integrity and the real 26K catalog, requires five scheduler-created 4–6 minute projects across three destinations, and verifies live Tavily/LLM, real SAPI or HTTP TTS, Envato certificate-backed acquisition, selected source bytes, final manifests/captions/media probes, blocker-free active-final QC, current channel-bound YouTube processing, scheduling, and the complete operator audit projection. At least four projects may contain only acquisition and final-approval human actions. The receipt hashes private identities and filesystem artifacts rather than disclosing them. Only a fully passing receipt may qualify `E2E-001`, `E2E-002`, `E2E-005`, and `UX-001`; crash drills and system/hardware matrices stay independent.
 
+The system field gate is likewise canonical. Run the checksummed `QUALIFY_WINDOWS_SYSTEM.ps1` shipped in the release on non-CI NVIDIA, Intel, and AMD targets without developer commands, supplying a real read-only/missing/offline-NAS/low-space matrix on at least one target. The packaged app persists diagnostic, setup-route, and storage/database-integrity observations before the script uninstalls it. From a clean checkout of the exact released commit, `npm run qualify:windows-system` hashes and re-assesses three to ten raw observations, removes device labels and paths, and may qualify only `SYS-001`, `SYS-003`, and `SYS-004`. Release provenance requires the same app version and released qualifier hash. See [Windows system qualification](WINDOWS-SYSTEM-QUALIFICATION.md).
+
 ## Release engineering
 
 - Sign the Windows installer and define an update channel before broad distribution.
 - Add crash reporting only with an explicit privacy/redaction policy.
 - Validate Windows fixtures covering ProRes, H.264, H.265, alpha, variable frame rate, interlaced sources, rotation, and unusual color spaces.
 - Benchmark dashboard startup and project operations against the PRD data-size targets; production catalog search and worker/main-loop import now have checked-in 26K receipts.
-- Preserve the generated acceptance receipt, runtime/claims input manifests, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, any admitted production-pilot/performance attachments, the commit/tree- and artifact-bound packaged-Windows smoke receipt, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`. Do not commit generated root receipts as current source evidence.
+- Preserve the generated acceptance receipt, runtime/claims input manifests, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, released Windows system qualifier, any admitted production-pilot/performance/system attachments, the commit/tree- and artifact-bound packaged-Windows smoke receipt, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`. Do not commit generated root receipts as current source evidence.
 
 ## P1 after qualification
 

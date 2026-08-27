@@ -29,6 +29,7 @@
     "benchmark:catalog:responsiveness": "npm run build && vite-node --config vitest.config.ts scripts/benchmark-catalog-responsiveness.ts",
     "qualify:electron-performance": "npm run build && node scripts/run-electron-performance-qualification.mjs",
     "qualify:production-pilot": "node scripts/run-production-pilot-qualification.mjs",
+    "qualify:windows-system": "node scripts/run-windows-system-qualification.mjs",
     "qualify:index-windows-runtime": "node scripts/index-windows-runtime-qualification.mjs",
     "validate": "node scripts/run-validation.mjs --mode=development",
     "validate:release": "node scripts/run-validation.mjs --mode=release",

@@ -93,6 +93,7 @@ npm run doctor
 npm run benchmark:catalog
 npm run benchmark:catalog:responsiveness
 npm run qualify:production-pilot -- --database="<videofactory.sqlite>" --list-candidates
+npm run qualify:windows-system -- --observation="<nvidia.json>" --observation="<intel.json>" --observation="<amd.json>"
 npm run security:audit
 npm run security:sbom
 npm run package:win
@@ -107,15 +108,17 @@ On a clean exact Windows x64 checkout and representative operator hardware, `npm
 
 The five-video field gate has the same fail-closed path. Close the app, list eligible records with `npm run qualify:production-pilot -- --database="<videofactory.sqlite>" --list-candidates`, then, from the same clean exact Windows x64 checkout, run `npm run qualify:production-pilot -- --mode=qualification --database="<videofactory.sqlite>" --projects="<id1>,<id2>,<id3>,<id4>,<id5>" --device-class="<non-sensitive hardware class>"`. The collector checkpoints and integrity-checks schema 24, requires a real 26K catalog and five scheduler-created 4–6 minute projects across three destinations, verifies live Tavily/LLM and Windows SAPI or HTTP TTS records, re-hashes every selected license certificate/source plus every narration/caption/thumbnail/manifest/final artifact, independently probes final media, verifies current YouTube publication state, and hashes the operator audit projection. A passing receipt can qualify only `E2E-001`, `E2E-002`, `E2E-005`, and `UX-001`; project, destination, channel, video, and filesystem identities are not written to the receipt. Run `npm run validate:release` without changing HEAD or the tree to admit it into the release evidence index.
 
+The clean-install, hardware-encoder, and storage-failure gates use the released `QUALIFY_WINDOWS_SYSTEM.ps1` on three non-CI Windows x64 machines without developer tooling. The matrix requires representative NVIDIA NVENC, Intel Quick Sync, and AMD AMF devices, usable software H.264 fallback on each, and real read-only, missing, offline-NAS, and low-space paths. Aggregate the three raw observations from the exact released commit with `npm run qualify:windows-system`; only the privacy-reduced exact-source receipt enters the shared external index. See [Windows system qualification](docs/WINDOWS-SYSTEM-QUALIFICATION.md) for the target setup and commands.
+
 `npm run benchmark:catalog` generates a real 26,000-row XLSX, runs production catalog preview/commit, reopens the database, executes 25 rounds of five common paginated searches, checks integrity and row counts, and writes `VALIDATION_CATALOG_PERFORMANCE.json`. The current receipt is a service-level benchmark, not an Electron UI responsiveness qualification, and takes roughly ten minutes on the recorded i5-6300U environment.
 
 `npm run benchmark:catalog:responsiveness` builds the production worker, streams a 26,000-row Sheets-style snapshot through it, previews and atomically commits a real XLSX, exercises cancellation/managed cleanup, measures the main-loop heartbeat and `catalog:ping`, checks row count and SQLite integrity, and writes `VALIDATION_CATALOG_RESPONSIVENESS.json`. It qualifies the main-process service boundary, not renderer startup, scrolling, memory, or concurrent-render behavior.
 
 ## First-run walkthrough
 
-1. In Library, import the footage XLSX or CSV and commit the detected mapping.
-2. In Settings, configure storage, backup policy, narrator and pronunciation dictionary, optional Tavily research and LLM, semantic vision provider, and YouTube OAuth. Confirm each custom provider endpoint after reviewing its canonical origin and data categories; loopback-local mode never sends a reusable API key. Save the OAuth client first, choose **Connect YouTube**, finish the browser flow, verify the exact channel title/ID, and explicitly confirm that destination.
-3. Run diagnostics.
+1. A fresh workspace opens the required Settings checklist. Configure storage and run diagnostics until SQLite, free-space, FFmpeg encode, and FFprobe checks pass.
+2. Import and commit at least 26,000 validated footage rows, then configure available non-fixture research, language, vision, and narration providers.
+3. Save the OAuth client, choose **Connect YouTube**, finish the browser flow, verify the exact channel title/ID, and explicitly confirm that destination. When all five live prerequisites are ready, continue to Autopilot.
 4. Start an Autopilot project.
 5. In Downloads, use the displayed Envato project name, license/download each requested asset, and record its license.
 6. Let the watcher ingest, analyze, and verify stable files.

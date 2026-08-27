@@ -139,10 +139,16 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 
 ## Packaged Windows smoke and lifecycle gate
 
-- hosted Windows CI launches the extracted ZIP and installed NSIS application through the packaged executable, waits for the real dashboard, confirms packaged mode and isolated database initialization, and requests an orderly Electron quit;
+- hosted Windows CI launches the extracted ZIP and installed NSIS application through the packaged executable, confirms the pristine workspace opens the required first-run setup checklist, verifies packaged mode and isolated database initialization, and requests an orderly Electron quit;
 - the installed-app run starts a real 26K catalog worker, observes Electron's suspend blocker, closes the main window to the tray, proves IPC work continues while hidden, then records blocker release and safe shutdown from the packaged main process;
 - the same bounded run performs silent installation and uninstallation in an isolated path, verifies removal, and writes `WINDOWS_PACKAGE_SMOKE.json` with exact commit, version, runner, package hash, lifecycle, and cleanup evidence;
 - release provenance fails closed when that receipt is missing, failed, stale, incomplete, or does not match the installer and archive bytes. This supports packaging confidence but does not close the clean-machine qualification gate.
+
+## Windows system field qualification
+
+Fresh workspaces now route to a non-dismissible Settings checklist derived from authoritative bootstrap facts for storage/database integrity, real FFmpeg encode/probe, the full 26K catalog, non-fixture generation providers, and an authorized uploader. The packaged smoke records that route, while the separate released `QUALIFY_WINDOWS_SYSTEM.ps1` runner is restricted to non-CI Windows x64 machines with no developer commands. It verifies the complete released checksum set, silently installs and uninstalls the app, records persisted encoder diagnostics and renderer setup state, and can exercise real read-only, missing, offline-NAS, and low-space paths without changing SQLite.
+
+`npm run qualify:windows-system` aggregates three to ten raw observations, requiring distinct representative NVIDIA, Intel, and AMD devices plus software H.264 fallback on every device. It independently reclassifies the four storage failures, hashes device labels and paths, binds the aggregate to the exact released commit/tree, version, and qualifier bytes, and adds only `SYS-001`, `SYS-003`, and `SYS-004` to the shared external evidence index. Acceptance and release provenance re-assess the aggregate; release assets always include the checksummed qualifier and, when present, the exact receipt as `EXTERNAL_WINDOWS_SYSTEM.json`. Detailed operator instructions are in [Windows system qualification](WINDOWS-SYSTEM-QUALIFICATION.md). No field receipt is checked into source, so these gates remain pending until the representative runs are performed.
 
 ## Autonomous production supporting rehearsal
 
@@ -161,11 +167,11 @@ Qualification mode is restricted to a clean exact Windows x64 checkout on repres
 - development and release validation are explicitly qualified; release mode admits only a clean exact Git HEAD/tree and rechecks source plus runtime/claims inputs after all stages;
 - generated root status/acceptance receipts and `validation/results/*.json` are ignored artifacts rather than tracked claims about a later checkout;
 - representative external receipts and `validation/external-qualification/index.json` are also ignored, excluded from runtime/claims digests, and admitted only through exact-source size/hash and receipt-specific verification;
-- production-pilot, renderer-performance, and packaged-Windows receipt kinds can coexist in that one index; Windows packaging preserves every exact-head Linux attachment before adding its own runtime receipt;
+- production-pilot, renderer-performance, Windows-system, and packaged-Windows receipt kinds can coexist in that one index; Windows packaging preserves every exact-head Linux attachment before adding its own runtime receipt;
 - runtime and human release-claim inputs have separate deterministic per-file manifests without hashing their own generated provenance;
 - claim validation checks exact tags, commits, workflow runs, published-asset counts, signing/readiness state, and external-gate counts against the immutable historical index across every tracked claim document, while Git checks the recorded tag, trees, ancestry, and single-change index history;
 - Linux validation and Windows packaging retain the exact `${{ github.sha }}` artifact handoff, while manifest generation and verification reject dirty, development, stale commit/tree, or mismatched-input evidence;
-- the Windows job adds its hashed package-runtime receipt to the exact-source external index and reruns acceptance against the downloaded Linux reports, allowing only `SYS-005` and `SYS-006` to qualify while `SYS-001` remains a clean-machine gate;
+- the Windows job preserves any exact-source field-system matrix, adds its hashed package-runtime receipt to the same external index, and reruns acceptance against the downloaded Linux reports; hosted CI can qualify only `SYS-005` and `SYS-006`, while `SYS-001`, `SYS-003`, and `SYS-004` require the non-CI released qualifier;
 - the tracked [alpha.7 historical evidence index](release-evidence/v0.1.0-alpha.7.json) records the immutable tag/release, workflow/job chain, transient Actions artifacts, and all published assets without claiming to validate the current checkout.
 
 ## Measured catalog performance and remaining UI boundary

@@ -53,6 +53,7 @@ import {
   ProjectExportSchema,
   ProjectRebuildSchema,
   ProviderEndpointActionSchema,
+  RendererReadyObservationSchema,
   RenderRequestSchema,
   SecretPatchSchema,
   SemanticVerificationRetrySchema,
@@ -70,7 +71,7 @@ import {
   YouTubeAuthorizationCancellationSchema,
   YouTubeAuthorizationConfirmationSchema
 } from '@shared/contracts';
-import type { SettingsPatch } from '@shared/types';
+import type { RendererReadyObservation, SettingsPatch } from '@shared/types';
 import { assertAllowedExternalUrl, assertAuthorizedIpcSender, pathIsInside } from './security-policy';
 import { is } from '@electron-toolkit/utils';
 import { canTransitionProject } from '@shared/state-machine';
@@ -105,7 +106,14 @@ function registerHandle(
   });
 }
 
-export function registerIpc(context: AppContext, window: () => BrowserWindow | null): void {
+export function registerIpc(
+  context: AppContext,
+  window: () => BrowserWindow | null,
+  hooks: {
+    rendererReady?: (observation: RendererReadyObservation) => void;
+    startBackgroundServices?: boolean;
+  } = {}
+): void {
   const handle = (
     channel: string,
     callback: (event: Electron.IpcMainInvokeEvent, payload: unknown) => unknown | Promise<unknown>
@@ -114,7 +122,11 @@ export function registerIpc(context: AppContext, window: () => BrowserWindow | n
     context.catalogImports.status() ?? context.expansion.googleSheetOperationStatus();
 
   handle(IPC.bootstrap, () => context.bootstrap());
-  handle(IPC.rendererReady, () => context.startBackgroundServices());
+  handle(IPC.rendererReady, async (_event, payload) => {
+    const observation = RendererReadyObservationSchema.parse(payload);
+    hooks.rendererReady?.(observation);
+    if (hooks.startBackgroundServices !== false) await context.startBackgroundServices();
+  });
   handle(IPC.diagnosticsRun, () => context.diagnostics.run());
   handle(IPC.backupCreate, () => context.backups.create());
   handle(IPC.backupList, () => context.backups.list());

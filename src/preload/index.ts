@@ -46,6 +46,7 @@ import type {
   ProjectSummary,
   ProviderEndpointId,
   ProviderEndpointState,
+  RendererReadyObservation,
   RevisionRequestRecord,
   RenderRecord,
   RestoreReport,
@@ -77,7 +78,8 @@ import type {
 const api = {
   app: {
     bootstrap: (): Promise<AppBootstrap> => ipcRenderer.invoke(IPC.bootstrap),
-    rendererReady: (): Promise<void> => ipcRenderer.invoke(IPC.rendererReady),
+    rendererReady: (observation: RendererReadyObservation): Promise<void> =>
+      ipcRenderer.invoke(IPC.rendererReady, observation),
     onProgress: (listener: (event: ProgressEvent) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, value: ProgressEvent): void => listener(value);
       ipcRenderer.on(IPC.progressEvent, handler);

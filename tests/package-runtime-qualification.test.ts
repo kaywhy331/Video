@@ -53,4 +53,28 @@ describe('packaged runtime qualification recorder', () => {
     expect(events.map(event => event.sequence)).toEqual([1, 2, 3]);
     expect(events.every(event => event.schemaVersion === PACKAGE_RUNTIME_QUALIFICATION_SCHEMA_VERSION)).toBe(true);
   });
+
+  it('records explicit system scope and renderer setup observations only for an opted-in package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'videofactory-system-recorder-'));
+    roots.push(root);
+    const recorder = new PackageRuntimeQualificationRecorder({
+      dataRoot: root,
+      isPackaged: true,
+      environmentFlag: '0',
+      systemEnvironmentFlag: '1'
+    });
+    recorder.recordRendererReady({
+      activeView: 'settings',
+      initialSetupRequired: true,
+      setupReady: false,
+      setupChecklistVisible: true
+    });
+    const events = readFileSync(recorder.path!, 'utf8')
+      .trim()
+      .split(/\r?\n/u)
+      .map(line => JSON.parse(line) as PackageRuntimeQualificationEvent);
+    expect(recorder.systemQualification).toBe(true);
+    expect(events[0]?.details).toEqual({ packaged: true, scope: 'windows_system' });
+    expect(events[1]?.event).toBe('renderer_ready');
+  });
 });

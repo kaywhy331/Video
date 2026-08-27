@@ -28,6 +28,8 @@ import {
   PRODUCTION_PILOT_RECEIPT_PATH,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+  WINDOWS_SYSTEM_RECEIPT_KIND,
+  WINDOWS_SYSTEM_RECEIPT_PATH,
   admitExternalQualificationEvidence
 } from './external-qualification-evidence.mjs';
 import {
@@ -52,6 +54,9 @@ const sbomPath = resolve(releaseDirectory, 'videofactory-sbom.cdx.json');
 const externalQualificationIndexPath = resolve(releaseDirectory, 'EXTERNAL_QUALIFICATION_INDEX.json');
 const electronPerformanceReceiptPath = resolve(releaseDirectory, 'EXTERNAL_ELECTRON_PERFORMANCE.json');
 const productionPilotReceiptPath = resolve(releaseDirectory, 'EXTERNAL_PRODUCTION_PILOT.json');
+const windowsSystemReceiptPath = resolve(releaseDirectory, 'EXTERNAL_WINDOWS_SYSTEM.json');
+const windowsSystemQualifierPath = resolve(releaseDirectory, 'QUALIFY_WINDOWS_SYSTEM.ps1');
+const windowsSystemQualifierSourcePath = resolve(root, 'scripts/windows/qualify-windows-system.ps1');
 const verify = process.argv.includes('--verify');
 const requirePackageSmoke = process.argv.includes('--require-package-smoke');
 
@@ -81,7 +86,7 @@ function relevantFiles() {
     .filter(entry => entry.isFile())
     .map(entry => resolve(releaseDirectory, entry.name))
     .filter(path => path !== manifestPath && path !== checksumsPath)
-    .filter(path => /\.(?:exe|zip|json)$/i.test(path))
+    .filter(path => /\.(?:exe|zip|json|ps1)$/i.test(path))
     .sort((left, right) => compareNames(basename(left), basename(right)));
 }
 
@@ -139,11 +144,16 @@ function copyAvailableValidationEvidence() {
     [resolve(root, 'validation', 'results', 'videofactory-sbom.cdx.json'), sbomPath],
     [resolve(root, EXTERNAL_QUALIFICATION_INDEX_PATH), externalQualificationIndexPath],
     [resolve(root, ELECTRON_PERFORMANCE_RECEIPT_PATH), electronPerformanceReceiptPath],
-    [resolve(root, PRODUCTION_PILOT_RECEIPT_PATH), productionPilotReceiptPath]
+    [resolve(root, PRODUCTION_PILOT_RECEIPT_PATH), productionPilotReceiptPath],
+    [resolve(root, WINDOWS_SYSTEM_RECEIPT_PATH), windowsSystemReceiptPath]
   ];
   for (const [source, destination] of copies) {
     if (!existsSync(destination) && existsSync(source)) copyFileSync(source, destination);
   }
+  if (!existsSync(windowsSystemQualifierSourcePath)) {
+    throw new Error('Tracked Windows system qualifier is missing.');
+  }
+  copyFileSync(windowsSystemQualifierSourcePath, windowsSystemQualifierPath);
 }
 
 function assertAcceptanceQualification(validation, acceptanceReceipt) {
@@ -237,6 +247,7 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
       existsSync(externalQualificationIndexPath)
       || existsSync(electronPerformanceReceiptPath)
       || existsSync(productionPilotReceiptPath)
+      || existsSync(windowsSystemReceiptPath)
     ) {
       throw new Error('Release contains unreferenced external qualification attachments.');
     }
@@ -266,6 +277,11 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
         canonicalPath: WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
         releasePath: smokePath,
         label: 'Windows package runtime receipt'
+      },
+      [WINDOWS_SYSTEM_RECEIPT_KIND]: {
+        canonicalPath: WINDOWS_SYSTEM_RECEIPT_PATH,
+        releasePath: windowsSystemReceiptPath,
+        label: 'Windows system matrix receipt'
       }
     };
     const referencedKinds = new Set();
@@ -290,6 +306,9 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
     if (existsSync(productionPilotReceiptPath) && !referencedKinds.has(PRODUCTION_PILOT_RECEIPT_KIND)) {
       throw new Error('Release contains an unreferenced production pilot attachment.');
     }
+    if (existsSync(windowsSystemReceiptPath) && !referencedKinds.has(WINDOWS_SYSTEM_RECEIPT_KIND)) {
+      throw new Error('Release contains an unreferenced Windows system attachment.');
+    }
     const admitted = admitExternalQualificationEvidence({
       root: temporaryRoot,
       source: validation.source,
@@ -298,6 +317,13 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
     const productionPilot = admitted.receipts.find(item => item.kind === PRODUCTION_PILOT_RECEIPT_KIND);
     if (productionPilot && productionPilot.assessment.appVersion !== validation.release) {
       throw new Error('Attached production pilot evidence does not match the package version.');
+    }
+    const windowsSystem = admitted.receipts.find(item => item.kind === WINDOWS_SYSTEM_RECEIPT_KIND);
+    if (windowsSystem && windowsSystem.assessment.appVersion !== validation.release) {
+      throw new Error('Attached Windows system evidence does not match the package version.');
+    }
+    if (windowsSystem && windowsSystem.assessment.qualifierSha256 !== sha256File(windowsSystemQualifierPath)) {
+      throw new Error('Attached Windows system evidence was produced by a different released qualifier script.');
     }
     const admittedProjection = {
       index: admitted.index,
@@ -501,6 +527,9 @@ function verifyManifest() {
   if (new Set(listedNames).size !== listedNames.length) {
     throw new Error('Release manifest contains duplicate artifact names.');
   }
+  if (!listedNames.includes('QUALIFY_WINDOWS_SYSTEM.ps1')) {
+    throw new Error('Release manifest does not contain the Windows system qualifier.');
+  }
   const currentNames = relevantFiles().map(path => basename(path));
   if ([...listedNames].sort(compareNames).join('\n') !== currentNames.join('\n')) {
     throw new Error('Release directory inventory does not exactly match the release manifest.');
@@ -553,6 +582,9 @@ if (tag && tag !== expectedTag) {
 }
 
 copyAvailableValidationEvidence();
+if (!existsSync(windowsSystemQualifierPath)) {
+  throw new Error('Release provenance requires QUALIFY_WINDOWS_SYSTEM.ps1.');
+}
 const admission = admitValidationSource({ root, qualification: 'release' });
 const evidence = loadAndValidateEvidence(packageJson, admission);
 if (requirePackageSmoke && !existsSync(smokePath)) {
