@@ -11,6 +11,7 @@ import {
 const evidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.7.json');
 const alpha8EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.8.json');
 const alpha9EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.9.json');
+const alpha10EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.10.json');
 
 function evidenceIndex(path = evidencePath): any {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -54,6 +55,21 @@ describe('historical release evidence', () => {
     expect(index.workflowRuns).toHaveLength(3);
     expect(index.workflowRuns[0].eventHeadCommit).toBe('0fdd1fd6e2369b6fca0da30c870e059ac671b517');
     expect(index.workflowRuns[0].artifactHandoffCommit).toBe('2642d7be1b045339cf9cb0cc4d026931188f68a0');
+    expect(index.releaseSource.candidateRelationship).toBe('equivalent_tree_squash_candidate');
+    expect(index.publication.assetCount).toBe(15);
+    expect(index.qualification.externalQualificationGatesPending).toBe(13);
+    expect(index.qualification.productionReady).toBe(false);
+  });
+
+  it('[REL-003] validates alpha.10 publication and hosted-package qualification facts', () => {
+    const index = evidenceIndex(alpha10EvidencePath);
+    expect(() => assertReleaseEvidenceIndex(index)).not.toThrow();
+    expect(index.validatesCurrentCheckout).toBe(false);
+    expect(index.releaseSource.commit).toBe('fe61a261efb3b9b166605e8f5313f6352170ae57');
+    expect(index.documentationReceipt.commit).toBe('17e4512648df372c0f8a0e7c65bce9ca6b9c7028');
+    expect(index.workflowRuns).toHaveLength(3);
+    expect(index.workflowRuns[0].eventHeadCommit).toBe('ab7f4d17cf776c5416a253b0945ba4a0d4d2851a');
+    expect(index.workflowRuns[0].artifactHandoffCommit).toBe('25d1c65d6a43fe8c4257b685a4a1bd390af1b753');
     expect(index.releaseSource.candidateRelationship).toBe('equivalent_tree_squash_candidate');
     expect(index.publication.assetCount).toBe(15);
     expect(index.qualification.externalQualificationGatesPending).toBe(13);
@@ -109,6 +125,12 @@ describe('historical release evidence', () => {
     expect(() => assertReleaseEvidenceGitBinding(alpha9, {
       root: process.cwd(),
       indexPath: alpha9EvidencePath
+    })).not.toThrow();
+
+    const alpha10 = evidenceIndex(alpha10EvidencePath);
+    expect(() => assertReleaseEvidenceGitBinding(alpha10, {
+      root: process.cwd(),
+      indexPath: alpha10EvidencePath
     })).not.toThrow();
 
     const moved = evidenceIndex();
