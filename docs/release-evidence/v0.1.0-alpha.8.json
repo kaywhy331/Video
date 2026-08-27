@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "historical_release",
+  "repository": "kaywhy331/Video",
+  "validatesCurrentCheckout": false,
+  "description": "Historical publication evidence for VideoFactory Desktop v0.1.0-alpha.8; this index does not validate commits after the named release commit.",
+  "releaseSource": {
+    "tag": "v0.1.0-alpha.8",
+    "commit": "583c165fe822717fb8a59a68c8115a360ab81de9",
+    "tree": "6b8e5ef97fc05e31892a567aa3b8f7a35b6c6183",
+    "candidateCommit": "1faac55fe08a7e05128747b42522adbc646bd67b",
+    "candidateTree": "6b8e5ef97fc05e31892a567aa3b8f7a35b6c6183",
+    "candidateRelationship": "equivalent_tree_squash_candidate"
+  },
+  "documentationReceipt": {
+    "commit": "abbe57b2f90e8b79c3d3959605fdcb282012885b",
+    "tree": "b2e297ec6753427e9f468846affedc76edc3281d",
+    "recordedAt": "2026-08-27T04:52:36Z",
+    "relationship": "later_docs_commit_describing_immutable_release"
+  },
+  "qualification": {
+    "prerelease": true,
+    "productionReady": false,
+    "authenticodeSigned": false,
+    "hostedWindowsPackageSmokePassed": true,
+    "cleanMachineQualified": false,
+    "externalQualificationGatesPending": 13
+  },
+  "workflowRuns": [
+    {
+      "purpose": "release_pull_request",
+      "id": 33037955413,
+      "runNumber": 91,
+      "runAttempt": 1,
+      "workflowId": 327071555,
+      "workflowPath": ".github/workflows/ci.yml",
+      "event": "pull_request",
+      "eventHeadCommit": "1faac55fe08a7e05128747b42522adbc646bd67b",
+      "artifactHandoffCommit": "b36773974b8977d814c65d757b57f36580657496",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-08-27T03:58:14Z",
+      "completedAt": "2026-08-27T04:08:07Z",
+      "url": "https://github.com/kaywhy331/Video/actions/runs/33037955413",
+      "jobs": [
+        {
+          "id": 98404820063,
+          "name": "validate",
+          "conclusion": "success",
+          "startedAt": "2026-08-27T03:58:16Z",
+          "completedAt": "2026-08-27T04:01:22Z",
+          "url": "https://github.com/kaywhy331/Video/actions/runs/33037955413/job/98404820063"
+        },
+        {
+          "id": 98405337325,
+          "name": "package-windows",
+          "conclusion": "success",
+          "startedAt": "2026-08-27T04:01:24Z",
+          "completedAt": "2026-08-27T04:08:06Z",
+          "url": "https://github.com/kaywhy331/Video/actions/runs/33037955413/job/98405337325"
+        }
+      ],
+      "artifacts": [
+        {
+          "id": 9632784851,
+          "name": "VideoFactory-Desktop-b36773974b8977d814c65d757b57f36580657496-validation-evidence",
+          "sizeBytes": 160524,
+          "digest": "sha256:77c832e9646f1c4d409202a99667e7fd24dd7b0242fc6e3d82ecde1af058e05d",
+          "createdAt": "2026-08-27T04:01:19Z",
+          "expiresAt": "2026-09-26T04:01:18Z"
+        },
+        {
+          "id": 9632915062,
+          "name": "VideoFactory-Desktop-b36773974b8977d814c65d757b57f36580657496-windows-unsigned",
+          "sizeBytes": 513918777,
+          "digest": "sha256:22f7688b93e205e602f3ad5cc6ee0a514d6fd1cd629ba57bef55ea0a4b93358b",
+          "createdAt": "2026-08-27T04:08:00Z",
+          "expiresAt": "2026-09-10T04:07:47Z"
+        }
+      ]
+    },
+    {
+      "purpose": "post_merge_main",
+      "id": 33038493683,
+      "runNumber": 92,
+      "runAttempt": 1,
+      "workflowId": 327071555,
+      "workflowPath": ".github/workflows/ci.yml",
+      "event": "push",
+      "eventHeadCommit": "583c165fe822717fb8a59a68c8115a360ab81de9",
+      "artifactHandoffCommit": "583c165fe822717fb8a59a68c8115a360ab81de9",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-08-27T04:08:35Z",
+      "completedAt": "2026-08-27T04:18:01Z",
+      "url": "https://github.com/kaywhy331/Video/actions/runs/33038493683",
+      "jobs": [
+        {
+          "id": 98406531324,
+          "name": "validate",
+          "conclusion": "success",
+          "startedAt": "2026-08-27T04:08:38Z",
+          "completedAt": "2026-08-27T04:11:44Z",
+          "url": "https://github.com/kaywhy331/Video/actions/runs/33038493683/job/98406531324"
+        },
+        {
+          "id": 98407036679,
+          "name": "package-windows",
+          "conclusion": "success",
+          "startedAt": "2026-08-27T04:11:46Z",
+          "completedAt": "2026-08-27T04:18:00Z",
+          "url": "https://github.com/kaywhy331/Video/actions/runs/33038493683/job/98407036679"
+        }
+      ],
+      "artifacts": [
+        {
+          "id": 9632986467,
+          "name": "VideoFactory-Desktop-583c165fe822717fb8a59a68c8115a360ab81de9-validation-evidence",
+          "sizeBytes": 159819,
+          "digest": "sha256:a5b9056ee068c7a66591b8da32f8b42038790a707cd4c06283ea8e55b68623ae",
+          "createdAt": "2026-08-27T04:11:39Z",
+          "expiresAt": "2026-09-26T04:11:38Z"
+        },
+        {
+          "id": 9633107617,
+          "name": "VideoFactory-Desktop-583c165fe822717fb8a59a68c8115a360ab81de9-windows-unsigned",
+          "sizeBytes": 513917865,
+          "digest": "sha256:807d99d7ae7f737a99fef2ffa0fa7850169440098a8d3a980b911231756bc3ea",
+          "createdAt": "2026-08-27T04:17:52Z",
+          "expiresAt": "2026-09-10T04:17:36Z"
+        }
+      ]
+    },
+    {
+      "purpose": "release_tag",
+      "id": 33039021203,
+      "runNumber": 93,
+      "runAttempt": 1,
+      "workflowId": 327071555,
+      "workflowPath": ".github/workflows/ci.yml",
+      "event": "push",
+      "eventHeadCommit": "583c165fe822717fb8a59a68c8115a360ab81de9",
+      "artifactHandoffCommit": "583c165fe822717fb8a59a68c8115a360ab81de9",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-08-27T04:18:37Z",
+      "completedAt": "2026-08-27T04:27:46Z",
+      "url": "https://github.com/kaywhy331/Video/actions/runs/33039021203",
+      "jobs": [
+        {
+          "id": 98408162342,
+          "name": "validate",
+          "conclusion": "success",
+          "startedAt": "2026-08-27T04:18:40Z",
+          "completedAt": "2026-08-27T04:21:45Z",
+          "url": "https://github.com/kaywhy331/Video/actions/runs/33039021203/job/98408162342"
+        },
+        {
+          "id": 98408656566,
+          "name": "package-windows",
+          "conclusion": "success",
+          "startedAt": "2026-08-27T04:21:47Z",
+          "completedAt": "2026-08-27T04:27:45Z",
+          "url": "https://github.com/kaywhy331/Video/actions/runs/33039021203/job/98408656566"
+        }
+      ],
+      "artifacts": [
+        {
+          "id": 9633180290,
+          "name": "VideoFactory-Desktop-583c165fe822717fb8a59a68c8115a360ab81de9-validation-evidence",
+          "sizeBytes": 159778,
+          "digest": "sha256:0321583e857964faff0817b8298dfb8d4ab97e502ff31790b05a72b98abc029f",
+          "createdAt": "2026-08-27T04:21:43Z",
+          "expiresAt": "2026-09-26T04:21:42Z"
+        },
+        {
+          "id": 9633288982,
+          "name": "VideoFactory-Desktop-583c165fe822717fb8a59a68c8115a360ab81de9-windows-unsigned",
+          "sizeBytes": 513917846,
+          "digest": "sha256:963d9405647217f1b5e3b1bc5fb1e3d1d2290c3b6f4ab9719b0a4ca97fcd3e22",
+          "createdAt": "2026-08-27T04:27:42Z",
+          "expiresAt": "2026-09-10T04:27:25Z"
+        }
+      ]
+    }
+  ],
+  "publication": {
+    "releaseId": 377565114,
+    "name": "VideoFactory Desktop v0.1.0-alpha.8",
+    "tag": "v0.1.0-alpha.8",
+    "targetCommitish": "583c165fe822717fb8a59a68c8115a360ab81de9",
+    "url": "https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.8",
+    "draft": false,
+    "prerelease": true,
+    "createdAt": "2026-08-27T04:18:31Z",
+    "publishedAt": "2026-08-27T04:40:56Z",
+    "assetCount": 15,
+    "assets": [
+      {
+        "id": 531743797,
+        "name": "CLAIMS_INPUTS.json",
+        "sizeBytes": 1910,
+        "digest": "sha256:4403fe5ff2413285f03ea8e09c0402301d6ddba9ff07b3acb5fb799ef6b13ae8",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/CLAIMS_INPUTS.json"
+      },
+      {
+        "id": 531743799,
+        "name": "EXTERNAL_QUALIFICATION_INDEX.json",
+        "sizeBytes": 742,
+        "digest": "sha256:3b595c62ae41d6d1a344075489866385a43e7c3929a6356218d3145becec0c27",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/EXTERNAL_QUALIFICATION_INDEX.json"
+      },
+      {
+        "id": 531743795,
+        "name": "PLAYWRIGHT_RESULTS.json",
+        "sizeBytes": 11404,
+        "digest": "sha256:82336f23189d93f1509e677b75c2d7ee09a2cd34f2400ee2a4327d5179eebf69",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/PLAYWRIGHT_RESULTS.json"
+      },
+      {
+        "id": 531745290,
+        "name": "QUALIFY_WINDOWS_SYSTEM.ps1",
+        "sizeBytes": 18108,
+        "digest": "sha256:296347d43ff15e4b1615fa100dcc61f9324e32166a6bea211824dcc0d23d254b",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/QUALIFY_WINDOWS_SYSTEM.ps1"
+      },
+      {
+        "id": 531743794,
+        "name": "RELEASE_PROVENANCE.json",
+        "sizeBytes": 28096,
+        "digest": "sha256:dd199a99246339e7a1c8045e5651a4fa9d9e0c757d7212f30e06ee4bd22a01c8",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/RELEASE_PROVENANCE.json"
+      },
+      {
+        "id": 531743807,
+        "name": "RUNTIME_INPUTS.json",
+        "sizeBytes": 64474,
+        "digest": "sha256:bdd9c3b33ef49e0aaee428e7d3b3208008f614317621f7948d9a21ef2634975f",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/RUNTIME_INPUTS.json"
+      },
+      {
+        "id": 531743814,
+        "name": "SHA256SUMS.txt",
+        "sizeBytes": 1315,
+        "digest": "sha256:8dfd643f0fece203afa0dfad09b230d2b70444c9b9c351bfa79852a7e2f6e7d4",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/SHA256SUMS.txt"
+      },
+      {
+        "id": 531743813,
+        "name": "VALIDATION_ACCEPTANCE_RECEIPT.json",
+        "sizeBytes": 178127,
+        "digest": "sha256:6bfee4cabd309f10a79d43ae143593652c7121660ba3778cd0ba91c61867dcf9",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/VALIDATION_ACCEPTANCE_RECEIPT.json"
+      },
+      {
+        "id": 531743815,
+        "name": "VALIDATION_PIPELINE.json",
+        "sizeBytes": 2965,
+        "digest": "sha256:40ee82852fd0bd3d70ab150ce81e1bec264a25040ba2aa0d4173ae6a443241eb",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/VALIDATION_PIPELINE.json"
+      },
+      {
+        "id": 531743817,
+        "name": "VALIDATION_STATUS.json",
+        "sizeBytes": 16338,
+        "digest": "sha256:4b7cf54ec391da95ce5fe323b15a40512d795e504976e9ac9f18e077dadb32a9",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/VALIDATION_STATUS.json"
+      },
+      {
+        "id": 531743828,
+        "name": "VideoFactory-Desktop-0.1.0-alpha.8-x64.exe",
+        "sizeBytes": 218523288,
+        "digest": "sha256:7d75f90a098977b5aaf24fe3fd3c479ee182adc08aaa7ce8bd9e0b796de5a0a8",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/VideoFactory-Desktop-0.1.0-alpha.8-x64.exe"
+      },
+      {
+        "id": 531743829,
+        "name": "VideoFactory-Desktop-0.1.0-alpha.8-x64.zip",
+        "sizeBytes": 295775790,
+        "digest": "sha256:c95db97f97ad335e436b85882a9c6460310ce338dc52478068c762cd17cad3ac",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/VideoFactory-Desktop-0.1.0-alpha.8-x64.zip"
+      },
+      {
+        "id": 531743837,
+        "name": "videofactory-sbom.cdx.json",
+        "sizeBytes": 718089,
+        "digest": "sha256:e87fdbab84a517012cf7b57c103740da61af62083e6db72364b920cead1cc412",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/videofactory-sbom.cdx.json"
+      },
+      {
+        "id": 531743826,
+        "name": "VITEST_RESULTS.json",
+        "sizeBytes": 165526,
+        "digest": "sha256:74d96a02238b53006c2053ec8b32f0370226645535f9306e375d71ba75cc6d44",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/VITEST_RESULTS.json"
+      },
+      {
+        "id": 531743834,
+        "name": "WINDOWS_PACKAGE_SMOKE.json",
+        "sizeBytes": 7353,
+        "digest": "sha256:d41b2af14a247a13ab929507d6e9865613d8d13e71c81b7d5f4c0b4cee10cef2",
+        "url": "https://github.com/kaywhy331/Video/releases/download/v0.1.0-alpha.8/WINDOWS_PACKAGE_SMOKE.json"
+      }
+    ]
+  }
+}

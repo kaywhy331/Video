@@ -9,9 +9,10 @@ import {
 } from '../scripts/release-evidence.mjs';
 
 const evidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.7.json');
+const alpha8EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.8.json');
 
-function evidenceIndex(): any {
-  return JSON.parse(readFileSync(evidencePath, 'utf8'));
+function evidenceIndex(path = evidencePath): any {
+  return JSON.parse(readFileSync(path, 'utf8'));
 }
 
 describe('historical release evidence', () => {
@@ -25,6 +26,21 @@ describe('historical release evidence', () => {
     expect(index.workflowRuns[0].eventHeadCommit).toBe('16ff2b49af89c8a6bec3e2e279041dc7b98cfce0');
     expect(index.workflowRuns[0].artifactHandoffCommit).toBe('b160047b552a3188f83389d317773779cf39662e');
     expect(index.publication.assetCount).toBe(11);
+    expect(index.qualification.productionReady).toBe(false);
+  });
+
+  it('[REL-003] validates alpha.8 publication and hosted-package qualification facts', () => {
+    const index = evidenceIndex(alpha8EvidencePath);
+    expect(() => assertReleaseEvidenceIndex(index)).not.toThrow();
+    expect(index.validatesCurrentCheckout).toBe(false);
+    expect(index.releaseSource.commit).toBe('583c165fe822717fb8a59a68c8115a360ab81de9');
+    expect(index.documentationReceipt.commit).toBe('abbe57b2f90e8b79c3d3959605fdcb282012885b');
+    expect(index.workflowRuns).toHaveLength(3);
+    expect(index.workflowRuns[0].eventHeadCommit).toBe('1faac55fe08a7e05128747b42522adbc646bd67b');
+    expect(index.workflowRuns[0].artifactHandoffCommit).toBe('b36773974b8977d814c65d757b57f36580657496');
+    expect(index.releaseSource.candidateRelationship).toBe('equivalent_tree_squash_candidate');
+    expect(index.publication.assetCount).toBe(15);
+    expect(index.qualification.externalQualificationGatesPending).toBe(13);
     expect(index.qualification.productionReady).toBe(false);
   });
 
@@ -44,6 +60,14 @@ describe('historical release evidence', () => {
     const handoff = evidenceIndex();
     handoff.workflowRuns[0].artifactHandoffCommit = 'a'.repeat(40);
     expect(() => assertReleaseEvidenceIndex(handoff)).toThrow('not keyed to its exact handoff commit');
+
+    const squashTree = evidenceIndex(alpha8EvidencePath);
+    squashTree.releaseSource.candidateTree = 'a'.repeat(40);
+    expect(() => assertReleaseEvidenceIndex(squashTree)).toThrow('does not record the exact release tree');
+
+    const unboundCandidate = evidenceIndex(alpha8EvidencePath);
+    unboundCandidate.workflowRuns[0].eventHeadCommit = 'a'.repeat(40);
+    expect(() => assertReleaseEvidenceIndex(unboundCandidate)).toThrow('not bound to exactly one successful release pull-request run');
   });
 
   it('[REL-004] rejects circular digest claims inside immutable release evidence', () => {
@@ -57,6 +81,12 @@ describe('historical release evidence', () => {
     expect(() => assertReleaseEvidenceGitBinding(index, {
       root: process.cwd(),
       indexPath: evidencePath
+    })).not.toThrow();
+
+    const alpha8 = evidenceIndex(alpha8EvidencePath);
+    expect(() => assertReleaseEvidenceGitBinding(alpha8, {
+      root: process.cwd(),
+      indexPath: alpha8EvidencePath
     })).not.toThrow();
 
     const moved = evidenceIndex();

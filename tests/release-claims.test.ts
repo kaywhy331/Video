@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -6,14 +6,17 @@ import {
   loadReleaseClaimDocuments
 } from '../scripts/release-claims.mjs';
 
-const evidencePath = 'docs/release-evidence/v0.1.0-alpha.7.json';
+const evidencePaths = readdirSync(resolve('docs', 'release-evidence'))
+  .filter(name => name.endsWith('.json'))
+  .sort()
+  .map(name => `docs/release-evidence/${name}`);
 
 function fixture() {
   return {
-    indexes: [{
-      path: evidencePath,
-      index: JSON.parse(readFileSync(resolve(evidencePath), 'utf8'))
-    }],
+    indexes: evidencePaths.map(path => ({
+      path,
+      index: JSON.parse(readFileSync(resolve(path), 'utf8'))
+    })),
     documents: loadReleaseClaimDocuments()
   };
 }
@@ -33,14 +36,14 @@ describe('machine-verifiable release claims', () => {
 
     expect(() => assertReleaseClaims(changedDocument(
       'README.md',
-      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.7',
-      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.8'
+      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.8',
+      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.9'
     ))).toThrow(/unknown release URL or tag/i);
 
     expect(() => assertReleaseClaims(changedDocument(
       'VALIDATION_REPORT.md',
       'for `v0.1.0-alpha.7` at the same merge commit',
-      'for `v0.1.0-alpha.8` at the same merge commit'
+      'for `v0.1.0-alpha.9` at the same merge commit'
     ))).toThrow(/unindexed release tag/i);
 
     expect(() => assertReleaseClaims(changedDocument(
@@ -75,9 +78,9 @@ describe('machine-verifiable release claims', () => {
 
     expect(() => assertReleaseClaims(changedDocument(
       'README.md',
-      '15 remain external qualification gates',
-      '14 remain external qualification gates'
-    ))).toThrow(/14 external gates.*15/i);
+      '13 remain external qualification gates',
+      '12 remain external qualification gates'
+    ))).toThrow(/12 external gates.*13/i);
   });
 
   it('[REL-006] requires a later documentation receipt that cannot imply a moved release tag', () => {
@@ -97,12 +100,12 @@ describe('machine-verifiable release claims', () => {
 
   it('[REL-005] keeps claim-free documents valid when later release indexes disagree', () => {
     const value = fixture();
-    const later = structuredClone(value.indexes[0]!);
-    later.path = 'docs/release-evidence/v0.1.0-alpha.8.json';
-    later.index.releaseSource.tag = 'v0.1.0-alpha.8';
-    later.index.publication.tag = 'v0.1.0-alpha.8';
-    later.index.publication.url = 'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.8';
-    later.index.publication.assetCount = 12;
+    const later = structuredClone(value.indexes.at(-1)!);
+    later.path = 'docs/release-evidence/v0.1.0-alpha.9.json';
+    later.index.releaseSource.tag = 'v0.1.0-alpha.9';
+    later.index.publication.tag = 'v0.1.0-alpha.9';
+    later.index.publication.url = 'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.9';
+    later.index.publication.assetCount += 1;
     later.index.publication.assets.push({
       ...later.index.publication.assets[0],
       id: 999999999,
@@ -116,10 +119,10 @@ describe('machine-verifiable release claims', () => {
     }
     value.indexes.push(later);
 
-    expect(() => assertReleaseClaims(value)).toThrow(/do not project historical evidence index.*alpha\.8/i);
+    expect(() => assertReleaseClaims(value)).toThrow(/do not project historical evidence index.*alpha\.9/i);
 
     value.documents['FUTURE-RELEASE.md'] =
-      'See the [future release evidence](docs/release-evidence/v0.1.0-alpha.8.json).';
+      'See the [future release evidence](docs/release-evidence/v0.1.0-alpha.9.json).';
     expect(() => assertReleaseClaims(value)).not.toThrow();
   });
 });
