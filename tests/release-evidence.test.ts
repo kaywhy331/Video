@@ -10,6 +10,7 @@ import {
 
 const evidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.7.json');
 const alpha8EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.8.json');
+const alpha9EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.9.json');
 
 function evidenceIndex(path = evidencePath): any {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -38,6 +39,21 @@ describe('historical release evidence', () => {
     expect(index.workflowRuns).toHaveLength(3);
     expect(index.workflowRuns[0].eventHeadCommit).toBe('1faac55fe08a7e05128747b42522adbc646bd67b');
     expect(index.workflowRuns[0].artifactHandoffCommit).toBe('b36773974b8977d814c65d757b57f36580657496');
+    expect(index.releaseSource.candidateRelationship).toBe('equivalent_tree_squash_candidate');
+    expect(index.publication.assetCount).toBe(15);
+    expect(index.qualification.externalQualificationGatesPending).toBe(13);
+    expect(index.qualification.productionReady).toBe(false);
+  });
+
+  it('[REL-003] validates alpha.9 publication and hosted-package qualification facts', () => {
+    const index = evidenceIndex(alpha9EvidencePath);
+    expect(() => assertReleaseEvidenceIndex(index)).not.toThrow();
+    expect(index.validatesCurrentCheckout).toBe(false);
+    expect(index.releaseSource.commit).toBe('af7c0ec613478185a2d3ade85382bdc2a22f8c91');
+    expect(index.documentationReceipt.commit).toBe('d858b2339238115c49c1af97d3bca5e3a86541df');
+    expect(index.workflowRuns).toHaveLength(3);
+    expect(index.workflowRuns[0].eventHeadCommit).toBe('0fdd1fd6e2369b6fca0da30c870e059ac671b517');
+    expect(index.workflowRuns[0].artifactHandoffCommit).toBe('2642d7be1b045339cf9cb0cc4d026931188f68a0');
     expect(index.releaseSource.candidateRelationship).toBe('equivalent_tree_squash_candidate');
     expect(index.publication.assetCount).toBe(15);
     expect(index.qualification.externalQualificationGatesPending).toBe(13);
@@ -87,6 +103,12 @@ describe('historical release evidence', () => {
     expect(() => assertReleaseEvidenceGitBinding(alpha8, {
       root: process.cwd(),
       indexPath: alpha8EvidencePath
+    })).not.toThrow();
+
+    const alpha9 = evidenceIndex(alpha9EvidencePath);
+    expect(() => assertReleaseEvidenceGitBinding(alpha9, {
+      root: process.cwd(),
+      indexPath: alpha9EvidencePath
     })).not.toThrow();
 
     const moved = evidenceIndex();
