@@ -24,6 +24,16 @@ export function assertReleaseEvidenceIndex(index, label = 'Release evidence inde
   if (typeof releaseSource?.tag !== 'string' || !releaseSource.tag.startsWith('v')) {
     throw new Error(`${label} has an invalid release tag.`);
   }
+  const candidateRelationship = releaseSource.candidateRelationship ?? 'ancestor';
+  if (!['ancestor', 'equivalent_tree_squash_candidate'].includes(candidateRelationship)) {
+    throw new Error(`${label} has an unsupported candidate relationship.`);
+  }
+  if (
+    candidateRelationship === 'equivalent_tree_squash_candidate'
+    && releaseSource.candidateTree !== releaseSource.tree
+  ) {
+    throw new Error(`${label} squash candidate does not record the exact release tree.`);
+  }
 
   const documentation = index.documentationReceipt;
   assertGitObjectId(documentation?.commit, `${label} documentation receipt commit`);
@@ -89,6 +99,14 @@ export function assertReleaseEvidenceIndex(index, label = 'Release evidence inde
       assertTimestamp(artifact.expiresAt, `${label} workflow artifact expiration`);
     });
   }
+  const candidateRuns = index.workflowRuns.filter(run =>
+    run.purpose === 'release_pull_request'
+    && run.event === 'pull_request'
+    && run.eventHeadCommit === releaseSource.candidateCommit
+  );
+  if (candidateRuns.length !== 1) {
+    throw new Error(`${label} candidate commit is not bound to exactly one successful release pull-request run.`);
+  }
 
   const publication = index.publication;
   if (
@@ -141,7 +159,13 @@ export function assertReleaseEvidenceGitBinding(
   assertGitTree(root, index.releaseSource.commit, index.releaseSource.tree, `${label} release source`);
   assertGitTree(root, index.releaseSource.candidateCommit, index.releaseSource.candidateTree, `${label} candidate source`);
   assertGitTree(root, index.documentationReceipt.commit, index.documentationReceipt.tree, `${label} documentation receipt`);
-  assertAncestor(root, index.releaseSource.candidateCommit, index.releaseSource.commit, `${label} candidate is not in the release history.`);
+  if (index.releaseSource.candidateRelationship === 'equivalent_tree_squash_candidate') {
+    if (isAncestor(root, index.releaseSource.candidateCommit, index.releaseSource.commit)) {
+      throw new Error(`${label} records a squash candidate that is already in the release history.`);
+    }
+  } else {
+    assertAncestor(root, index.releaseSource.candidateCommit, index.releaseSource.commit, `${label} candidate is not in the release history.`);
+  }
   assertAncestor(root, index.releaseSource.commit, index.documentationReceipt.commit, `${label} documentation receipt does not descend from the release.`);
 
   const history = git(root, ['log', '--follow', '--format=%H', '--', normalizedPath], label)
@@ -167,11 +191,15 @@ function assertGitTree(root, commit, expectedTree, label) {
 }
 
 function assertAncestor(root, ancestor, descendant, message) {
+  if (!isAncestor(root, ancestor, descendant)) throw new Error(message);
+}
+
+function isAncestor(root, ancestor, descendant) {
   const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], {
     cwd: root,
     encoding: 'utf8'
   });
-  if (result.status !== 0) throw new Error(message);
+  return result.status === 0;
 }
 
 function git(root, args, label, trim = true) {
