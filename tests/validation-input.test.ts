@@ -125,6 +125,16 @@ describe('validation input digests and generated evidence lifecycle', () => {
     expect(workflow).toContain('VideoFactory-Desktop-${{ github.sha }}-windows-performance-supporting');
   });
 
+  it('launches the performance Playwright CLI directly through Node on every platform', () => {
+    const runner = readFileSync(
+      resolve(repositoryRoot, 'scripts', 'run-electron-performance-qualification.mjs'),
+      'utf8'
+    );
+    expect(runner).toContain("resolve('node_modules', 'playwright', 'cli.js')");
+    expect(runner).toContain('spawnSync(process.execPath, playwrightArgs');
+    expect(runner).not.toContain('npx.cmd');
+  });
+
   it('[REL-003] pins raw validation input bytes to LF across Linux and Windows checkouts', () => {
     expect(readFileSync(resolve(repositoryRoot, '.gitattributes'), 'utf8')).toBe('* text=auto eol=lf\n');
 

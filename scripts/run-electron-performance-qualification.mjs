@@ -59,8 +59,11 @@ const admission = admitValidationSource({
 mkdirSync(dirname(output), { recursive: true });
 rmSync(output, { force: true });
 
-const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const playwrightArgs = ['playwright', 'test', '--config=playwright.performance.config.ts'];
+const playwrightCli = resolve('node_modules', 'playwright', 'cli.js');
+if (!existsSync(playwrightCli)) {
+  throw new Error('The local Playwright CLI is unavailable. Run npm ci before performance qualification.');
+}
+const playwrightArgs = [playwrightCli, 'test', '--config=playwright.performance.config.ts'];
 const environment = {
   ...process.env,
   VIDEOFACTORY_PERFORMANCE_MODE: mode,
@@ -71,8 +74,8 @@ const environment = {
   VIDEOFACTORY_PERFORMANCE_CI: ci ? 'true' : 'false'
 };
 const result = process.platform === 'linux'
-  ? spawnSync('xvfb-run', ['-a', command, ...playwrightArgs], { stdio: 'inherit', env: environment })
-  : spawnSync(command, playwrightArgs, { stdio: 'inherit', env: environment });
+  ? spawnSync('xvfb-run', ['-a', process.execPath, ...playwrightArgs], { stdio: 'inherit', env: environment })
+  : spawnSync(process.execPath, playwrightArgs, { stdio: 'inherit', env: environment });
 
 if (result.error) throw result.error;
 assertValidationSourceStable(admission);
