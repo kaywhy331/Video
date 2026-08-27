@@ -1,4 +1,4 @@
-export const ELECTRON_PERFORMANCE_SCHEMA_VERSION = 1;
+export const ELECTRON_PERFORMANCE_SCHEMA_VERSION = 2;
 export const ELECTRON_PERFORMANCE_FFMPEG_RESOURCE_POLICY = 'interactive-reserve-v1';
 export const ELECTRON_PERFORMANCE_GATE_IDS = Object.freeze([
   'CAT-001',
@@ -83,6 +83,10 @@ export function assessElectronPerformanceEvidence(document) {
   const previewNavigationP95Ms = percentile(requiredSamples(importRun.previewNavigationSamplesMs, 3, 'preview navigation samples'), 0.95);
   const commitNavigationP95Ms = percentile(requiredSamples(importRun.commitNavigationSamplesMs, 3, 'commit navigation samples'), 0.95);
 
+  if (startup.warmupCompleted !== true) {
+    throw new Error('Startup evidence must record a completed warm-up launch before the measured launch.');
+  }
+  const warmupUsableMs = nonNegativeNumber(startup.warmupUsableMs, 'startup warmupUsableMs');
   const startupUsableMs = nonNegativeNumber(startup.usableMs, 'startup usableMs');
   const electronLaunchMs = nonNegativeNumber(startup.electronLaunchMs, 'startup electronLaunchMs');
   const rendererReadyMs = nonNegativeNumber(startup.rendererReadyMs, 'startup rendererReadyMs');
@@ -188,6 +192,7 @@ export function assessElectronPerformanceEvidence(document) {
       commitHeartbeatP99Ms,
       previewNavigationP95Ms,
       commitNavigationP95Ms,
+      warmupUsableMs: rounded(warmupUsableMs),
       startupUsableMs: rounded(startupUsableMs),
       electronLaunchMs: rounded(electronLaunchMs),
       rendererReadyMs: rounded(rendererReadyMs),

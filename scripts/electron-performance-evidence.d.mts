@@ -4,7 +4,7 @@ export type ElectronPerformanceMode = 'supporting' | 'qualification';
 export type ElectronPerformanceGateId = 'CAT-001' | 'CAT-009' | 'PERF-001' | 'PERF-002' | 'PERF-003';
 
 export interface ElectronPerformanceEvidenceInput {
-  schemaVersion: 1;
+  schemaVersion: 2;
   generatedAt: string;
   harness: 'videofactory-electron-performance';
   mode: ElectronPerformanceMode;
@@ -43,6 +43,8 @@ export interface ElectronPerformanceEvidenceInput {
       commitNavigationSamplesMs: number[];
     };
     startup: {
+      warmupCompleted: true;
+      warmupUsableMs: number;
       usableMs: number;
       electronLaunchMs: number;
       rendererReadyMs: number;
@@ -85,7 +87,7 @@ export interface ElectronPerformanceEvidence extends ElectronPerformanceEvidence
   externalQualificationPassed: boolean;
 }
 
-export const ELECTRON_PERFORMANCE_SCHEMA_VERSION: 1;
+export const ELECTRON_PERFORMANCE_SCHEMA_VERSION: 2;
 export const ELECTRON_PERFORMANCE_FFMPEG_RESOURCE_POLICY: 'interactive-reserve-v1';
 export const ELECTRON_PERFORMANCE_GATE_IDS: readonly ElectronPerformanceGateId[];
 export const ELECTRON_PERFORMANCE_THRESHOLDS: Readonly<{

@@ -38,6 +38,10 @@ interface WorkerMessage {
   error?: { name?: string; message?: string; stack?: string };
 }
 
+type TerminalWorkerMessage =
+  | { type: 'result'; result: unknown }
+  | { type: 'error'; error: Error };
+
 interface ActiveOperation {
   status: CatalogImportOperationStatus;
   worker: Worker;
@@ -143,6 +147,7 @@ export class CatalogImportWorkerService {
 
     return new Promise((resolve, reject) => {
       let settled = false;
+      let terminalMessage: TerminalWorkerMessage | null = null;
       const finish = (callback: () => void): void => {
         if (settled) return;
         settled = true;
@@ -174,26 +179,36 @@ export class CatalogImportWorkerService {
           return;
         }
         if (message.type === 'result') {
-          this.emitProgress({
-            jobId: operationId,
-            projectId: null,
-            type: 'catalog_import',
-            progress: 1,
-            phase: `${operation}_complete`,
-            message: `Catalog ${operation} completed`
-          });
-          finish(() => resolve(message.result));
+          terminalMessage = { type: 'result', result: message.result };
         }
         if (message.type === 'error') {
           const error = new Error(message.error?.message ?? 'Catalog import worker failed.');
           error.name = message.error?.name ?? 'Error';
           if (message.error?.stack) error.stack = message.error.stack;
-          fail(error);
+          terminalMessage = { type: 'error', error };
         }
       });
       worker.once('error', fail);
       worker.once('exit', code => {
-        if (!settled) fail(new Error(`Catalog import worker exited before returning a result (${code}).`));
+        if (settled) return;
+        if (code !== 0 || !terminalMessage) {
+          fail(new Error(`Catalog import worker exited before returning a result (${code}).`));
+          return;
+        }
+        if (terminalMessage.type === 'error') {
+          fail(terminalMessage.error);
+          return;
+        }
+        this.emitProgress({
+          jobId: operationId,
+          projectId: null,
+          type: 'catalog_import',
+          progress: 1,
+          phase: `${operation}_complete`,
+          message: `Catalog ${operation} completed`
+        });
+        const result = terminalMessage.result;
+        finish(() => resolve(result));
       });
       if (rows) {
         void this.streamRows(worker, rows, cancelFlag).catch(error => {

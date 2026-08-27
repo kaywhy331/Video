@@ -120,6 +120,9 @@ describe('validation input digests and generated evidence lifecycle', () => {
     expect(workflow).toContain("$pipeline.source.commit -ne '${{ github.sha }}'");
     expect(workflow).toContain('validation/results/runtime-input.json');
     expect(workflow).toContain('validation/results/claims-input.json');
+    expect(workflow).toContain('--mode=supporting --rows=26000');
+    expect(workflow).toContain('electron-performance-hosted-windows.json');
+    expect(workflow).toContain('VideoFactory-Desktop-${{ github.sha }}-windows-performance-supporting');
   });
 
   it('[REL-003] pins raw validation input bytes to LF across Linux and Windows checkouts', () => {

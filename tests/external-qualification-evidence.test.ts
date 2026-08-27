@@ -40,7 +40,7 @@ afterEach(() => {
 function evidence(overrides: Partial<ElectronPerformanceEvidenceInput> = {}): ElectronPerformanceEvidenceInput {
   const fast = [20, 22, 24, 26, 28, 30, 32, 34, 36, 38];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: '2026-08-26T12:00:00.000Z',
     harness: 'videofactory-electron-performance',
     mode: 'qualification',
@@ -59,7 +59,10 @@ function evidence(overrides: Partial<ElectronPerformanceEvidenceInput> = {}): El
         previewHeartbeatGapsMs: fast, commitHeartbeatGapsMs: fast,
         previewNavigationSamplesMs: fast, commitNavigationSamplesMs: fast
       },
-      startup: { usableMs: 1_900, electronLaunchMs: 1_000, rendererReadyMs: 900 },
+      startup: {
+        warmupCompleted: true, warmupUsableMs: 2_100,
+        usableMs: 1_900, electronLaunchMs: 1_000, rendererReadyMs: 900
+      },
       catalog: {
         totalRows: 26_000, domRows: 50, searchSamplesMs: fast,
         uiInteractionSamplesMs: fast, scrollFrameSamplesMs: fast,

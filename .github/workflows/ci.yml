@@ -132,6 +132,22 @@ jobs:
             Start-Sleep -Seconds $delaySeconds
           }
 
+      - name: Exercise full hosted Windows renderer performance
+        shell: pwsh
+        run: node scripts/run-electron-performance-qualification.mjs --mode=supporting --rows=26000 --device-class="github-hosted-windows-x64" --output=validation/results/electron-performance-hosted-windows.json
+
+      - name: Upload hosted Windows performance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: VideoFactory-Desktop-${{ github.sha }}-windows-performance-supporting
+          path: |
+            validation/results/electron-performance-hosted-windows.json
+            validation/results/electron-performance-playwright.json
+            test-results/electron-performance/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Smoke test packaged Windows artifacts
         shell: pwsh
         run: ./scripts/windows/test-packaged-app.ps1

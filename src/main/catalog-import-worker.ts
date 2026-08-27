@@ -161,20 +161,41 @@ const catalog = new CatalogService(database, new PlaceService(database), {
   }
 });
 
-void execute().then(result => {
-  port.postMessage({ type: 'result', result });
-}).catch(error => {
-  if (input.operation === 'stage' && stageOutputOwned && existsSync(input.request.filePath)) {
-    unlinkSync(input.request.filePath);
-  }
-  port.postMessage({
+function errorMessage(error: unknown): { type: 'error'; error: { name: string; message: string; stack?: string } } {
+  return {
     type: 'error',
     error: {
       name: error instanceof Error ? error.name : 'Error',
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     }
-  });
-}).finally(() => {
-  database.close();
-});
+  };
+}
+
+void (async () => {
+  let terminalMessage: { type: 'result'; result: unknown } | ReturnType<typeof errorMessage>;
+  try {
+    terminalMessage = { type: 'result', result: await execute() };
+  } catch (error) {
+    let terminalError = error;
+    if (input.operation === 'stage' && stageOutputOwned && existsSync(input.request.filePath)) {
+      try {
+        unlinkSync(input.request.filePath);
+      } catch (cleanupError) {
+        terminalError = new AggregateError(
+          [error, cleanupError],
+          'Catalog staging failed and its temporary workbook could not be removed.'
+        );
+      }
+    }
+    terminalMessage = errorMessage(terminalError);
+  }
+
+  try {
+    database.close();
+  } catch (error) {
+    terminalMessage = errorMessage(error);
+  }
+  port.postMessage(terminalMessage);
+  port.close();
+})();
