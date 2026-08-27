@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Notification } from 'electron';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { statfsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type {
   AppSettings,
   AppBootstrap,
@@ -541,8 +541,27 @@ export class AppContext {
         completedRestore,
         projects: reports.map(report => ({ projectId: report.projectId, status: report.status }))
       });
+      this.backups.recordCompletedRestoreRecovery(completedRestore, reports);
       BackupService.acknowledgeCompletedRestore(this.settingsValue.databasePath);
     }
+    const runtimeStartedAt = new Date().toISOString();
+    this.db.raw.prepare(`
+      INSERT INTO audit_log(
+        action, actor, entity_type, entity_id, after_json, metadata_json, created_at
+      ) VALUES('application.runtime_started', 'system', 'application', ?, ?, ?, ?)
+    `).run(
+      app.getVersion(),
+      JSON.stringify({
+        packaged: app.isPackaged,
+        appVersion: app.getVersion(),
+        processId: process.pid,
+        executablePathSha256: createHash('sha256')
+          .update(resolve(process.execPath).toLowerCase())
+          .digest('hex')
+      }),
+      JSON.stringify({ trigger: 'application_start' }),
+      runtimeStartedAt
+    );
     await this.watcher.start();
     const staleDerivativeCount = this.media.staleDerivativeCount();
     if (!staleDerivativeCount) await this.media.recoverPendingSemanticAlternates();

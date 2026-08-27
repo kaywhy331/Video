@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -13,12 +13,18 @@ import {
   writeFileSync
 } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
-import type { AppSettings, BackupRecord, RestoreReport } from '@shared/types';
+import type { AppSettings, BackupRecord, DerivativeRebuildReport, RestoreReport } from '@shared/types';
 import type { AppDatabase } from '../database/database';
 import { SqliteConnection } from '../database/database';
 
 const DEFAULT_RETENTION = { daily: 7, weekly: 4, monthly: 6 } as const;
 type BackupCadence = keyof typeof DEFAULT_RETENTION;
+type CompletedRestore = {
+  restoredAt: string;
+  safetyPath: string;
+  sourceChecksum: string;
+  requestId: string;
+};
 
 function safeTimestamp(date: Date): string {
   return date.toISOString().replace(/[:.]/g, '-');
@@ -33,6 +39,12 @@ function utcWeekKey(date: Date): string {
 
 function sha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function validRestoreRequestId(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/iu
+      .test(value);
 }
 
 function integrity(path: string): string {
@@ -152,7 +164,12 @@ export class BackupService {
       unlinkSync(pendingPath);
       throw new Error('Restore staging checksum did not match the selected backup.');
     }
-    writeFileSync(markerPath, JSON.stringify({ backupPath, pendingPath, expectedChecksum }, null, 2), 'utf8');
+    writeFileSync(markerPath, JSON.stringify({
+      requestId: randomUUID(),
+      backupPath,
+      pendingPath,
+      expectedChecksum
+    }, null, 2), 'utf8');
     return {
       backupPath,
       stagedPath: pendingPath,
@@ -204,7 +221,14 @@ export class BackupService {
   static applyPendingRestore(databasePath: string): boolean {
     const markerPath = `${databasePath}${BackupService.MARKER_SUFFIX}`;
     if (!existsSync(markerPath)) return false;
-    const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as { pendingPath: string; expectedChecksum: string };
+    const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as {
+      requestId?: string;
+      pendingPath: string;
+      expectedChecksum: string;
+    };
+    if (marker.requestId !== undefined && !validRestoreRequestId(marker.requestId)) {
+      throw new Error('Pending restore request identity is invalid.');
+    }
     if (!existsSync(marker.pendingPath)) throw new Error('Pending restore database is missing.');
     if (sha256(marker.pendingPath) !== marker.expectedChecksum) throw new Error('Pending restore checksum is invalid.');
     if (integrity(marker.pendingPath) !== 'ok') throw new Error('Pending restore database failed integrity validation.');
@@ -217,7 +241,11 @@ export class BackupService {
     }
     renameSync(marker.pendingPath, databasePath);
     unlinkSync(markerPath);
+    const requestId = marker.requestId ?? createHash('sha256')
+      .update(`videofactory-legacy-restore-request:v1:${marker.expectedChecksum}`)
+      .digest('hex');
     writeFileSync(`${databasePath}${BackupService.COMPLETED_SUFFIX}`, JSON.stringify({
+      requestId,
       restoredAt: new Date().toISOString(),
       safetyPath,
       sourceChecksum: marker.expectedChecksum
@@ -225,15 +253,62 @@ export class BackupService {
     return true;
   }
 
-  static consumeCompletedRestore(databasePath: string): { restoredAt: string; safetyPath: string; sourceChecksum: string } | null {
+  static consumeCompletedRestore(databasePath: string): CompletedRestore | null {
     const path = `${databasePath}${BackupService.COMPLETED_SUFFIX}`;
     if (!existsSync(path)) return null;
-    return JSON.parse(readFileSync(path, 'utf8')) as { restoredAt: string; safetyPath: string; sourceChecksum: string };
+    return JSON.parse(readFileSync(path, 'utf8')) as CompletedRestore;
   }
 
   static acknowledgeCompletedRestore(databasePath: string): void {
     const path = `${databasePath}${BackupService.COMPLETED_SUFFIX}`;
     if (existsSync(path)) unlinkSync(path);
+  }
+
+  recordCompletedRestoreRecovery(
+    completed: CompletedRestore,
+    reports: DerivativeRebuildReport[],
+    now = new Date()
+  ): void {
+    if (!/^[a-f0-9]{64}$/u.test(completed.sourceChecksum)) {
+      throw new Error('Completed restore source checksum is invalid.');
+    }
+    if (!validRestoreRequestId(completed.requestId)) {
+      throw new Error('Completed restore request identity is invalid.');
+    }
+    if (!existsSync(completed.safetyPath) || integrity(completed.safetyPath) !== 'ok') {
+      throw new Error('Completed restore safety backup is missing or corrupt.');
+    }
+    const existing = this.db.raw.prepare(`
+      SELECT 1 FROM audit_log
+      WHERE action = 'backup.restore_recovered' AND entity_id = ?
+        AND json_extract(after_json, '$.restoredAt') = ?
+      LIMIT 1
+    `).get(completed.requestId, completed.restoredAt);
+    if (existing) return;
+
+    const missingOriginalsCount = reports.reduce((count, report) => count + report.missingOriginals.length, 0);
+    const rebuildPassed = reports.length > 0
+      && reports.every(report => report.status === 'complete' && report.failures.length === 0);
+    this.db.raw.prepare(`
+      INSERT INTO audit_log(
+        action, actor, entity_type, entity_id, after_json, metadata_json, created_at
+      ) VALUES('backup.restore_recovered', 'system', 'database', ?, ?, ?, ?)
+    `).run(
+      completed.requestId,
+      JSON.stringify({
+        requestId: completed.requestId,
+        restoredAt: completed.restoredAt,
+        sourceChecksum: completed.sourceChecksum,
+        safetyBackupSha256: sha256(completed.safetyPath),
+        safetyBackupIntegrity: 'ok',
+        projectCount: reports.length,
+        rebuildPassed,
+        missingOriginalsCount,
+        failureCount: reports.reduce((count, report) => count + report.failures.length, 0)
+      }),
+      JSON.stringify({ trigger: 'startup_restore_recovery' }),
+      now.toISOString()
+    );
   }
 
   private copyCadenceSnapshot(source: string, cadence: Exclude<BackupCadence, 'daily'>, now: Date): void {

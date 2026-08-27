@@ -8,15 +8,18 @@ import {
   ELECTRON_PERFORMANCE_RECEIPT_PATH,
   EXTERNAL_QUALIFICATION_INDEX_KIND,
   EXTERNAL_QUALIFICATION_INDEX_PATH,
+  PRODUCTION_RECOVERY_RECEIPT_PATH,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
   WINDOWS_SYSTEM_RECEIPT_PATH,
   admitExternalQualificationEvidence,
   writeElectronPerformanceQualificationIndex,
+  writeProductionRecoveryQualificationIndex,
   writeWindowsPackageRuntimeQualificationIndex,
   writeWindowsSystemQualificationIndex
 } from '../scripts/external-qualification-evidence.mjs';
 import type { ValidationSource } from '../scripts/validation-source.mjs';
 import { windowsSystemEvidenceFixture } from './fixtures/windows-system-evidence-fixture';
+import { qualifyingProductionRecoveryEvidence } from './fixtures/production-recovery-evidence-fixture';
 
 const roots: string[] = [];
 const source: ValidationSource = {
@@ -245,6 +248,25 @@ describe('external qualification evidence admission', () => {
       'windows_system'
     ]);
     expect(admitted.qualifiedById['SYS-004']?.kind).toBe('windows_system');
+  });
+
+  it('[E2E-004] indexes only the canonical exact-source production recovery receipt', () => {
+    const { root } = fixture();
+    const receipt = qualifyingProductionRecoveryEvidence({ source });
+    writeFileSync(resolve(root, PRODUCTION_RECOVERY_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+    const admitted = writeProductionRecoveryQualificationIndex({
+      root,
+      source,
+      now: new Date('2026-08-26T12:05:00.000Z')
+    });
+    expect(admitted.qualifiedIds).toEqual([
+      'CAT-001', 'CAT-009', 'E2E-004', 'PERF-001', 'PERF-002', 'PERF-003'
+    ]);
+    expect(admitted.receipts.map(receipt => receipt.kind)).toEqual([
+      'production_recovery',
+      'electron_performance'
+    ]);
+    expect(admitted.qualifiedById['E2E-004']?.kind).toBe('production_recovery');
   });
 
   it('atomically replaces a prior canonical receipt descriptor after receipt regeneration', () => {

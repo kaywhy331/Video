@@ -219,6 +219,17 @@ describe('media ingest failure isolation', () => {
     expect(restartedDb.raw.prepare(`SELECT count(*) AS count FROM asset_files`).get()).toEqual({ count: 1 });
     const segmentCount = restartedDb.raw.prepare(`SELECT count(*) AS count FROM media_segments`).get() as { count: number };
     expect(segmentCount.count).toBeGreaterThan(0);
+    expect(restartedDb.raw.prepare(`
+      SELECT action, actor, entity_type, entity_id, after_json, metadata_json
+      FROM audit_log WHERE action = 'media.ingest_recovered'
+    `).get()).toMatchObject({
+      action: 'media.ingest_recovered',
+      actor: 'system',
+      entity_type: 'acquisition_item',
+      entity_id: 'acquisition-1',
+      after_json: expect.stringContaining('"checkpointPhase":"complete"'),
+      metadata_json: '{"trigger":"startup_recovery"}'
+    });
     expect(restartedDb.integrityCheck()).toBe('ok');
     restartedDb.close();
   }, 120_000);

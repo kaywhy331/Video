@@ -21,6 +21,10 @@ import {
   assessProductionPilotEvidence
 } from './production-pilot-evidence.mjs';
 import {
+  PRODUCTION_RECOVERY_GATE_IDS,
+  assessProductionRecoveryEvidence
+} from './production-recovery-evidence.mjs';
+import {
   WINDOWS_SYSTEM_GATE_IDS,
   assessWindowsSystemEvidence
 } from './windows-system-evidence.mjs';
@@ -35,11 +39,14 @@ export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND = 'windows_package_runtime';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH = 'release/WINDOWS_PACKAGE_SMOKE.json';
 export const PRODUCTION_PILOT_RECEIPT_KIND = 'production_pilot';
 export const PRODUCTION_PILOT_RECEIPT_PATH = 'validation/results/production-pilot.json';
+export const PRODUCTION_RECOVERY_RECEIPT_KIND = 'production_recovery';
+export const PRODUCTION_RECOVERY_RECEIPT_PATH = 'validation/results/production-recovery.json';
 export const WINDOWS_SYSTEM_RECEIPT_KIND = 'windows_system';
 export const WINDOWS_SYSTEM_RECEIPT_PATH = 'validation/results/windows-system.json';
 
 const canonicalReceiptPaths = Object.freeze({
   [PRODUCTION_PILOT_RECEIPT_KIND]: PRODUCTION_PILOT_RECEIPT_PATH,
+  [PRODUCTION_RECOVERY_RECEIPT_KIND]: PRODUCTION_RECOVERY_RECEIPT_PATH,
   [ELECTRON_PERFORMANCE_RECEIPT_KIND]: ELECTRON_PERFORMANCE_RECEIPT_PATH,
   [WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND]: WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
   [WINDOWS_SYSTEM_RECEIPT_KIND]: WINDOWS_SYSTEM_RECEIPT_PATH
@@ -47,6 +54,7 @@ const canonicalReceiptPaths = Object.freeze({
 
 export const EXTERNAL_QUALIFICATION_GATE_IDS = Object.freeze([
   ...PRODUCTION_PILOT_GATE_IDS,
+  ...PRODUCTION_RECOVERY_GATE_IDS,
   ...ELECTRON_PERFORMANCE_GATE_IDS,
   ...WINDOWS_PACKAGE_RUNTIME_GATE_IDS,
   ...WINDOWS_SYSTEM_GATE_IDS
@@ -108,6 +116,25 @@ export function writeProductionPilotQualificationIndex({
     kind: PRODUCTION_PILOT_RECEIPT_KIND,
     canonicalReceiptPath: PRODUCTION_PILOT_RECEIPT_PATH,
     label: 'Production pilot'
+  });
+}
+
+export function writeProductionRecoveryQualificationIndex({
+  root = process.cwd(),
+  source,
+  receiptPath = PRODUCTION_RECOVERY_RECEIPT_PATH,
+  indexPath = EXTERNAL_QUALIFICATION_INDEX_PATH,
+  now = new Date()
+} = {}) {
+  return writeQualificationIndex({
+    root,
+    source,
+    receiptPath,
+    indexPath,
+    now,
+    kind: PRODUCTION_RECOVERY_RECEIPT_KIND,
+    canonicalReceiptPath: PRODUCTION_RECOVERY_RECEIPT_PATH,
+    label: 'Production recovery'
   });
 }
 
@@ -276,6 +303,24 @@ function admitExternalQualificationEvidenceInternal({
           throw new Error(`Production pilot receipt did not qualify ${id}.`);
         }
       }
+    } else if (kind === PRODUCTION_RECOVERY_RECEIPT_KIND) {
+      if (path !== PRODUCTION_RECOVERY_RECEIPT_PATH) {
+        throw new Error(
+          `Production recovery qualification evidence must use ${PRODUCTION_RECOVERY_RECEIPT_PATH}.`
+        );
+      }
+      assessed = assessProductionRecoveryEvidence(parseJson(receiptBytes, 'Production recovery receipt'));
+      assertValidationSource(assessed.source, 'release', 'Production recovery receipt source');
+      assertSameExactSource(assessed.source, index.source, 'Production recovery receipt');
+      if (assessed.externalQualificationPassed !== true) {
+        throw new Error('Production recovery receipt is not eligible external qualification evidence.');
+      }
+      gateIds = PRODUCTION_RECOVERY_GATE_IDS;
+      for (const id of gateIds) {
+        if (assessed.acceptance[id] !== 'qualified') {
+          throw new Error(`Production recovery receipt did not qualify ${id}.`);
+        }
+      }
     } else if (kind === WINDOWS_SYSTEM_RECEIPT_KIND) {
       if (path !== WINDOWS_SYSTEM_RECEIPT_PATH) {
         throw new Error(
@@ -365,6 +410,7 @@ function writeQualificationIndex({
   receipts.push(descriptor);
   const kindOrder = [
     PRODUCTION_PILOT_RECEIPT_KIND,
+    PRODUCTION_RECOVERY_RECEIPT_KIND,
     ELECTRON_PERFORMANCE_RECEIPT_KIND,
     WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
     WINDOWS_SYSTEM_RECEIPT_KIND

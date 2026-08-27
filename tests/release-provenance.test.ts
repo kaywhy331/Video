@@ -9,14 +9,17 @@ import {
   ELECTRON_PERFORMANCE_RECEIPT_PATH,
   EXTERNAL_QUALIFICATION_INDEX_PATH,
   PRODUCTION_PILOT_RECEIPT_PATH,
+  PRODUCTION_RECOVERY_RECEIPT_PATH,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
   WINDOWS_SYSTEM_RECEIPT_PATH,
   writeElectronPerformanceQualificationIndex,
   writeProductionPilotQualificationIndex,
+  writeProductionRecoveryQualificationIndex,
   writeWindowsPackageRuntimeQualificationIndex,
   writeWindowsSystemQualificationIndex
 } from '../scripts/external-qualification-evidence.mjs';
 import { qualifyingProductionPilotEvidence } from './fixtures/production-pilot-evidence-fixture';
+import { qualifyingProductionRecoveryEvidence } from './fixtures/production-recovery-evidence-fixture';
 import { windowsSystemEvidenceFixture } from './fixtures/windows-system-evidence-fixture';
 
 const repositoryRoot = process.cwd();
@@ -397,6 +400,74 @@ function writeQualifiedProductionPilotEvidence(root: string): void {
   writeFileSync(statusPath, JSON.stringify(status));
 }
 
+function writeQualifiedProductionRecoveryEvidence(root: string): void {
+  const identity = gitIdentity(root);
+  const source = {
+    commit: identity.commit,
+    tree: identity.tree,
+    ref: 'refs/tags/v9.8.7-alpha.1',
+    repository: 'fixture/video',
+    workflowCommit: identity.commit,
+    runId: '1',
+    runAttempt: '1',
+    dirty: false
+  };
+  const receipt = qualifyingProductionRecoveryEvidence({ source, appVersion: '9.8.7-alpha.1' });
+  writeFileSync(resolve(root, PRODUCTION_RECOVERY_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+  const admitted = writeProductionRecoveryQualificationIndex({
+    root,
+    source,
+    now: new Date('2026-08-26T21:01:00.000Z')
+  });
+  const projection = {
+    index: admitted.index,
+    receipts: admitted.receipts.map(item => ({
+      kind: item.kind,
+      evidence: item.evidence,
+      qualifiedIds: item.qualifiedIds
+    })),
+    qualifiedIds: admitted.qualifiedIds
+  };
+  const qualifiedCase = {
+    id: 'E2E-004',
+    classification: 'external',
+    result: 'passed_external_qualification',
+    artifacts: [EXTERNAL_QUALIFICATION_INDEX_PATH, PRODUCTION_RECOVERY_RECEIPT_PATH],
+    externalEvidence: {
+      kind: 'production_recovery',
+      index: admitted.index,
+      receipt: admitted.qualifiedById['E2E-004']!.evidence
+    }
+  };
+  const summary = {
+    total: 2,
+    passedLocalValidation: 1,
+    qualifiedExternal: 1,
+    externalPending: 0,
+    productionQualified: true
+  };
+
+  const acceptancePath = resolve(root, 'VALIDATION_ACCEPTANCE_RECEIPT.json');
+  const acceptance = JSON.parse(readFileSync(acceptancePath, 'utf8'));
+  acceptance.cases = [acceptance.cases[0], qualifiedCase];
+  acceptance.summary = summary;
+  acceptance.externalQualificationEvidence = projection;
+  writeFileSync(acceptancePath, JSON.stringify(acceptance));
+
+  const statusPath = resolve(root, 'VALIDATION_STATUS.json');
+  const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+  status.acceptance = { receipt: 'VALIDATION_ACCEPTANCE_RECEIPT.json', ...summary };
+  status.externalQualificationEvidence = projection;
+  status.externalQualification = [{
+    id: qualifiedCase.id,
+    status: 'qualified',
+    artifacts: qualifiedCase.artifacts,
+    evidence: qualifiedCase.externalEvidence
+  }];
+  status.production_ready = true;
+  writeFileSync(statusPath, JSON.stringify(status));
+}
+
 function writePackageSmokeEvidence(root: string, status: 'passed' | 'failed' = 'passed'): void {
   const installerPath = resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.exe');
   const archivePath = resolve(root, 'release', 'VideoFactory-Desktop-9.8.7-alpha.1-x64.zip');
@@ -710,6 +781,21 @@ describe('release artifact provenance', () => {
     ]);
     expect(manifest.artifacts.map((item: { name: string }) => item.name)).toContain(
       'EXTERNAL_PRODUCTION_PILOT.json'
+    );
+  });
+
+  it('packages and re-admits the exact production-recovery receipt required by E2E-004', () => {
+    const root = fixtureRoot();
+    writeValidationEvidence(root);
+    writeQualifiedProductionRecoveryEvidence(root);
+    expect(run(root).status).toBe(0);
+    expect(run(root, ['--verify']).status).toBe(0);
+    const manifest = JSON.parse(readFileSync(resolve(root, 'release', 'RELEASE_PROVENANCE.json'), 'utf8'));
+    expect(manifest.validation.externalQualificationEvidence.receipts).toEqual([
+      expect.objectContaining({ kind: 'production_recovery' })
+    ]);
+    expect(manifest.artifacts.map((item: { name: string }) => item.name)).toContain(
+      'EXTERNAL_PRODUCTION_RECOVERY.json'
     );
   });
 
