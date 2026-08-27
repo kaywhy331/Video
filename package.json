@@ -1,6 +1,6 @@
 {
   "name": "videofactory-desktop",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "private": true,
   "description": "Internal metadata-first stock-footage-to-YouTube production desktop application",
   "main": "./out/main/index.js",
