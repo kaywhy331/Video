@@ -12,6 +12,7 @@ const evidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.7.json');
 const alpha8EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.8.json');
 const alpha9EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.9.json');
 const alpha10EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.10.json');
+const alpha11EvidencePath = resolve('docs', 'release-evidence', 'v0.1.0-alpha.11.json');
 
 function evidenceIndex(path = evidencePath): any {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -76,6 +77,24 @@ describe('historical release evidence', () => {
     expect(index.qualification.productionReady).toBe(false);
   });
 
+  it('[REL-003] validates alpha.11 publication and hosted performance facts', () => {
+    const index = evidenceIndex(alpha11EvidencePath);
+    expect(() => assertReleaseEvidenceIndex(index)).not.toThrow();
+    expect(index.validatesCurrentCheckout).toBe(false);
+    expect(index.releaseSource.commit).toBe('445b538d0cad2ff71c7d6c7a5cc5537cd346a484');
+    expect(index.documentationReceipt.commit).toBe('434138366feef653bd9a28ebea9e28bd7f4b8ff4');
+    expect(index.workflowRuns).toHaveLength(3);
+    expect(index.workflowRuns[0].eventHeadCommit).toBe('71bf30aa759d19a027884a0029e48d9c3d6f6bbd');
+    expect(index.workflowRuns[0].artifactHandoffCommit).toBe('9e2fb2ba27de72d46b8a9e9157c78d0b11957063');
+    expect(index.workflowRuns.every((run: any) => run.artifacts.some(
+      (artifact: any) => artifact.name.endsWith('-windows-performance-supporting')
+    ))).toBe(true);
+    expect(index.releaseSource.candidateRelationship).toBe('equivalent_tree_squash_candidate');
+    expect(index.publication.assetCount).toBe(15);
+    expect(index.qualification.externalQualificationGatesPending).toBe(13);
+    expect(index.qualification.productionReady).toBe(false);
+  });
+
   it('rejects current-checkout, production-ready, malformed-digest, and handoff claims', () => {
     const current = evidenceIndex();
     current.validatesCurrentCheckout = true;
@@ -131,6 +150,12 @@ describe('historical release evidence', () => {
     expect(() => assertReleaseEvidenceGitBinding(alpha10, {
       root: process.cwd(),
       indexPath: alpha10EvidencePath
+    })).not.toThrow();
+
+    const alpha11 = evidenceIndex(alpha11EvidencePath);
+    expect(() => assertReleaseEvidenceGitBinding(alpha11, {
+      root: process.cwd(),
+      indexPath: alpha11EvidencePath
     })).not.toThrow();
 
     const moved = evidenceIndex();
