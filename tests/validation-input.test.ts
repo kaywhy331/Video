@@ -62,6 +62,7 @@ describe('validation input digests and generated evidence lifecycle', () => {
     expect(claimsPaths.has('docs/release-evidence/v0.1.0-alpha.8.json')).toBe(true);
     expect(claimsPaths.has('docs/release-evidence/v0.1.0-alpha.9.json')).toBe(true);
     expect(claimsPaths.has('docs/release-evidence/v0.1.0-alpha.10.json')).toBe(true);
+    expect(claimsPaths.has('docs/release-evidence/v0.1.0-alpha.11.json')).toBe(true);
     expect(first.runtime.files.map(file => file.path)).toEqual(
       [...first.runtime.files.map(file => file.path)].sort()
     );
@@ -146,7 +147,8 @@ describe('validation input digests and generated evidence lifecycle', () => {
       'docs/release-evidence/v0.1.0-alpha.7.json',
       'docs/release-evidence/v0.1.0-alpha.8.json',
       'docs/release-evidence/v0.1.0-alpha.9.json',
-      'docs/release-evidence/v0.1.0-alpha.10.json'
+      'docs/release-evidence/v0.1.0-alpha.10.json',
+      'docs/release-evidence/v0.1.0-alpha.11.json'
     ];
     const attributes = spawnSync(
       'git',
