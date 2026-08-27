@@ -1,6 +1,6 @@
 # VideoFactory Desktop
 
-**Build:** 0.1.0-alpha.8 autonomous-production qualification candidate
+**Build:** 0.1.0-alpha.8 published autonomous-production qualification release
 
 **Previous release:** [v0.1.0-alpha.7](https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.7) unsigned Windows prerelease
 
