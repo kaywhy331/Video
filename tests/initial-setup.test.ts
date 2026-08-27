@@ -128,6 +128,7 @@ describe('first-run autonomous-production setup', () => {
     value.secrets.youtubeAuthorized = false;
 
     const state = initialSetupState(value);
+    expect(state.required).toBe(true);
     expect(state.ready).toBe(false);
     expect(state.steps.filter(step => !step.complete).map(step => step.id)).toEqual([
       'storage',

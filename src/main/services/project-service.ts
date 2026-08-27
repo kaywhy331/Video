@@ -38,6 +38,7 @@ import { createHash } from 'node:crypto';
 import { outputDimensions } from '@shared/output-profile';
 import { canTransitionProject } from '@shared/state-machine';
 import { buildAcquisitionManifest } from '@shared/acquisition-manifest';
+import type { InitialSetupState } from '@shared/initial-setup';
 
 interface GuidedTopicCandidate {
   id: string;
@@ -219,7 +220,8 @@ export class ProjectService {
     private readonly settings: () => AppSettings,
     private readonly places: PlaceService,
     private readonly research?: ResearchService,
-    private readonly vision?: VisionService
+    private readonly vision?: VisionService,
+    private readonly productionSetup?: () => InitialSetupState | Promise<InitialSetupState>
   ) {
     this.states = new ProjectStateService(db);
     this.repairs = new RepairService(db);
@@ -661,6 +663,19 @@ export class ProjectService {
     const startingScript = request.startingScript;
     if (startingScript !== undefined && (!startingScript.trim() || startingScript.length > 20_000)) {
       throw new Error('Starting-script guidance must contain between 1 and 20,000 characters.');
+    }
+    if (!this.productionSetup) {
+      throw new Error('Production readiness preflight is unavailable; no project or provider call was started.');
+    }
+    let setup: InitialSetupState;
+    try {
+      setup = await this.productionSetup();
+    } catch {
+      throw new Error('Production readiness preflight could not be completed; no project or provider call was started.');
+    }
+    if (!setup.ready) {
+      const missing = setup.steps.filter(step => !step.complete).map(step => step.label).join(', ');
+      throw new Error(`Production setup is incomplete (${missing || 'unknown prerequisites'}); finish the first-run setup checklist before creating a project.`);
     }
     const requestedProfileKey = request.outputProfileKey
       ?? (settings.defaultOutput === 'qualified_4k' ? 'landscape_4k' : 'landscape_1080p');

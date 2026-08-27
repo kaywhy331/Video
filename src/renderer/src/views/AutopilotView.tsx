@@ -21,6 +21,7 @@ import type {
   OutputProfileKey,
   ProjectSummary
 } from '@shared/types';
+import { initialSetupState } from '@shared/initial-setup';
 import { Button, EmptyState, MetricCard, Panel, ProgressBar, StatusPill } from '../components/ui';
 
 interface NextAction {
@@ -70,14 +71,17 @@ export function AutopilotView({
   const [topicId, setTopicId] = useState('');
   const [targetMinutes, setTargetMinutes] = useState(bootstrap.settings.targetVideoMinutes);
   const [startingScript, setStartingScript] = useState('');
+  const productionSetup = useMemo(() => initialSetupState(bootstrap), [bootstrap]);
   const current = bootstrap.projects.find(project =>
     !['PUBLISHED', 'ANALYTICS_ACTIVE', 'FAILED', 'CANCELLED', 'ARCHIVED'].includes(project.state)
   ) ?? null;
   const qualifiedOpportunities = opportunities.filter(item =>
     item.feasibility === 'qualified' && (!destinationKey || item.destinationKey === destinationKey)
   );
-  const canStart = creationMode === 'automatic'
-    || (Boolean(destinationKey) && Number.isFinite(targetMinutes) && targetMinutes >= 1 && targetMinutes <= 30);
+  const canStart = productionSetup.ready && (
+    creationMode === 'automatic'
+    || (Boolean(destinationKey) && Number.isFinite(targetMinutes) && targetMinutes >= 1 && targetMinutes <= 30)
+  );
   const diskGb = bootstrap.operationsHealth.disk.freeBytes === null
     ? null
     : bootstrap.operationsHealth.disk.freeBytes / 1024 ** 3;
@@ -361,8 +365,12 @@ export function AutopilotView({
       ) : (
         <EmptyState
           title="No production is active"
-          body="Import the footage catalog, then let Autopilot select the strongest visually supportable destination."
-          action={<Button busy={busy} disabled={!canStart} onClick={startNext}><Play size={16} /> Start first video</Button>}
+          body={productionSetup.ready
+            ? 'Let Autopilot select the strongest visually supportable destination from the production catalog.'
+            : `Finish production setup before starting a video: ${productionSetup.steps.filter(step => !step.complete).map(step => step.label).join(', ')}.`}
+          action={productionSetup.ready
+            ? <Button busy={busy} disabled={!canStart} onClick={startNext}><Play size={16} /> Start first video</Button>
+            : <Button onClick={() => onNavigate('settings')}><ArrowRight size={16} /> Finish production setup</Button>}
         />
       )}
 

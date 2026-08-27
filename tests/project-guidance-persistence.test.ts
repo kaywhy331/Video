@@ -6,15 +6,22 @@ import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import { ProjectService } from '@main/services/project-service';
 import type { AppSettings, CatalogAsset, CoverageCluster } from '@shared/types';
+import type { InitialSetupState } from '@shared/initial-setup';
 
 const roots: string[] = [];
+const readySetup: InitialSetupState = {
+  required: false,
+  ready: true,
+  completedSteps: 0,
+  steps: []
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function fixture() {
+function fixture(setup: InitialSetupState = readySetup) {
   const root = mkdtempSync(join(tmpdir(), 'videofactory-project-guidance-'));
   roots.push(root);
   const db = new AppDatabase(join(root, 'videofactory.sqlite'));
@@ -159,7 +166,10 @@ function fixture() {
     catalog as never,
     ai as never,
     () => settings,
-    { ensureHierarchy: vi.fn(() => null) } as never
+    { ensureHierarchy: vi.fn(() => null) } as never,
+    undefined,
+    undefined,
+    () => setup
   );
   return { db, service, ai, coverage };
 }
@@ -209,6 +219,30 @@ describe('guided project provenance', () => {
       targetMinutes: 1,
       startingScript: 'Use a reflective documentary tone.'
     })).rejects.toThrow('unavailable in current catalog coverage');
+    expect(ai.configured).not.toHaveBeenCalled();
+    expect(ai.generateScript).not.toHaveBeenCalled();
+    expect(db.raw.prepare(`SELECT count(*) AS count FROM projects`).get()).toEqual({ count: 0 });
+    expect(db.raw.prepare(`SELECT count(*) AS count FROM project_guidance`).get()).toEqual({ count: 0 });
+    db.close();
+  });
+
+  it('rejects incomplete production setup before any provider or project work', async () => {
+    const { db, service, ai, coverage } = fixture({
+      required: true,
+      ready: false,
+      completedSteps: 0,
+      steps: [{
+        id: 'providers',
+        label: 'Production AI and narration providers',
+        detail: 'Configure production providers.',
+        complete: false
+      }]
+    });
+
+    await expect(service.createAutopilot({
+      destinationKey: coverage.key,
+      targetMinutes: 1
+    })).rejects.toThrow('Production setup is incomplete');
     expect(ai.configured).not.toHaveBeenCalled();
     expect(ai.generateScript).not.toHaveBeenCalled();
     expect(db.raw.prepare(`SELECT count(*) AS count FROM projects`).get()).toEqual({ count: 0 });

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { statfsSync } from 'node:fs';
 import type { AppDatabase } from '../database/database';
 import type { AppSettings, ProjectDetail, SchedulerStatus } from '@shared/types';
+import type { InitialSetupState } from '@shared/initial-setup';
 
 type Trigger = 'timer' | 'manual' | 'settings' | 'startup';
 
@@ -28,6 +29,7 @@ export class SchedulerService {
     private readonly db: AppDatabase,
     private readonly settings: () => AppSettings,
     private readonly createProject: () => Promise<ProjectDetail>,
+    private readonly productionSetup: () => InitialSetupState,
     private readonly resumeOldest: () => Promise<ProjectDetail | null> = async () => null
   ) {}
 
@@ -104,6 +106,17 @@ export class SchedulerService {
 
   private blockers(settings: AppSettings): Array<{ code: string; reason: string }> {
     const blockers: Array<{ code: string; reason: string }> = [];
+    try {
+      const setup = this.productionSetup();
+      for (const step of setup.steps.filter(step => !step.complete)) {
+        blockers.push({ code: `setup_${step.id}`, reason: `${step.label}: ${step.detail}` });
+      }
+    } catch {
+      blockers.push({
+        code: 'setup_unavailable',
+        reason: 'Production readiness could not be evaluated; automatic project creation is blocked.'
+      });
+    }
     const queue = this.db.raw.prepare(`
       SELECT
         sum(CASE WHEN state NOT IN ('PUBLISHED','ANALYTICS_ACTIVE','FAILED','CANCELLED','ARCHIVED','PAUSED') THEN 1 ELSE 0 END) AS active,

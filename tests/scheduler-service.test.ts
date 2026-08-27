@@ -5,8 +5,26 @@ import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import { SchedulerService } from '@main/services/scheduler-service';
 import type { AppSettings, ProjectDetail } from '@shared/types';
+import type { InitialSetupState } from '@shared/initial-setup';
 
 const roots: string[] = [];
+const readySetup: InitialSetupState = {
+  required: false,
+  ready: true,
+  completedSteps: 0,
+  steps: []
+};
+const catalogBlockedSetup: InitialSetupState = {
+  required: true,
+  ready: false,
+  completedSteps: 0,
+  steps: [{
+    id: 'catalog',
+    label: 'Production footage catalog',
+    detail: 'Import the production catalog.',
+    complete: false
+  }]
+};
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -33,6 +51,7 @@ describe('autopilot cadence scheduler', () => {
       minFreeDiskGb: 0
     } as AppSettings;
     let created = 0;
+    let setup = readySetup;
     const service = new SchedulerService(db, () => settings, async () => {
       created += 1;
       const now = new Date().toISOString();
@@ -44,7 +63,7 @@ describe('autopilot cadence scheduler', () => {
           'CREATED', 0, 'YT-SCHEDULED', 300000, ?, ?)
       `).run(now, now);
       return { id: 'scheduled-project', title: 'Scheduled Project' } as ProjectDetail;
-    });
+    }, () => setup);
 
     expect(await service.evaluate('startup', new Date('2026-08-12T12:00:00.000Z')))
       .toMatchObject({ enabled: false, state: 'paused', reasonCode: 'operator_disabled' });
@@ -57,12 +76,17 @@ describe('autopilot cadence scheduler', () => {
         id, stable_key, title, raw_row_json, imported_at, updated_at
       ) VALUES('asset-1', 'asset-1', 'Fixture asset', '{}', ?, ?)
     `).run(now, now);
-    const status = await service.evaluate('manual', new Date('2026-08-12T12:10:00.000Z'));
+    setup = catalogBlockedSetup;
+    expect(await service.evaluate('manual', new Date('2026-08-12T12:10:00.000Z')))
+      .toMatchObject({ state: 'blocked', reasonCode: 'setup_catalog' });
+    expect(created).toBe(0);
+    setup = readySetup;
+    const status = await service.evaluate('manual', new Date('2026-08-12T12:15:00.000Z'));
     expect(status).toMatchObject({ enabled: true, state: 'running', lastProjectId: 'scheduled-project' });
     expect(status.nextRunAt).toBe('2026-08-19T17:00:00.000Z');
     expect(created).toBe(1);
     expect(db.raw.prepare('SELECT outcome FROM scheduler_runs ORDER BY created_at').all())
-      .toEqual([{ outcome: 'paused' }, { outcome: 'blocked' }, { outcome: 'created' }]);
+      .toEqual([{ outcome: 'paused' }, { outcome: 'blocked' }, { outcome: 'blocked' }, { outcome: 'created' }]);
     db.close();
   });
 
@@ -100,6 +124,7 @@ describe('autopilot cadence scheduler', () => {
       db,
       () => settings,
       async () => { created += 1; return resumed; },
+      () => catalogBlockedSetup,
       async () => { resumeCalls += 1; return resumed; }
     );
 
