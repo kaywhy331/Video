@@ -48,6 +48,8 @@ export function assessWindowsPackageRuntimeEvidence(document) {
   for (const name of ['archiveLaunch', 'installerInstall', 'installedLaunch', 'uninstall']) {
     record(checks[name], `${name} check`);
   }
+  const archive = record(checks.archiveLaunch, 'archive package launch');
+  const archiveApp = record(archive.app, 'archive package app');
   const installed = record(checks.installedLaunch, 'installed package launch');
   const installedApp = record(installed.app, 'installed package app');
   const installedLifecycle = record(installed.lifecycle, 'installed package lifecycle');
@@ -125,6 +127,8 @@ export function assessWindowsPackageRuntimeEvidence(document) {
       && installedApp.isPackaged === true
       && installed.kind === 'installed'
       && installedLifecycle.orderlyQuit === true,
+    archiveFirstRunSetupObserved: initialSetupObserved(archiveApp, 'archive package app'),
+    installedFirstRunSetupObserved: initialSetupObserved(installedApp, 'installed package app'),
     fullCatalogWorkerCompleted: workload.kind === 'catalog_preview'
       && workload.requestedRows === WINDOWS_PACKAGE_RUNTIME_ROWS
       && workload.completedRows === WINDOWS_PACKAGE_RUNTIME_ROWS,
@@ -156,6 +160,14 @@ export function assessWindowsPackageRuntimeEvidence(document) {
     acceptance,
     externalQualificationPassed
   };
+}
+
+function initialSetupObserved(app, label) {
+  const setup = record(app.initialSetup, `${label} initial setup`);
+  return setup.activeView === 'settings'
+    && setup.initialSetupRequired === true
+    && setup.setupReady === false
+    && setup.checklistVisible === true;
 }
 
 function event(events, name) {

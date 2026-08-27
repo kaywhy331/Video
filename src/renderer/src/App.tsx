@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
@@ -15,6 +15,7 @@ import {
 import type { AppBootstrap, CatalogImportOperationStatus, ProgressEvent } from '@shared/types';
 import { canTransitionProject } from '@shared/state-machine';
 import { resolveOperatorShortcut, selectOperatorTarget } from '@shared/operator-shortcuts';
+import { initialSetupState } from '@shared/initial-setup';
 import { ErrorBanner, StatusPill } from './components/ui';
 import { AutopilotView } from './views/AutopilotView';
 import { ExceptionsView } from './views/ExceptionsView';
@@ -64,10 +65,29 @@ export default function App() {
   const [catalogOperation, setCatalogOperation] = useState<CatalogImportOperationStatus | null>(null);
   const [catalogCancelId, setCatalogCancelId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const initialRouteApplied = useRef(false);
+  const initialSetupLocked = useRef(false);
   const dashboardReady = bootstrap !== null;
 
+  const navigate = useCallback((target: ViewId): void => {
+    if (initialSetupLocked.current && !['settings', 'library'].includes(target)) {
+      setView('settings');
+      setError('Finish the required first-run setup checklist before opening production workspaces.');
+      return;
+    }
+    setView(target);
+  }, []);
+
   const refresh = useCallback(async (): Promise<void> => {
-    setBootstrap(await window.videoFactory.app.bootstrap());
+    const next = await window.videoFactory.app.bootstrap();
+    const initialSetup = initialSetupState(next);
+    if (!initialRouteApplied.current) {
+      initialRouteApplied.current = true;
+      initialSetupLocked.current = initialSetup.required && !initialSetup.ready;
+      if (initialSetupLocked.current) setView('settings');
+    }
+    if (initialSetup.ready) initialSetupLocked.current = false;
+    setBootstrap(next);
   }, []);
 
   useEffect(() => {
@@ -88,12 +108,18 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!dashboardReady) return;
+    if (!dashboardReady || !bootstrap) return;
+    const initialSetup = initialSetupState(bootstrap);
     let secondFrame = 0;
     const firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(() => {
         preloadWorkspaceViews();
-        void window.videoFactory.app.rendererReady().catch(() => undefined);
+        void window.videoFactory.app.rendererReady({
+          activeView: view,
+          initialSetupRequired: initialSetup.required,
+          setupReady: initialSetup.ready,
+          setupChecklistVisible: view === 'settings' && !initialSetup.ready
+        }).catch(() => undefined);
       });
     });
     return () => {
@@ -147,16 +173,20 @@ export default function App() {
       if (!shortcut) return;
       event.preventDefault();
       event.stopPropagation();
+      if (initialSetupLocked.current) {
+        navigate('autopilot');
+        return;
+      }
       const preferredProjectId = projectId;
 
       if (shortcut === 'next_download') {
         setProjectId(null);
-        setView('downloads');
+        navigate('downloads');
         return;
       }
       if (shortcut === 'open_exception') {
         setProjectId(null);
-        setView('exceptions');
+        navigate('exceptions');
         return;
       }
 
@@ -165,7 +195,7 @@ export default function App() {
         try {
           if (shortcut === 'retry') {
             setProjectId(null);
-            setView('exceptions');
+            navigate('exceptions');
             const retryable = selectOperatorTarget(
               bootstrap.exceptions.filter(item => item.retryAction).map(item => ({ ...item, projectId: item.projectId })),
               preferredProjectId
@@ -195,7 +225,7 @@ export default function App() {
             return;
           }
           setProjectId(null);
-          setView('final-review');
+          navigate('final-review');
           const target = selectOperatorTarget(bootstrap.projects.filter(project => project.state === 'WAITING_FINAL_APPROVAL')
             .map(project => ({ id: project.id, projectId: project.id, createdAt: project.createdAt })), preferredProjectId);
           const approvable = target ? bootstrap.projects.find(project => project.id === target.id) : null;
@@ -215,7 +245,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [bootstrap, projectId, refresh]);
+  }, [bootstrap, navigate, projectId, refresh]);
 
   async function cancelCatalogOperation(): Promise<void> {
     const operation = catalogOperation;
@@ -233,6 +263,7 @@ export default function App() {
   }
 
   const activeLabel = useMemo(() => NAV.find(item => item.id === view)?.label ?? 'VideoFactory', [view]);
+  const setup = useMemo(() => bootstrap ? initialSetupState(bootstrap) : null, [bootstrap]);
 
   if (!bootstrap) {
     return (
@@ -246,7 +277,12 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
+    <div
+      className={`app-shell ${sidebarOpen ? '' : 'sidebar-collapsed'}`}
+      data-active-view={view}
+      data-initial-setup={initialSetupLocked.current ? 'true' : 'false'}
+      data-setup-ready={setup?.ready ? 'true' : 'false'}
+    >
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-mark"><Sparkles size={19} /></div>
@@ -265,7 +301,7 @@ export default function App() {
               <button
                 key={item.id}
                 className={view === item.id ? 'nav-active' : ''}
-                onClick={() => setView(item.id)}
+                onClick={() => navigate(item.id)}
                 aria-keyshortcuts={item.id === 'downloads'
                   ? 'Control+Alt+D'
                   : item.id === 'final-review' ? 'Control+Alt+A' : undefined}
@@ -278,7 +314,7 @@ export default function App() {
           })}
           <button
             className={view === 'exceptions' ? 'nav-active nav-exception' : 'nav-exception'}
-            onClick={() => setView('exceptions')}
+            onClick={() => navigate('exceptions')}
             aria-keyshortcuts="Control+Alt+E"
           >
             <AlertTriangle size={18} />
@@ -320,7 +356,7 @@ export default function App() {
               <AutopilotView
                 bootstrap={bootstrap}
                 onRefresh={refresh}
-                onNavigate={target => setView(target as ViewId)}
+                onNavigate={target => navigate(target as ViewId)}
                 onOpenProject={setProjectId}
                 setError={setError}
               />
@@ -341,7 +377,12 @@ export default function App() {
               <ExceptionsView onRefresh={refresh} onOpenProject={setProjectId} setError={setError} />
             ) : null}
             {view === 'settings' ? (
-              <SettingsView bootstrap={bootstrap} onRefresh={refresh} setError={setError} />
+              <SettingsView
+                bootstrap={bootstrap}
+                onRefresh={refresh}
+                onContinue={() => navigate('autopilot')}
+                setError={setError}
+              />
             ) : null}
           </Suspense>
         </div>

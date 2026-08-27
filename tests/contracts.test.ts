@@ -21,6 +21,7 @@ import {
   ProviderEndpointActionSchema,
   ProjectExportSchema,
   ProjectRebuildSchema,
+  RendererReadyObservationSchema,
   RenderRequestSchema,
   SemanticVerificationRetrySchema,
   StoryboardMergeBeatsSchema,
@@ -36,6 +37,22 @@ import {
 } from '@shared/contracts';
 
 describe('IPC request contracts', () => {
+  it('accepts only bounded renderer-ready setup observations', () => {
+    expect(RendererReadyObservationSchema.safeParse({
+      activeView: 'settings',
+      initialSetupRequired: true,
+      setupReady: false,
+      setupChecklistVisible: true
+    }).success).toBe(true);
+    expect(RendererReadyObservationSchema.safeParse({
+      activeView: 'developer-console',
+      initialSetupRequired: 'yes',
+      setupReady: false,
+      setupChecklistVisible: true,
+      arbitrary: true
+    }).success).toBe(false);
+  });
+
   it('rejects unknown settings keys and unsafe policy values', () => {
     expect(SettingsPatchSchema.safeParse({ maxActiveProjects: 3 }).success).toBe(true);
     expect(SettingsPatchSchema.safeParse({ maxActiveProjects: 0 }).success).toBe(false);

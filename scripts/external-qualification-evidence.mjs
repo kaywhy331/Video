@@ -20,6 +20,10 @@ import {
   PRODUCTION_PILOT_GATE_IDS,
   assessProductionPilotEvidence
 } from './production-pilot-evidence.mjs';
+import {
+  WINDOWS_SYSTEM_GATE_IDS,
+  assessWindowsSystemEvidence
+} from './windows-system-evidence.mjs';
 import { assertValidationSource, captureValidationSource } from './validation-source.mjs';
 
 export const EXTERNAL_QUALIFICATION_INDEX_SCHEMA_VERSION = 1;
@@ -31,11 +35,21 @@ export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND = 'windows_package_runtime';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH = 'release/WINDOWS_PACKAGE_SMOKE.json';
 export const PRODUCTION_PILOT_RECEIPT_KIND = 'production_pilot';
 export const PRODUCTION_PILOT_RECEIPT_PATH = 'validation/results/production-pilot.json';
+export const WINDOWS_SYSTEM_RECEIPT_KIND = 'windows_system';
+export const WINDOWS_SYSTEM_RECEIPT_PATH = 'validation/results/windows-system.json';
+
+const canonicalReceiptPaths = Object.freeze({
+  [PRODUCTION_PILOT_RECEIPT_KIND]: PRODUCTION_PILOT_RECEIPT_PATH,
+  [ELECTRON_PERFORMANCE_RECEIPT_KIND]: ELECTRON_PERFORMANCE_RECEIPT_PATH,
+  [WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND]: WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+  [WINDOWS_SYSTEM_RECEIPT_KIND]: WINDOWS_SYSTEM_RECEIPT_PATH
+});
 
 export const EXTERNAL_QUALIFICATION_GATE_IDS = Object.freeze([
   ...PRODUCTION_PILOT_GATE_IDS,
   ...ELECTRON_PERFORMANCE_GATE_IDS,
-  ...WINDOWS_PACKAGE_RUNTIME_GATE_IDS
+  ...WINDOWS_PACKAGE_RUNTIME_GATE_IDS,
+  ...WINDOWS_SYSTEM_GATE_IDS
 ]);
 
 const MAXIMUM_RECEIPTS = 20;
@@ -97,12 +111,40 @@ export function writeProductionPilotQualificationIndex({
   });
 }
 
+export function writeWindowsSystemQualificationIndex({
+  root = process.cwd(),
+  source,
+  receiptPath = WINDOWS_SYSTEM_RECEIPT_PATH,
+  indexPath = EXTERNAL_QUALIFICATION_INDEX_PATH,
+  now = new Date()
+} = {}) {
+  return writeQualificationIndex({
+    root,
+    source,
+    receiptPath,
+    indexPath,
+    now,
+    kind: WINDOWS_SYSTEM_RECEIPT_KIND,
+    canonicalReceiptPath: WINDOWS_SYSTEM_RECEIPT_PATH,
+    label: 'Windows system matrix'
+  });
+}
+
 export function admitExternalQualificationEvidence({
   root = process.cwd(),
   indexPath = EXTERNAL_QUALIFICATION_INDEX_PATH,
   source,
   allowedIds = EXTERNAL_QUALIFICATION_GATE_IDS
 } = {}) {
+  return admitExternalQualificationEvidenceInternal({ root, indexPath, source, allowedIds });
+}
+
+function admitExternalQualificationEvidenceInternal({
+  root,
+  indexPath,
+  source,
+  allowedIds
+}, replacingKind = null) {
   const normalizedRoot = resolve(root);
   const normalizedIndexPath = evidencePath(indexPath, 'External qualification index path');
   const resolvedIndexPath = resolveInside(normalizedRoot, normalizedIndexPath, 'External qualification index path');
@@ -161,6 +203,12 @@ export function admitExternalQualificationEvidence({
     }
     if (!Number.isSafeInteger(descriptor.sizeBytes) || descriptor.sizeBytes <= 0) {
       throw new Error(`${label} must contain a positive integer byte size.`);
+    }
+    if (kind === replacingKind) {
+      if (path !== canonicalReceiptPaths[kind]) {
+        throw new Error(`Replacement qualification evidence has a non-canonical path: ${path}.`);
+      }
+      continue;
     }
 
     const resolvedReceiptPath = resolveInside(normalizedRoot, path, `${label} path`);
@@ -228,6 +276,24 @@ export function admitExternalQualificationEvidence({
           throw new Error(`Production pilot receipt did not qualify ${id}.`);
         }
       }
+    } else if (kind === WINDOWS_SYSTEM_RECEIPT_KIND) {
+      if (path !== WINDOWS_SYSTEM_RECEIPT_PATH) {
+        throw new Error(
+          `Windows system qualification evidence must use ${WINDOWS_SYSTEM_RECEIPT_PATH}.`
+        );
+      }
+      assessed = assessWindowsSystemEvidence(parseJson(receiptBytes, 'Windows system receipt'));
+      assertValidationSource(assessed.source, 'release', 'Windows system receipt source');
+      assertSameExactSource(assessed.source, index.source, 'Windows system receipt');
+      if (assessed.externalQualificationPassed !== true) {
+        throw new Error('Windows system receipt is not eligible external qualification evidence.');
+      }
+      gateIds = WINDOWS_SYSTEM_GATE_IDS;
+      for (const id of gateIds) {
+        if (assessed.acceptance[id] !== 'qualified') {
+          throw new Error(`Windows system receipt did not qualify ${id}.`);
+        }
+      }
     } else {
       throw new Error(`External qualification index contains unknown receipt kind: ${kind}.`);
     }
@@ -287,12 +353,12 @@ function writeQualificationIndex({
   const resolvedIndexPath = resolveInside(normalizedRoot, normalizedIndexPath, 'External qualification index path');
   let receipts = [];
   if (existsSync(resolvedIndexPath)) {
-    admitExternalQualificationEvidence({
+    admitExternalQualificationEvidenceInternal({
       root: normalizedRoot,
       indexPath: normalizedIndexPath,
       source: admittedSource,
       allowedIds: EXTERNAL_QUALIFICATION_GATE_IDS
-    });
+    }, kind);
     const existing = parseJson(readFileSync(resolvedIndexPath), 'External qualification index');
     receipts = existing.receipts.filter(item => item.kind !== kind);
   }
@@ -300,7 +366,8 @@ function writeQualificationIndex({
   const kindOrder = [
     PRODUCTION_PILOT_RECEIPT_KIND,
     ELECTRON_PERFORMANCE_RECEIPT_KIND,
-    WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND
+    WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
+    WINDOWS_SYSTEM_RECEIPT_KIND
   ];
   receipts.sort((left, right) => kindOrder.indexOf(left.kind) - kindOrder.indexOf(right.kind));
 

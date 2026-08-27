@@ -488,6 +488,13 @@ export interface AppBootstrap {
   expansion: ExpansionRegistrySnapshot;
 }
 
+export interface RendererReadyObservation {
+  activeView: 'autopilot' | 'downloads' | 'final-review' | 'library' | 'analytics' | 'exceptions' | 'settings';
+  initialSetupRequired: boolean;
+  setupReady: boolean;
+  setupChecklistVisible: boolean;
+}
+
 export type AppStateSnapshot = Pick<AppBootstrap,
   | 'diagnostics'
   | 'queue'

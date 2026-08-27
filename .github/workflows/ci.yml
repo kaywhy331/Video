@@ -50,6 +50,7 @@ jobs:
             validation/results/claims-input.json
             validation/results/electron-performance.json
             validation/results/production-pilot.json
+            validation/results/windows-system.json
             validation/external-qualification/index.json
             release/videofactory-sbom.cdx.json
           if-no-files-found: error
@@ -88,6 +89,21 @@ jobs:
 
       - name: Validate Windows source and dependencies
         run: npm run doctor
+
+      - name: Parse released Windows system qualifier
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./scripts/windows/qualify-windows-system.ps1),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
 
       - name: Build Windows installer and archive
         shell: pwsh
@@ -150,6 +166,10 @@ jobs:
             @{
               Source = "$evidenceRoot/validation/results/production-pilot.json"
               Destination = "validation/results/production-pilot.json"
+            },
+            @{
+              Source = "$evidenceRoot/validation/results/windows-system.json"
+              Destination = "validation/results/windows-system.json"
             }
           )
           $presentExternalReceipts = @($externalReceipts | Where-Object { Test-Path $_.Source })
@@ -189,6 +209,7 @@ jobs:
             release/*.exe
             release/*.zip
             release/*.json
+            release/*.ps1
             release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

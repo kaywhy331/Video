@@ -9,11 +9,14 @@ import {
   EXTERNAL_QUALIFICATION_INDEX_KIND,
   EXTERNAL_QUALIFICATION_INDEX_PATH,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
+  WINDOWS_SYSTEM_RECEIPT_PATH,
   admitExternalQualificationEvidence,
   writeElectronPerformanceQualificationIndex,
-  writeWindowsPackageRuntimeQualificationIndex
+  writeWindowsPackageRuntimeQualificationIndex,
+  writeWindowsSystemQualificationIndex
 } from '../scripts/external-qualification-evidence.mjs';
 import type { ValidationSource } from '../scripts/validation-source.mjs';
+import { windowsSystemEvidenceFixture } from './fixtures/windows-system-evidence-fixture';
 
 const roots: string[] = [];
 const source: ValidationSource = {
@@ -125,10 +128,25 @@ function writeWindowsReceipt(root: string): void {
       windowsRuntimeLifecycle: { status: 'passed', qualifiedGateIds: ['SYS-005', 'SYS-006'] }
     },
     checks: {
-      archiveLaunch: { status: 'passed' },
+      archiveLaunch: {
+        status: 'passed',
+        app: {
+          isPackaged: true,
+          initialSetup: {
+            activeView: 'settings', initialSetupRequired: true, setupReady: false, checklistVisible: true
+          }
+        }
+      },
       installerInstall: { status: 'passed' },
       installedLaunch: {
-        status: 'passed', kind: 'installed', app: { isPackaged: true }, lifecycle: { orderlyQuit: true },
+        status: 'passed', kind: 'installed',
+        app: {
+          isPackaged: true,
+          initialSetup: {
+            activeView: 'settings', initialSetupRequired: true, setupReady: false, checklistVisible: true
+          }
+        },
+        lifecycle: { orderlyQuit: true },
         runtimeQualification: {
           schemaVersion: 1, status: 'passed',
           workload: {
@@ -206,6 +224,41 @@ describe('external qualification evidence admission', () => {
       'windows_package_runtime'
     ]);
     expect(admitted.qualifiedById['SYS-006']?.kind).toBe('windows_package_runtime');
+  });
+
+  it('[SYS-001][SYS-003][SYS-004] indexes only the canonical machine-verifiable system matrix', () => {
+    const { root } = fixture();
+    const receipt = windowsSystemEvidenceFixture();
+    receipt.source = { ...source };
+    writeFileSync(resolve(root, WINDOWS_SYSTEM_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+    const admitted = writeWindowsSystemQualificationIndex({
+      root,
+      source,
+      now: new Date('2026-08-26T12:04:00.000Z')
+    });
+    expect(admitted.qualifiedIds).toEqual([
+      'CAT-001', 'CAT-009', 'PERF-001', 'PERF-002', 'PERF-003',
+      'SYS-001', 'SYS-003', 'SYS-004'
+    ]);
+    expect(admitted.receipts.map(receipt => receipt.kind)).toEqual([
+      'electron_performance',
+      'windows_system'
+    ]);
+    expect(admitted.qualifiedById['SYS-004']?.kind).toBe('windows_system');
+  });
+
+  it('atomically replaces a prior canonical receipt descriptor after receipt regeneration', () => {
+    const { root } = fixture();
+    const receipt = windowsSystemEvidenceFixture();
+    receipt.source = { ...source };
+    writeFileSync(resolve(root, WINDOWS_SYSTEM_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+    const first = writeWindowsSystemQualificationIndex({ root, source });
+    receipt.generatedAt = '2026-08-26T14:00:00.000Z';
+    writeFileSync(resolve(root, WINDOWS_SYSTEM_RECEIPT_PATH), `${JSON.stringify(receipt, null, 2)}\n`);
+    const replaced = writeWindowsSystemQualificationIndex({ root, source });
+    expect(replaced.qualifiedIds).toEqual(first.qualifiedIds);
+    expect(replaced.qualifiedById['SYS-001']?.evidence.sha256)
+      .not.toBe(first.qualifiedById['SYS-001']?.evidence.sha256);
   });
 
   it('fails closed for tampered bytes, source drift, ineligible runs, and disallowed coverage', () => {

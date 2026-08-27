@@ -4,6 +4,13 @@ import type { CatalogAsset, VisualTreatment } from './types';
 const FilePathSchema = z.string().trim().min(1).max(32_767);
 const NullableText = (max: number) => z.string().trim().max(max).nullable();
 
+export const RendererReadyObservationSchema = z.object({
+  activeView: z.enum(['autopilot', 'downloads', 'final-review', 'library', 'analytics', 'exceptions', 'settings']),
+  initialSetupRequired: z.boolean(),
+  setupReady: z.boolean(),
+  setupChecklistVisible: z.boolean()
+}).strict();
+
 export const CatalogSearchRequestSchema = z.object({
   query: z.string().trim().max(500).optional(),
   country: z.string().trim().max(120).optional(),

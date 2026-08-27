@@ -2,11 +2,13 @@ import type { ElectronPerformanceEvidence } from './electron-performance-evidenc
 import type { ValidationSource } from './validation-source.mjs';
 import type { WindowsPackageRuntimeAssessment } from './windows-package-runtime-evidence.mjs';
 import type { ProductionPilotEvidence } from './production-pilot-evidence.mjs';
+import type { WindowsSystemAssessment } from './windows-system-evidence.mjs';
 
 export type ExternalQualificationReceiptKind =
   | 'production_pilot'
   | 'electron_performance'
-  | 'windows_package_runtime';
+  | 'windows_package_runtime'
+  | 'windows_system';
 
 export interface FileEvidence {
   path: string;
@@ -36,7 +38,11 @@ export interface ExternalQualificationAdmission {
     kind: ExternalQualificationReceiptKind;
     evidence: FileEvidence;
     qualifiedIds: string[];
-    assessment: ProductionPilotEvidence | ElectronPerformanceEvidence | WindowsPackageRuntimeAssessment;
+    assessment:
+      | ProductionPilotEvidence
+      | ElectronPerformanceEvidence
+      | WindowsPackageRuntimeAssessment
+      | WindowsSystemAssessment;
   }>;
   qualifiedIds: string[];
   qualifiedById: Record<string, {
@@ -54,6 +60,8 @@ export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND: 'windows_package_runtime';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH: 'release/WINDOWS_PACKAGE_SMOKE.json';
 export const PRODUCTION_PILOT_RECEIPT_KIND: 'production_pilot';
 export const PRODUCTION_PILOT_RECEIPT_PATH: 'validation/results/production-pilot.json';
+export const WINDOWS_SYSTEM_RECEIPT_KIND: 'windows_system';
+export const WINDOWS_SYSTEM_RECEIPT_PATH: 'validation/results/windows-system.json';
 export const EXTERNAL_QUALIFICATION_GATE_IDS: readonly string[];
 
 export function writeElectronPerformanceQualificationIndex(options?: {
@@ -73,6 +81,14 @@ export function writeWindowsPackageRuntimeQualificationIndex(options?: {
 }): ExternalQualificationAdmission;
 
 export function writeProductionPilotQualificationIndex(options?: {
+  root?: string;
+  source?: ValidationSource;
+  receiptPath?: string;
+  indexPath?: string;
+  now?: Date;
+}): ExternalQualificationAdmission;
+
+export function writeWindowsSystemQualificationIndex(options?: {
   root?: string;
   source?: ValidationSource;
   receiptPath?: string;
