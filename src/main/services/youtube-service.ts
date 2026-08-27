@@ -38,6 +38,10 @@ import {
   invalidatePublicationSnapshots,
   type PublicationSnapshot
 } from './active-final-service';
+import {
+  type ProviderHealthStatus,
+  ProviderPolicyService
+} from './provider-policy';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
@@ -164,6 +168,68 @@ function googleErrorDetails(error: unknown): { status: number | undefined; reaso
   };
 }
 
+export interface YouTubeProviderHealthFailure {
+  status: ProviderHealthStatus;
+  statusCode: number | null;
+  message: string;
+}
+
+export function classifyYouTubeProviderHealthFailure(
+  error: unknown
+): YouTubeProviderHealthFailure | null {
+  const details = googleErrorDetails(error);
+  const reasons = new Set(details.reasons.map(reason => reason.toLowerCase()));
+  const code = String((error as { code?: unknown })?.code ?? '').toUpperCase();
+  const quotaFailure = details.status === 402
+    || details.status === 429
+    || [...reasons].some(reason => (
+      reason.includes('quota')
+      || reason.includes('ratelimit')
+      || reason === 'uploadlimitexceeded'
+      || reason === 'dailylimitexceeded'
+    ));
+  if (quotaFailure) {
+    return {
+      status: 'quota_exhausted',
+      statusCode: details.status ?? null,
+      message: 'YouTube API quota is exhausted; retry after quota resets or review the Google Cloud quota.'
+    };
+  }
+  const authorizationFailure = details.status === 401
+    || reasons.has('autherror')
+    || reasons.has('invalidcredentials')
+    || reasons.has('insufficientpermissions');
+  if (authorizationFailure) {
+    return {
+      status: 'auth_invalid',
+      statusCode: details.status ?? null,
+      message: 'YouTube authorization is invalid or expired; reconnect and confirm the intended channel.'
+    };
+  }
+  if (details.status !== undefined && details.status >= 400) {
+    return {
+      status: 'provider_failure',
+      statusCode: details.status,
+      message: 'YouTube rejected the API request; inspect the private publication exception and retry safely.'
+    };
+  }
+  if (['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ERR_SOCKET_TIMEOUT'].includes(code)) {
+    return {
+      status: 'timeout',
+      statusCode: null,
+      message: 'YouTube did not respond before the request timeout; the operation remains retryable.'
+    };
+  }
+  if (['ECONNREFUSED', 'ECONNRESET', 'ENETDOWN', 'ENETUNREACH', 'EAI_AGAIN'].includes(code)) {
+    return {
+      status: 'unavailable',
+      statusCode: null,
+      message: 'YouTube is temporarily unreachable; the operation remains retryable.'
+    };
+  }
+  return null;
+}
+
 export function isYouTubeStudioRestriction(error: unknown): boolean {
   const details = googleErrorDetails(error);
   if (details.status !== 403) return false;
@@ -245,7 +311,8 @@ export class YouTubeService {
     private readonly openExternal: (url: string) => Promise<unknown> = url => shell.openExternal(url, { activate: true }),
     oauthSessions?: YouTubeOAuthSessionPort,
     activeFinal = new ActiveFinalService(db, () => settings().outputFolder),
-    private readonly apiRuntime: YouTubeApiRuntime = defaultYouTubeApiRuntime
+    private readonly apiRuntime: YouTubeApiRuntime = defaultYouTubeApiRuntime,
+    private readonly providerPolicy?: ProviderPolicyService
   ) {
     this.oauthSessions = oauthSessions ?? new YouTubeOAuthSessionManager({
       openExternal: this.openExternal,
@@ -353,7 +420,7 @@ export class YouTubeService {
 
   uploadReadiness(): {
     ready: boolean;
-    code: 'YOUTUBE_AUTH_REQUIRED' | 'YOUTUBE_AUTH_EXPIRED';
+    code: 'YOUTUBE_AUTH_REQUIRED' | 'YOUTUBE_AUTH_EXPIRED' | 'YOUTUBE_QUOTA_EXHAUSTED';
     title: string;
     message: string;
   } {
@@ -368,15 +435,20 @@ export class YouTubeService {
     }
     const health = this.db.raw.prepare(`
       SELECT status, message FROM provider_health
-      WHERE provider IN ('youtube','google') AND status = 'auth_invalid'
+      WHERE provider IN ('youtube','google') AND status IN ('auth_invalid','quota_exhausted')
       ORDER BY checked_at DESC LIMIT 1
     `).get() as { status: string; message: string | null } | undefined;
     if (health) {
+      const quotaExhausted = health.status === 'quota_exhausted';
       return {
         ready: false,
-        code: 'YOUTUBE_AUTH_EXPIRED',
-        title: 'YouTube authorization expired',
-        message: health.message ?? 'Reconnect YouTube before automatic private upload.'
+        code: quotaExhausted ? 'YOUTUBE_QUOTA_EXHAUSTED' : 'YOUTUBE_AUTH_EXPIRED',
+        title: quotaExhausted ? 'YouTube quota exhausted' : 'YouTube authorization expired',
+        message: health.message ?? (
+          quotaExhausted
+            ? 'Wait for YouTube quota to reset before automatic private upload.'
+            : 'Reconnect YouTube before automatic private upload.'
+        )
       };
     }
     return {
@@ -385,6 +457,21 @@ export class YouTubeService {
       title: 'YouTube is ready',
       message: 'YouTube is configured for private upload.'
     };
+  }
+
+  private recordYouTubeHealthy(): void {
+    this.providerPolicy?.recordHealth('youtube', 'healthy', 200, null);
+  }
+
+  private recordYouTubeFailure(error: unknown): void {
+    const failure = classifyYouTubeProviderHealthFailure(error);
+    if (!failure) return;
+    this.providerPolicy?.recordHealth(
+      'youtube',
+      failure.status,
+      failure.statusCode,
+      failure.message
+    );
   }
 
   private async client() {
@@ -544,6 +631,9 @@ export class YouTubeService {
               channelTitle: candidate.channelTitle,
               replacedChannelId: replacement ? existingBinding?.channel_id ?? null : null
             }), confirmedAt);
+            this.db.raw.prepare(`
+              DELETE FROM provider_health WHERE provider IN ('youtube','google')
+            `).run();
           })();
         } catch (error) {
           if (secretsReplaced) {
@@ -609,6 +699,22 @@ export class YouTubeService {
   }
 
   async uploadPrivate(
+    projectId: string,
+    expectedSnapshot?: PublicationSnapshot
+  ): Promise<{ videoId: string; url: string }> {
+    const readiness = this.uploadReadiness();
+    if (!readiness.ready) throw new Error(readiness.message);
+    try {
+      const result = await this.uploadPrivateReady(projectId, expectedSnapshot);
+      this.recordYouTubeHealthy();
+      return result;
+    } catch (error) {
+      this.recordYouTubeFailure(error);
+      throw error;
+    }
+  }
+
+  private async uploadPrivateReady(
     projectId: string,
     expectedSnapshot?: PublicationSnapshot
   ): Promise<{ videoId: string; url: string }> {
@@ -1085,7 +1191,9 @@ export class YouTubeService {
         videoId,
         privateVideoStatus(this.settings().youtubeSyntheticMediaDisclosure)
       );
+      this.recordYouTubeHealthy();
     } catch (resetError) {
+      this.recordYouTubeFailure(resetError);
       const resetMessage = redactSecrets(
         resetError instanceof Error ? resetError.message : String(resetError)
       ).slice(0, 1_000);
@@ -1227,6 +1335,8 @@ export class YouTubeService {
       );
     }
 
+    const readiness = this.uploadReadiness();
+    if (!readiness.ready) throw new Error(readiness.message);
     const auth = await this.client();
     const status: youtube_v3.Schema$VideoStatus = action === 'publish'
       ? { privacyStatus: 'public' }
@@ -1237,6 +1347,7 @@ export class YouTubeService {
     try {
       this.publications.assertCurrent(snapshot, publication.id, 'publish');
       const responseStatus = await this.updatePublicationStatus(auth, project.youtubeVideoId, status);
+      this.recordYouTubeHealthy();
       try {
         this.publications.assertCurrent(snapshot, publication.id, 'publish');
       } catch (error) {
@@ -1265,7 +1376,11 @@ export class YouTubeService {
         await this.resetRemotePrivateAfterStale(auth, project.youtubeVideoId, publication.id, action);
         throw snapshotError;
       }
-      if (!isYouTubeStudioRestriction(error)) throw error;
+      if (!isYouTubeStudioRestriction(error)) {
+        this.recordYouTubeFailure(error);
+        throw error;
+      }
+      this.recordYouTubeHealthy();
       return this.routeToStudio(
         projectId,
         publication.id,

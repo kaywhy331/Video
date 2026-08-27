@@ -1,4 +1,4 @@
-import type { AppBootstrap, ProviderCapabilityRecord } from './types';
+import type { AppBootstrap, OperationsHealth, ProviderCapabilityRecord } from './types';
 
 export const PRODUCTION_CATALOG_MINIMUM_ROWS = 26_000;
 
@@ -24,6 +24,13 @@ export interface InitialSetupState {
 }
 
 const productionProviderCapabilities = Object.freeze(['llm', 'vision', 'research', 'tts'] as const);
+const blockingProviderHealthStatuses = new Set<OperationsHealth['providers'][number]['status']>([
+  'auth_invalid',
+  'quota_exhausted',
+  'invalid_endpoint',
+  'endpoint_untrusted',
+  'credential_origin_mismatch'
+]);
 
 /**
  * Derives setup state from authoritative runtime facts rather than a dismissible
@@ -32,6 +39,9 @@ const productionProviderCapabilities = Object.freeze(['llm', 'vision', 'research
  */
 export function initialSetupState(bootstrap: AppBootstrap): InitialSetupState {
   const diagnostics = bootstrap.diagnostics;
+  const providerHealth = Array.isArray(bootstrap.operationsHealth?.providers)
+    ? bootstrap.operationsHealth.providers
+    : [];
   const minimumFreeBytes = bootstrap.settings.minFreeDiskGb * 1024 ** 3;
   const storageReady = Boolean(
     diagnostics
@@ -55,13 +65,34 @@ export function initialSetupState(bootstrap: AppBootstrap): InitialSetupState {
   );
   const catalogReady = bootstrap.catalog.totalAssets >= PRODUCTION_CATALOG_MINIMUM_ROWS;
   const providersReady = productionProviderCapabilities.every(capability => (
-    bootstrap.expansion.providers.some(provider => productionProviderReady(provider, capability))
+    bootstrap.expansion.providers.some(provider => (
+      productionProviderReady(provider, capability)
+      && !blockingProviderHealth(provider.providerKey, providerHealth)
+    ))
+  ));
+  const productionProviderFailure = providerHealth.find(health => (
+    blockingProviderHealthStatuses.has(health.status)
+    && bootstrap.expansion.providers.some(provider => (
+      productionProviderCapabilities.includes(
+        provider.capability as typeof productionProviderCapabilities[number]
+      )
+      && productionProviderReady(
+        provider,
+        provider.capability as typeof productionProviderCapabilities[number]
+      )
+      && providerHealthMatches(provider.providerKey, health.provider)
+    ))
   ));
   const youtubeProviderReady = bootstrap.expansion.providers.some(provider => (
     provider.capability === 'uploader'
     && provider.providerKey === 'youtube'
     && provider.configured
     && provider.available
+    && !blockingProviderHealth(provider.providerKey, providerHealth)
+  ));
+  const youtubeProviderFailure = providerHealth.find(health => (
+    blockingProviderHealthStatuses.has(health.status)
+    && providerHealthMatches('youtube', health.provider)
   ));
   const youtubeReady = bootstrap.secrets.youtubeAuthorized && youtubeProviderReady;
 
@@ -95,7 +126,9 @@ export function initialSetupState(bootstrap: AppBootstrap): InitialSetupState {
       label: 'Production AI and narration providers',
       detail: providersReady
         ? 'Language, vision, research, and narration adapters are configured and available.'
-        : 'Configure available non-fixture language, vision, research, and narration adapters.',
+        : productionProviderFailure
+          ? providerFailureDetail(productionProviderFailure, 'Resolve the provider health blocker')
+          : 'Configure available non-fixture language, vision, research, and narration adapters.',
       complete: providersReady
     },
     {
@@ -103,7 +136,9 @@ export function initialSetupState(bootstrap: AppBootstrap): InitialSetupState {
       label: 'Confirmed YouTube channel',
       detail: youtubeReady
         ? 'The private-first uploader is authorized and bound to a confirmed channel.'
-        : 'Connect Google OAuth and confirm the intended YouTube channel before enabling Autopilot.',
+        : youtubeProviderFailure
+          ? providerFailureDetail(youtubeProviderFailure, 'Reconnect or recover the confirmed YouTube channel')
+          : 'Connect Google OAuth and confirm the intended YouTube channel before enabling Autopilot.',
       complete: youtubeReady
     }
   ];
@@ -125,4 +160,28 @@ function productionProviderReady(
     && provider.configured
     && provider.available
     && provider.externalQualification !== 'not_required';
+}
+
+function blockingProviderHealth(
+  providerKey: string,
+  health: OperationsHealth['providers']
+): boolean {
+  return health.some(record => (
+    blockingProviderHealthStatuses.has(record.status)
+    && providerHealthMatches(providerKey, record.provider)
+  ));
+}
+
+function providerHealthMatches(providerKey: string, recordedProvider: string): boolean {
+  return providerKey === recordedProvider
+    || (providerKey === 'youtube' && recordedProvider === 'google');
+}
+
+function providerFailureDetail(
+  failure: OperationsHealth['providers'][number],
+  recovery: string
+): string {
+  const status = failure.status.replaceAll('_', ' ');
+  const cause = failure.message ?? failure.provider + ' reports ' + status;
+  return recovery + ' before starting new Autopilot work: ' + cause.replace(/[.]+$/, '') + '.';
 }
