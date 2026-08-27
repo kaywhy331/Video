@@ -36,14 +36,14 @@ describe('machine-verifiable release claims', () => {
 
     expect(() => assertReleaseClaims(changedDocument(
       'README.md',
-      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.8',
-      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.9'
+      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.9',
+      'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.10'
     ))).toThrow(/unknown release URL or tag/i);
 
     expect(() => assertReleaseClaims(changedDocument(
       'VALIDATION_REPORT.md',
       'for `v0.1.0-alpha.7` at the same merge commit',
-      'for `v0.1.0-alpha.9` at the same merge commit'
+      'for `v0.1.0-alpha.10` at the same merge commit'
     ))).toThrow(/unindexed release tag/i);
 
     expect(() => assertReleaseClaims(changedDocument(
@@ -101,10 +101,10 @@ describe('machine-verifiable release claims', () => {
   it('[REL-005] keeps claim-free documents valid when later release indexes disagree', () => {
     const value = fixture();
     const later = structuredClone(value.indexes.at(-1)!);
-    later.path = 'docs/release-evidence/v0.1.0-alpha.9.json';
-    later.index.releaseSource.tag = 'v0.1.0-alpha.9';
-    later.index.publication.tag = 'v0.1.0-alpha.9';
-    later.index.publication.url = 'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.9';
+    later.path = 'docs/release-evidence/v0.1.0-alpha.10.json';
+    later.index.releaseSource.tag = 'v0.1.0-alpha.10';
+    later.index.publication.tag = 'v0.1.0-alpha.10';
+    later.index.publication.url = 'https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.10';
     later.index.publication.assetCount += 1;
     later.index.publication.assets.push({
       ...later.index.publication.assets[0],
@@ -119,10 +119,10 @@ describe('machine-verifiable release claims', () => {
     }
     value.indexes.push(later);
 
-    expect(() => assertReleaseClaims(value)).toThrow(/do not project historical evidence index.*alpha\.9/i);
+    expect(() => assertReleaseClaims(value)).toThrow(/do not project historical evidence index.*alpha\.10/i);
 
     value.documents['FUTURE-RELEASE.md'] =
-      'See the [future release evidence](docs/release-evidence/v0.1.0-alpha.9.json).';
+      'See the [future release evidence](docs/release-evidence/v0.1.0-alpha.10.json).';
     expect(() => assertReleaseClaims(value)).not.toThrow();
   });
 });

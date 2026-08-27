@@ -2,7 +2,7 @@
 
 **Build:** 0.1.0-alpha.9 published production-readiness enforcement release
 
-**Previous release:** [v0.1.0-alpha.8](https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.8) unsigned Windows prerelease
+**Release:** [v0.1.0-alpha.9](https://github.com/kaywhy331/Video/releases/tag/v0.1.0-alpha.9) unsigned Windows prerelease
 
 VideoFactory Desktop is a single-user Windows application that turns a licensed stock-footage metadata catalog into exact-location-grounded YouTube videos. It is metadata-first and fail-closed: it does not silently substitute footage that merely looks similar, upscale a source to pass resolution policy, or publish before the final human gate.
 
@@ -20,7 +20,7 @@ The repository is a production-hardened alpha with the local P0 buildout and bou
 - representative licensed-music, qualified-4K/portrait, and unattended scheduler rehearsals.
 - recorded Electron renderer startup, real scrolling/interaction and memory behavior, and responsiveness while rendering in the background; the worker-backed import/main-loop harness does not qualify those renderer boundaries.
 
-`production_ready` therefore remains `false`. See [Implementation Coverage](docs/IMPLEMENTATION-COVERAGE.md), [Production Hardening](docs/PRODUCTION-HARDENING.md), the historical [alpha.7 Validation Report](VALIDATION_REPORT.md), and the current release's machine-readable [alpha.8 release-evidence index](docs/release-evidence/v0.1.0-alpha.8.json). Current validation status and acceptance receipts are generated artifacts: run clean release validation or download the exact-workflow-SHA CI artifact rather than treating a tracked root receipt as current evidence.
+`production_ready` therefore remains `false`. See [Implementation Coverage](docs/IMPLEMENTATION-COVERAGE.md), [Production Hardening](docs/PRODUCTION-HARDENING.md), the historical [alpha.7 Validation Report](VALIDATION_REPORT.md), and the current release's machine-readable [alpha.9 release-evidence index](docs/release-evidence/v0.1.0-alpha.9.json). Current validation status and acceptance receipts are generated artifacts: run clean release validation or download the exact-workflow-SHA CI artifact rather than treating a tracked root receipt as current evidence.
 
 ## Implemented
 

@@ -10,3 +10,4 @@ Recorded releases:
 
 - [v0.1.0-alpha.7](v0.1.0-alpha.7.json)
 - [v0.1.0-alpha.8](v0.1.0-alpha.8.json)
+- [v0.1.0-alpha.9](v0.1.0-alpha.9.json)
