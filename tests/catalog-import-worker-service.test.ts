@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { CatalogImportWorkerService } from '@main/services/catalog-import-worker-service';
 import type { ProgressEvent } from '@shared/types';
@@ -53,5 +53,18 @@ describe('CatalogImportWorkerService lifecycle', () => {
       .rejects.toThrow('exited before returning a result (7)');
     expect(value.runner.status()).toBeNull();
     expect(value.events.at(-1)).toMatchObject({ jobId: 'crash-operation', phase: 'preview_failed', progress: 1 });
+  });
+
+  it('does not report completion or clear active state until the worker exits', async () => {
+    const value = fixture();
+    const pending = value.runner.preview('delayed-exit-operation', { filePath: 'delayed-exit' });
+    await vi.waitFor(() => expect(value.events.some(event => event.phase === 'terminal_sent')).toBe(true));
+
+    expect(value.runner.status()).toMatchObject({ operationId: 'delayed-exit-operation', state: 'running' });
+    expect(value.events.some(event => event.phase === 'preview_complete')).toBe(false);
+
+    await expect(pending).resolves.toMatchObject({ previewId: 'preview-stub' });
+    expect(value.runner.status()).toBeNull();
+    expect(value.events.at(-1)).toMatchObject({ phase: 'preview_complete', progress: 1 });
   });
 });

@@ -30,11 +30,15 @@ const outputPath = resolve(requiredEnvironment('VIDEOFACTORY_PERFORMANCE_OUTPUT'
 const source = JSON.parse(requiredEnvironment('VIDEOFACTORY_PERFORMANCE_SOURCE')) as ValidationSource;
 const deviceClass = process.env.VIDEOFACTORY_PERFORMANCE_DEVICE_CLASS?.trim() || null;
 const ci = process.env.VIDEOFACTORY_PERFORMANCE_CI === 'true';
+const preserveDataRoot = process.env.VIDEOFACTORY_PERFORMANCE_PRESERVE_DATA_ROOT === 'true';
+// The qualification profile is intentionally fresh and has no live-provider or
+// YouTube credentials. Respect the production first-run gate while still
+// measuring repeated, painted renderer transitions during long-running work.
 const navigationViews = [
+  { label: 'Library', heading: 'Ground every production decision' },
   { label: 'Settings', heading: 'Keep media local' },
-  { label: 'Exceptions', heading: 'Review only the problems' },
-  { label: 'Autopilot', heading: 'Produce the next accurate video' },
-  { label: 'Library', heading: 'Ground every production decision' }
+  { label: 'Library', heading: 'Ground every production decision' },
+  { label: 'Settings', heading: 'Keep media local' }
 ];
 const searchQueries = ['Paris Architecture', 'Kyoto Walking', 'Rome Street food', 'Oaxaca Museum', 'Lisbon Aerial'];
 
@@ -50,6 +54,7 @@ test('records fail-closed production Electron performance evidence', async () =>
   if (!Number.isSafeInteger(requestedRows) || requestedRows < 100) throw new Error('Invalid qualification row count.');
 
   const dataRoot = mkdtempSync(join(tmpdir(), 'videofactory-electron-performance-'));
+  if (preserveDataRoot) console.log(`Preserving Electron performance data root: ${dataRoot}`);
   const workbookPath = join(dataRoot, `catalog-${requestedRows}.xlsx`);
   const databasePath = join(dataRoot, 'data', 'videofactory.sqlite');
   let application: ElectronApplication | null = null;
@@ -93,6 +98,11 @@ test('records fail-closed production Electron performance evidence', async () =>
     await application.close();
     application = null;
     const integrity = databaseIntegrity(databasePath);
+
+    const warmupLaunch = await launchApplication(dataRoot);
+    application = warmupLaunch.application;
+    await application.close();
+    application = null;
 
     const measuredLaunch = await launchApplication(dataRoot);
     application = measuredLaunch.application;
@@ -171,6 +181,8 @@ test('records fail-closed production Electron performance evidence', async () =>
           commitNavigationSamplesMs: commitNavigation.samples
         },
         startup: {
+          warmupCompleted: true,
+          warmupUsableMs: warmupLaunch.usableMs,
           usableMs: measuredLaunch.usableMs,
           electronLaunchMs: measuredLaunch.electronLaunchMs,
           rendererReadyMs: measuredLaunch.rendererReadyMs
@@ -206,7 +218,7 @@ test('records fail-closed production Electron performance evidence', async () =>
   } finally {
     if (background) await stopChild(background);
     await application?.close().catch(() => undefined);
-    rmSync(dataRoot, { recursive: true, force: true });
+    if (!preserveDataRoot) rmSync(dataRoot, { recursive: true, force: true });
   }
 });
 

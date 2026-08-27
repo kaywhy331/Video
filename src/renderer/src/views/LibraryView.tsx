@@ -140,15 +140,21 @@ export function LibraryView({
     used, licensed, mediaStatus, metadataField, metadataValue, page
   ]);
 
-  async function load(): Promise<void> {
-    const [catalog, clusters, catalogStats] = await Promise.all([
-      window.videoFactory.catalog.search(request),
+  async function loadCatalog(): Promise<void> {
+    setResult(await window.videoFactory.catalog.search(request));
+  }
+
+  async function loadSummary(): Promise<void> {
+    const [clusters, catalogStats] = await Promise.all([
       window.videoFactory.catalog.coverage(100),
       window.videoFactory.catalog.stats()
     ]);
-    setResult(catalog);
     setCoverage(clusters);
     setStats(catalogStats);
+  }
+
+  async function load(): Promise<void> {
+    await Promise.all([loadCatalog(), loadSummary()]);
   }
 
   async function loadEvidence(): Promise<void> {
@@ -161,13 +167,24 @@ export function LibraryView({
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => void load().catch(error => {
-      setError(error instanceof Error ? error.message : String(error));
-    }), 220);
-    return () => clearTimeout(timer);
+    let current = true;
+    const timer = setTimeout(() => {
+      void window.videoFactory.catalog.search(request).then(catalog => {
+        if (current) setResult(catalog);
+      }).catch(error => {
+        if (current) setError(error instanceof Error ? error.message : String(error));
+      });
+    }, 220);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
   }, [request]);
 
   useEffect(() => {
+    if (mode === 'coverage' || mode === 'map') {
+      void loadSummary().catch(error => setError(error instanceof Error ? error.message : String(error)));
+    }
     if (mode === 'map' || mode === 'inbox') {
       void loadEvidence().catch(error => setError(error instanceof Error ? error.message : String(error)));
     }

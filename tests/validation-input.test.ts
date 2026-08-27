@@ -120,6 +120,19 @@ describe('validation input digests and generated evidence lifecycle', () => {
     expect(workflow).toContain("$pipeline.source.commit -ne '${{ github.sha }}'");
     expect(workflow).toContain('validation/results/runtime-input.json');
     expect(workflow).toContain('validation/results/claims-input.json');
+    expect(workflow).toContain('--mode=supporting --rows=26000');
+    expect(workflow).toContain('electron-performance-hosted-windows.json');
+    expect(workflow).toContain('VideoFactory-Desktop-${{ github.sha }}-windows-performance-supporting');
+  });
+
+  it('launches the performance Playwright CLI directly through Node on every platform', () => {
+    const runner = readFileSync(
+      resolve(repositoryRoot, 'scripts', 'run-electron-performance-qualification.mjs'),
+      'utf8'
+    );
+    expect(runner).toContain("resolve('node_modules', 'playwright', 'cli.js')");
+    expect(runner).toContain('spawnSync(process.execPath, playwrightArgs');
+    expect(runner).not.toContain('npx.cmd');
   });
 
   it('[REL-003] pins raw validation input bytes to LF across Linux and Windows checkouts', () => {

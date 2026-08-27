@@ -17,6 +17,11 @@ function preview(rowCount = 1) {
   };
 }
 
+function finish(message, delayMs = 0) {
+  parentPort.postMessage(message);
+  setTimeout(() => parentPort.close(), delayMs);
+}
+
 if (workerData.request.filePath === 'crash') {
   process.exit(7);
 } else if (workerData.request.filePath === 'cancel') {
@@ -24,7 +29,7 @@ if (workerData.request.filePath === 'crash') {
   const timer = setInterval(() => {
     if (Atomics.load(cancelFlag, 0) !== 1) return;
     clearInterval(timer);
-    parentPort.postMessage({
+    finish({
       type: 'error',
       error: { name: 'CatalogImportCancelledError', message: 'Catalog import cancelled.' }
     });
@@ -34,10 +39,15 @@ if (workerData.request.filePath === 'crash') {
   parentPort.on('message', message => {
     if (message.type === 'rows') rows.push(...message.rows);
     if (message.type === 'rows-end') {
-      parentPort.postMessage({ type: 'result', result: { sourceSha256: 'stub-hash', preview: preview(Math.max(0, rows.length - 1)) } });
+      finish({ type: 'result', result: { sourceSha256: 'stub-hash', preview: preview(Math.max(0, rows.length - 1)) } });
     }
   });
 } else {
   parentPort.postMessage({ type: 'progress', progress: 0.5, phase: 'working', message: 'Worker is responsive' });
-  setTimeout(() => parentPort.postMessage({ type: 'result', result: preview() }), 10);
+  setTimeout(() => {
+    if (workerData.request.filePath === 'delayed-exit') {
+      parentPort.postMessage({ type: 'progress', progress: 0.9, phase: 'terminal_sent', message: 'Sending result before exit' });
+    }
+    finish({ type: 'result', result: preview() }, workerData.request.filePath === 'delayed-exit' ? 100 : 0);
+  }, 10);
 }
