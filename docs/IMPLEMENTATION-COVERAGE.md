@@ -150,11 +150,18 @@ The earlier repository-wide buildout is recorded below. The newer critical-gap r
 
 This is deterministic supporting evidence, not live-provider qualification: its media is generated, language and narration use local fallbacks, and the YouTube runtime is protocol-faithful but non-networked. It therefore does not qualify `E2E-001`, `E2E-002`, `E2E-005`, the clean-Windows gate, or any representative hardware/account pilot gate.
 
+## Production pilot field qualification
+
+`npm run qualify:production-pilot` now turns five real production records into a privacy-preserving, machine-verifiable field receipt. Its collector opens a checkpointed schema-24 database snapshot, requires the full 26K catalog and scheduler-created projects across at least three destinations, verifies live Tavily/LLM and SAPI or HTTP TTS evidence, checks certificate-backed Envato acquisitions, re-hashes selected source/narration/caption/thumbnail/manifest/final bytes, independently probes each 4–6 minute final, checks active-final QC/publication/channel state, and hashes the complete audit projection. At least four projects must contain no human actions beyond acquisition and final approval. Raw project titles, paths, project IDs, destination keys, channel IDs, and video IDs are omitted or hashed.
+
+Qualification mode is restricted to a clean exact Windows x64 checkout on representative non-CI operator hardware. A passing ignored `validation/results/production-pilot.json` receipt is added to the shared SHA-256 external index and can qualify only `E2E-001`, `E2E-002`, `E2E-005`, and `UX-001`. Acceptance and release provenance independently re-assess the receipt and reject missing, renamed, stale-source, wrong-version, or byte-altered attachments. No receipt is checked into source, and the current release remains pending until a real field run supplies one.
+
 ## Validation evidence lifecycle hardened after alpha.7
 
 - development and release validation are explicitly qualified; release mode admits only a clean exact Git HEAD/tree and rechecks source plus runtime/claims inputs after all stages;
 - generated root status/acceptance receipts and `validation/results/*.json` are ignored artifacts rather than tracked claims about a later checkout;
 - representative external receipts and `validation/external-qualification/index.json` are also ignored, excluded from runtime/claims digests, and admitted only through exact-source size/hash and receipt-specific verification;
+- production-pilot, renderer-performance, and packaged-Windows receipt kinds can coexist in that one index; Windows packaging preserves every exact-head Linux attachment before adding its own runtime receipt;
 - runtime and human release-claim inputs have separate deterministic per-file manifests without hashing their own generated provenance;
 - claim validation checks exact tags, commits, workflow runs, published-asset counts, signing/readiness state, and external-gate counts against the immutable historical index across every tracked claim document, while Git checks the recorded tag, trees, ancestry, and single-change index history;
 - Linux validation and Windows packaging retain the exact `${{ github.sha }}` artifact handoff, while manifest generation and verification reject dirty, development, stale commit/tree, or mismatched-input evidence;
