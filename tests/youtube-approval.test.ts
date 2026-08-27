@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppDatabase } from '@main/database/database';
 import {
+  classifyYouTubeProviderHealthFailure,
   isYouTubeStudioRestriction,
   YouTubeService,
   youtubeCredentialFingerprint
 } from '@main/services/youtube-service';
+import { ProviderPolicyService } from '@main/services/provider-policy';
 import { approvalFingerprint } from '@shared/approval';
 import type { ProjectDetail } from '@shared/types';
 import type { ProjectService } from '@main/services/project-service';
@@ -112,6 +114,7 @@ describe('YouTube publication approval', () => {
     });
     const update = vi.fn().mockRejectedValue(restriction);
     const open = vi.fn().mockResolvedValue(undefined);
+    const policy = new ProviderPolicyService(value.db, () => ({ monthlyBudgetUsd: 100 }) as never);
     const service = new YouTubeService(
       value.db,
       value.settings,
@@ -119,7 +122,11 @@ describe('YouTube publication approval', () => {
       value.projects,
       vi.fn(),
       update,
-      open
+      open,
+      undefined,
+      undefined,
+      undefined,
+      policy
     );
 
     await expect(service.approve('project-1', 'publish')).resolves.toEqual({
@@ -149,6 +156,9 @@ describe('YouTube publication approval', () => {
       apiStatus: 403,
       apiReasons: ['forbidden']
     });
+    expect(value.db.raw.prepare(`
+      SELECT status FROM provider_health WHERE provider = 'youtube'
+    `).get()).toEqual({ status: 'healthy' });
     value.db.close();
   });
 
@@ -281,5 +291,53 @@ describe('YouTube publication approval', () => {
     } } } })).toBe(true);
     expect(isYouTubeStudioRestriction({ response: { status: 401 }, message: 'Refresh token expired' })).toBe(false);
     expect(isYouTubeStudioRestriction({ response: { status: 500 }, message: 'Studio unavailable' })).toBe(false);
+  });
+
+  it('persists actionable YouTube auth and quota health without hard-blocking transient failures', async () => {
+    const value = fixture();
+    const policy = new ProviderPolicyService(value.db, () => ({ monthlyBudgetUsd: 100 }) as never);
+    const expired = Object.assign(new Error('Refresh token expired'), {
+      response: {
+        status: 401,
+        data: { error: { errors: [{ reason: 'authError' }] } }
+      }
+    });
+    const service = new YouTubeService(
+      value.db,
+      value.settings,
+      value.secrets,
+      value.projects,
+      vi.fn(),
+      vi.fn().mockRejectedValue(expired),
+      vi.fn(),
+      undefined,
+      undefined,
+      undefined,
+      policy
+    );
+
+    await expect(service.approve('project-1', 'publish')).rejects.toThrow('Refresh token expired');
+    expect(value.db.raw.prepare(`
+      SELECT status, status_code, message FROM provider_health WHERE provider = 'youtube'
+    `).get()).toEqual({
+      status: 'auth_invalid',
+      status_code: 401,
+      message: 'YouTube authorization is invalid or expired; reconnect and confirm the intended channel.'
+    });
+    expect(service.uploadReadiness()).toMatchObject({
+      ready: false,
+      code: 'YOUTUBE_AUTH_EXPIRED'
+    });
+
+    expect(classifyYouTubeProviderHealthFailure({
+      response: {
+        status: 403,
+        data: { error: { errors: [{ reason: 'quotaExceeded' }] } }
+      }
+    })).toMatchObject({ status: 'quota_exhausted', statusCode: 403 });
+    expect(classifyYouTubeProviderHealthFailure({ code: 'ETIMEDOUT' }))
+      .toMatchObject({ status: 'timeout', statusCode: null });
+    expect(classifyYouTubeProviderHealthFailure(new Error('Local snapshot changed'))).toBeNull();
+    value.db.close();
   });
 });

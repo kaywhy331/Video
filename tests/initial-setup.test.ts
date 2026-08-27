@@ -61,7 +61,12 @@ function bootstrap(overrides: Partial<AppBootstrap> = {}): AppBootstrap {
     latestCatalogRefresh: null,
     latestUpdateCheck: null,
     scheduler: {} as AppBootstrap['scheduler'],
-    operationsHealth: {} as AppBootstrap['operationsHealth'],
+    operationsHealth: {
+      budget: { spentUsd: 0, limitUsd: 100, remainingUsd: 100, status: 'healthy' },
+      disk: { freeBytes, minimumBytes: 10 * 1024 ** 3, status: 'healthy' },
+      providers: [],
+      workers: { media: 'idle', render: 'idle', upload: 'idle', runningTypes: [] }
+    },
     providerEndpoints: [],
     learningRecommendations: [],
     musicTracks: [],
@@ -135,5 +140,50 @@ describe('first-run autonomous-production setup', () => {
       'catalog',
       'youtube'
     ]);
+  });
+
+  it('blocks hard health for selected production providers and the confirmed uploader', () => {
+    const checkedAt = new Date(0).toISOString();
+    const researchBlocked = bootstrap();
+    researchBlocked.operationsHealth.providers = [{
+      provider: 'tavily',
+      status: 'quota_exhausted',
+      message: 'Research quota is exhausted',
+      checkedAt
+    }];
+    const researchState = initialSetupState(researchBlocked);
+    expect(researchState.ready).toBe(false);
+    expect(researchState.steps.find(step => step.id === 'providers')).toMatchObject({
+      complete: false,
+      detail: expect.stringContaining('Research quota is exhausted')
+    });
+
+    const youtubeBlocked = bootstrap();
+    youtubeBlocked.operationsHealth.providers = [{
+      provider: 'google',
+      status: 'auth_invalid',
+      message: 'The confirmed channel authorization expired',
+      checkedAt
+    }];
+    const youtubeState = initialSetupState(youtubeBlocked);
+    expect(youtubeState.ready).toBe(false);
+    expect(youtubeState.steps.find(step => step.id === 'youtube')).toMatchObject({
+      complete: false,
+      detail: expect.stringContaining('authorization expired')
+    });
+
+    const retryable = bootstrap();
+    retryable.operationsHealth.providers = [{
+      provider: 'tavily',
+      status: 'timeout',
+      message: 'Transient timeout',
+      checkedAt
+    }, {
+      provider: 'unused-provider',
+      status: 'auth_invalid',
+      message: 'Unused provider failure',
+      checkedAt
+    }];
+    expect(initialSetupState(retryable).ready).toBe(true);
   });
 });

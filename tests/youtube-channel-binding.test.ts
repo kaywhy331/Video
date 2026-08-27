@@ -172,6 +172,10 @@ describe('confirmed YouTube channel binding', () => {
       ) VALUES('old-channel-publication', 'publication-project', 'UC-old', 'old-channel-video',
         'private', 'old-channel-sha', 1, 'current', ?, ?)
     `).run(publicationNow, publicationNow);
+    confirmed.db.raw.prepare(`
+      INSERT INTO provider_health(provider, status, status_code, message, checked_at)
+      VALUES('google', 'auth_invalid', 401, 'Expired legacy Google authorization', ?)
+    `).run(publicationNow);
     await expect(confirmed.service.confirmAuthorization({
       pendingAuthorizationId: 'pending-authorization',
       expectedChannelId: 'UC-new',
@@ -206,6 +210,9 @@ describe('confirmed YouTube channel binding', () => {
       SELECT count(*) AS count FROM exceptions
       WHERE project_id = 'publication-project' AND code = 'STALE_PUBLICATION_SNAPSHOT'
     `).get()).toEqual({ count: 1 });
+    expect(confirmed.db.raw.prepare(`
+      SELECT count(*) AS count FROM provider_health WHERE provider IN ('youtube','google')
+    `).get()).toEqual({ count: 0 });
     confirmed.db.close();
   });
 
@@ -230,6 +237,16 @@ describe('confirmed YouTube channel binding', () => {
       ) VALUES(1, 'UC-one', 'One', ?, '2026-08-25T00:00:00.000Z')
     `).run(youtubeCredentialFingerprint('client-id', 'refresh'));
     expect(service.uploadReadiness()).toMatchObject({ ready: true });
+    db.raw.prepare(`
+      INSERT INTO provider_health(provider, status, status_code, message, checked_at)
+      VALUES('youtube', 'quota_exhausted', 429, 'Daily YouTube quota reached', ?)
+    `).run(new Date().toISOString());
+    expect(service.uploadReadiness()).toMatchObject({
+      ready: false,
+      code: 'YOUTUBE_QUOTA_EXHAUSTED',
+      message: 'Daily YouTube quota reached'
+    });
+    db.raw.prepare(`DELETE FROM provider_health WHERE provider = 'youtube'`).run();
     secrets.store.update({ youtubeClientId: 'different-client-id' });
     expect(service.uploadReadiness()).toMatchObject({ ready: false, code: 'YOUTUBE_AUTH_REQUIRED' });
     expect(() => assertPublicationChannelBinding('UC-other', 'UC-one')).toThrow(/does not match/i);

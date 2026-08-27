@@ -282,7 +282,9 @@ export class AppContext {
       undefined,
       undefined,
       undefined,
-      this.activeFinal
+      this.activeFinal,
+      undefined,
+      this.providerPolicy
     );
     this.finalReview = new FinalReviewService(
       this.db,
