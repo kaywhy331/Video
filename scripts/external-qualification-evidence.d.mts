@@ -2,10 +2,12 @@ import type { ElectronPerformanceEvidence } from './electron-performance-evidenc
 import type { ValidationSource } from './validation-source.mjs';
 import type { WindowsPackageRuntimeAssessment } from './windows-package-runtime-evidence.mjs';
 import type { ProductionPilotEvidence } from './production-pilot-evidence.mjs';
+import type { ProductionRecoveryAssessment } from './production-recovery-evidence.mjs';
 import type { WindowsSystemAssessment } from './windows-system-evidence.mjs';
 
 export type ExternalQualificationReceiptKind =
   | 'production_pilot'
+  | 'production_recovery'
   | 'electron_performance'
   | 'windows_package_runtime'
   | 'windows_system';
@@ -40,6 +42,7 @@ export interface ExternalQualificationAdmission {
     qualifiedIds: string[];
     assessment:
       | ProductionPilotEvidence
+      | ProductionRecoveryAssessment
       | ElectronPerformanceEvidence
       | WindowsPackageRuntimeAssessment
       | WindowsSystemAssessment;
@@ -60,6 +63,8 @@ export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND: 'windows_package_runtime';
 export const WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH: 'release/WINDOWS_PACKAGE_SMOKE.json';
 export const PRODUCTION_PILOT_RECEIPT_KIND: 'production_pilot';
 export const PRODUCTION_PILOT_RECEIPT_PATH: 'validation/results/production-pilot.json';
+export const PRODUCTION_RECOVERY_RECEIPT_KIND: 'production_recovery';
+export const PRODUCTION_RECOVERY_RECEIPT_PATH: 'validation/results/production-recovery.json';
 export const WINDOWS_SYSTEM_RECEIPT_KIND: 'windows_system';
 export const WINDOWS_SYSTEM_RECEIPT_PATH: 'validation/results/windows-system.json';
 export const EXTERNAL_QUALIFICATION_GATE_IDS: readonly string[];
@@ -81,6 +86,14 @@ export function writeWindowsPackageRuntimeQualificationIndex(options?: {
 }): ExternalQualificationAdmission;
 
 export function writeProductionPilotQualificationIndex(options?: {
+  root?: string;
+  source?: ValidationSource;
+  receiptPath?: string;
+  indexPath?: string;
+  now?: Date;
+}): ExternalQualificationAdmission;
+
+export function writeProductionRecoveryQualificationIndex(options?: {
   root?: string;
   source?: ValidationSource;
   receiptPath?: string;

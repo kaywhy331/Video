@@ -162,12 +162,18 @@ This is deterministic supporting evidence, not live-provider qualification: its 
 
 Qualification mode is restricted to a clean exact Windows x64 checkout on representative non-CI operator hardware. A passing ignored `validation/results/production-pilot.json` receipt is added to the shared SHA-256 external index and can qualify only `E2E-001`, `E2E-002`, `E2E-005`, and `UX-001`. Acceptance and release provenance independently re-assess the receipt and reject missing, renamed, stale-source, wrong-version, or byte-altered attachments. No receipt is checked into source, and the current release remains pending until a real field run supplies one.
 
+## Production recovery field qualification
+
+`scripts/windows/qualify-production-recovery.ps1` and `npm run qualify:production-recovery` provide the fail-closed `E2E-004` path. Six raw observations must prove a Windows forced process-tree exit and packaged-app restart at completed paid-provider, licensed-ingest, render-assembly, live resumable-session, live remote-commit, and representative-restore boundaries. The recorder reads the real schema-24 database and files, including durable ingest/restore recovery audits added for this purpose; the aggregate independently checks integrity, foreign keys, attempt progression, preserved provider receipts/cost, source/licenses/derivatives, final media, Google session/video reuse, publication completion, safety-backup integrity, rebuild status, and actual original-file presence.
+
+Only observations from one identical representative Windows x64 machine, packaged executable, provenance document, clean commit/tree, and app version can form the ignored privacy-reduced receipt. The receipt can qualify only `E2E-004`; absent real observations keep the gate pending. Operator steps and destructive-test precautions are in [production recovery qualification](PRODUCTION-RECOVERY-QUALIFICATION.md).
+
 ## Validation evidence lifecycle hardened after alpha.7
 
 - development and release validation are explicitly qualified; release mode admits only a clean exact Git HEAD/tree and rechecks source plus runtime/claims inputs after all stages;
 - generated root status/acceptance receipts and `validation/results/*.json` are ignored artifacts rather than tracked claims about a later checkout;
 - representative external receipts and `validation/external-qualification/index.json` are also ignored, excluded from runtime/claims digests, and admitted only through exact-source size/hash and receipt-specific verification;
-- production-pilot, renderer-performance, Windows-system, and packaged-Windows receipt kinds can coexist in that one index; Windows packaging preserves every exact-head Linux attachment before adding its own runtime receipt;
+- production-pilot, production-recovery, renderer-performance, Windows-system, and packaged-Windows receipt kinds can coexist in that one index; Windows packaging preserves every exact-head Linux attachment before adding its own runtime receipt;
 - runtime and human release-claim inputs have separate deterministic per-file manifests without hashing their own generated provenance;
 - claim validation checks exact tags, commits, workflow runs, published-asset counts, signing/readiness state, and external-gate counts against the immutable historical index across every tracked claim document, while Git checks the recorded tag, trees, ancestry, and single-change index history;
 - Linux validation and Windows packaging retain the exact `${{ github.sha }}` artifact handoff, while manifest generation and verification reject dirty, development, stale commit/tree, or mismatched-input evidence;

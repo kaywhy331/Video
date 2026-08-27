@@ -1,5 +1,5 @@
 {
-  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v9",
+  "fixtureVersion": "videofactory-acceptance-fixtures-2026-08-26-v10",
   "automated": [
     {
       "ids": ["E2E-003"],
@@ -281,10 +281,18 @@
     },
     {
       "ids": ["E2E-004"],
-      "reason": "Real SIGKILL-and-restart drills cover FFmpeg-backed ingest recovery and a draft-render assembly-boundary retry. A protocol-faithful upload fixture now also proves durable session reuse both before the first committed byte and after the remote video commits but before its local receipt; representative production-stage and live YouTube interruption drills remain external.",
+      "reason": "Local SIGKILL drills are supporting evidence. External qualification requires the canonical exact-source production-recovery receipt with six representative packaged-Windows forced-restart observations: completed paid-provider work, licensed ingest, render assembly, live YouTube session reuse, live remote-video reuse, and production-data restore. The receipt must prove one process-tree termination and restart per boundary, unchanged completed-call receipts, stable remote session/video identities and one durable publication, safe partial handling, and intact schema, foreign keys, backup, and final artifacts.",
       "evidence": [
+        "scripts/collect-production-recovery-evidence.mjs",
+        "scripts/production-recovery-evidence.mjs",
+        "scripts/production-recovery-observation.mjs",
+        "scripts/run-production-recovery-qualification.mjs",
+        "scripts/windows/qualify-production-recovery.ps1",
         "tests/job-service.test.ts",
         "tests/media-ingest-safety.integration.test.ts",
+        "tests/production-recovery-collector.test.ts",
+        "tests/production-recovery-evidence.test.ts",
+        "tests/production-recovery-observation.test.ts",
         "tests/render-recovery.test.ts",
         "tests/youtube-upload-recovery.integration.test.ts",
         "tests/workflow-service.test.ts"

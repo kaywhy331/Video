@@ -26,6 +26,8 @@ import {
   EXTERNAL_QUALIFICATION_INDEX_PATH,
   PRODUCTION_PILOT_RECEIPT_KIND,
   PRODUCTION_PILOT_RECEIPT_PATH,
+  PRODUCTION_RECOVERY_RECEIPT_KIND,
+  PRODUCTION_RECOVERY_RECEIPT_PATH,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_KIND,
   WINDOWS_PACKAGE_RUNTIME_RECEIPT_PATH,
   WINDOWS_SYSTEM_RECEIPT_KIND,
@@ -54,6 +56,7 @@ const sbomPath = resolve(releaseDirectory, 'videofactory-sbom.cdx.json');
 const externalQualificationIndexPath = resolve(releaseDirectory, 'EXTERNAL_QUALIFICATION_INDEX.json');
 const electronPerformanceReceiptPath = resolve(releaseDirectory, 'EXTERNAL_ELECTRON_PERFORMANCE.json');
 const productionPilotReceiptPath = resolve(releaseDirectory, 'EXTERNAL_PRODUCTION_PILOT.json');
+const productionRecoveryReceiptPath = resolve(releaseDirectory, 'EXTERNAL_PRODUCTION_RECOVERY.json');
 const windowsSystemReceiptPath = resolve(releaseDirectory, 'EXTERNAL_WINDOWS_SYSTEM.json');
 const windowsSystemQualifierPath = resolve(releaseDirectory, 'QUALIFY_WINDOWS_SYSTEM.ps1');
 const windowsSystemQualifierSourcePath = resolve(root, 'scripts/windows/qualify-windows-system.ps1');
@@ -145,6 +148,7 @@ function copyAvailableValidationEvidence() {
     [resolve(root, EXTERNAL_QUALIFICATION_INDEX_PATH), externalQualificationIndexPath],
     [resolve(root, ELECTRON_PERFORMANCE_RECEIPT_PATH), electronPerformanceReceiptPath],
     [resolve(root, PRODUCTION_PILOT_RECEIPT_PATH), productionPilotReceiptPath],
+    [resolve(root, PRODUCTION_RECOVERY_RECEIPT_PATH), productionRecoveryReceiptPath],
     [resolve(root, WINDOWS_SYSTEM_RECEIPT_PATH), windowsSystemReceiptPath]
   ];
   for (const [source, destination] of copies) {
@@ -247,6 +251,7 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
       existsSync(externalQualificationIndexPath)
       || existsSync(electronPerformanceReceiptPath)
       || existsSync(productionPilotReceiptPath)
+      || existsSync(productionRecoveryReceiptPath)
       || existsSync(windowsSystemReceiptPath)
     ) {
       throw new Error('Release contains unreferenced external qualification attachments.');
@@ -267,6 +272,11 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
         canonicalPath: PRODUCTION_PILOT_RECEIPT_PATH,
         releasePath: productionPilotReceiptPath,
         label: 'production pilot receipt'
+      },
+      [PRODUCTION_RECOVERY_RECEIPT_KIND]: {
+        canonicalPath: PRODUCTION_RECOVERY_RECEIPT_PATH,
+        releasePath: productionRecoveryReceiptPath,
+        label: 'production recovery receipt'
       },
       electron_performance: {
         canonicalPath: ELECTRON_PERFORMANCE_RECEIPT_PATH,
@@ -306,6 +316,9 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
     if (existsSync(productionPilotReceiptPath) && !referencedKinds.has(PRODUCTION_PILOT_RECEIPT_KIND)) {
       throw new Error('Release contains an unreferenced production pilot attachment.');
     }
+    if (existsSync(productionRecoveryReceiptPath) && !referencedKinds.has(PRODUCTION_RECOVERY_RECEIPT_KIND)) {
+      throw new Error('Release contains an unreferenced production recovery attachment.');
+    }
     if (existsSync(windowsSystemReceiptPath) && !referencedKinds.has(WINDOWS_SYSTEM_RECEIPT_KIND)) {
       throw new Error('Release contains an unreferenced Windows system attachment.');
     }
@@ -317,6 +330,10 @@ function assertExternalQualificationAttachments(validation, acceptanceReceipt) {
     const productionPilot = admitted.receipts.find(item => item.kind === PRODUCTION_PILOT_RECEIPT_KIND);
     if (productionPilot && productionPilot.assessment.appVersion !== validation.release) {
       throw new Error('Attached production pilot evidence does not match the package version.');
+    }
+    const productionRecovery = admitted.receipts.find(item => item.kind === PRODUCTION_RECOVERY_RECEIPT_KIND);
+    if (productionRecovery && productionRecovery.assessment.appVersion !== validation.release) {
+      throw new Error('Attached production recovery evidence does not match the package version.');
     }
     const windowsSystem = admitted.receipts.find(item => item.kind === WINDOWS_SYSTEM_RECEIPT_KIND);
     if (windowsSystem && windowsSystem.assessment.appVersion !== validation.release) {

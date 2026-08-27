@@ -25,13 +25,15 @@ The production field gate also has a canonical runner. Close every app instance,
 
 The system field gate is likewise canonical. Run the checksummed `QUALIFY_WINDOWS_SYSTEM.ps1` shipped in the release on non-CI NVIDIA, Intel, and AMD targets without developer commands, supplying a real read-only/missing/offline-NAS/low-space matrix on at least one target. The packaged app persists diagnostic, setup-route, and storage/database-integrity observations before the script uninstalls it. From a clean checkout of the exact released commit, `npm run qualify:windows-system` hashes and re-assesses three to ten raw observations, removes device labels and paths, and may qualify only `SYS-001`, `SYS-003`, and `SYS-004`. Release provenance requires the same app version and released qualifier hash. See [Windows system qualification](WINDOWS-SYSTEM-QUALIFICATION.md).
 
+The crash-and-resume gate also has a canonical target harness. `scripts/windows/qualify-production-recovery.ps1` polls real packaged state, forcibly terminates the Windows process tree at provider, ingest, render, resumable-session, remote-commit, and restore boundaries, restarts the same executable/data root, and refuses to emit a raw observation until stage-specific durable recovery, file/database integrity, and one recovery attempt are proven. `npm run qualify:production-recovery` accepts exactly those six unique observations from one exact release/machine, removes private identities, and may qualify only `E2E-004`. No field receipt is stored in source; follow [production recovery qualification](PRODUCTION-RECOVERY-QUALIFICATION.md).
+
 ## Release engineering
 
 - Sign the Windows installer and define an update channel before broad distribution.
 - Add crash reporting only with an explicit privacy/redaction policy.
 - Validate Windows fixtures covering ProRes, H.264, H.265, alpha, variable frame rate, interlaced sources, rotation, and unusual color spaces.
 - Benchmark dashboard startup and project operations against the PRD data-size targets; production catalog search and worker/main-loop import now have checked-in 26K receipts.
-- Preserve the generated acceptance receipt, runtime/claims input manifests, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, released Windows system qualifier, any admitted production-pilot/performance/system attachments, the commit/tree- and artifact-bound packaged-Windows smoke receipt, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`. Do not commit generated root receipts as current source evidence.
+- Preserve the generated acceptance receipt, runtime/claims input manifests, zero-advisory audit gate, CycloneDX SBOM, exact artifact manifest/checksums, released Windows system qualifier, any admitted production-pilot/recovery/performance/system attachments, the commit/tree- and artifact-bound packaged-Windows smoke receipt, and dependency-response policy with every release artifact; see `DEPENDENCY-SECURITY.md`. Do not commit generated root receipts as current source evidence.
 
 ## P1 after qualification
 

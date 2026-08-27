@@ -1071,6 +1071,27 @@ export class MediaService {
       }
       try {
         await this.ingestAcquisition(String(row.id), sourcePath);
+        const completed = this.db.raw.prepare(`
+          SELECT state, mapping_evidence_json FROM acquisition_items WHERE id = ?
+        `).get(row.id) as { state: string; mapping_evidence_json: string | null };
+        const completedCheckpoint = ingestCheckpoint(completed.mapping_evidence_json);
+        const now = new Date().toISOString();
+        this.db.raw.prepare(`
+          INSERT INTO audit_log(
+            project_id, action, actor, entity_type, entity_id,
+            after_json, metadata_json, created_at
+          ) VALUES(?, 'media.ingest_recovered', 'system', 'acquisition_item', ?, ?, ?, ?)
+        `).run(
+          row.project_id,
+          row.id,
+          JSON.stringify({
+            state: completed.state,
+            checkpointPhase: completedCheckpoint?.phase ?? null,
+            sourceSha256: completedCheckpoint?.sha256 ?? null
+          }),
+          JSON.stringify({ trigger: 'startup_recovery' }),
+          now
+        );
         recovered += 1;
       } catch (error) {
         this.recordIngestRecoveryFailure(

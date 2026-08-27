@@ -248,6 +248,42 @@ describe('backup and restore', () => {
     });
     expect(report.checksum).toBe(backup.checksum);
     expect(AppDatabase.schemaVersion(databasePath)).toBe(APPLICATION_SCHEMA_VERSION);
+    const completedRestore = BackupService.consumeCompletedRestore(databasePath);
+    expect(completedRestore).not.toBeNull();
+    const recoveryService = new BackupService(restored, () => settings);
+    const rebuildReport = {
+      id: 'restore-rebuild',
+      projectId: 'restore-project',
+      checkedOriginals: 0,
+      rebuiltProxies: 0,
+      rebuiltContactSheets: 0,
+      rebuiltVoiceTimings: 0,
+      rebuiltEditingLayers: 0,
+      rebuiltCaptionFiles: 0,
+      staleRenderFragments: 0,
+      missingOriginals: [],
+      missingVoice: [],
+      failures: [],
+      status: 'complete' as const,
+      error: null,
+      createdAt: now,
+      completedAt: now
+    };
+    recoveryService.recordCompletedRestoreRecovery(completedRestore!, [rebuildReport], new Date(now));
+    recoveryService.recordCompletedRestoreRecovery(completedRestore!, [rebuildReport], new Date(now));
+    const recoveryAudit = restored.raw.prepare(`
+      SELECT actor, entity_type, entity_id, after_json, metadata_json
+      FROM audit_log WHERE action = 'backup.restore_recovered'
+    `).all() as Array<Record<string, unknown>>;
+    expect(recoveryAudit).toHaveLength(1);
+    expect(recoveryAudit[0]).toMatchObject({
+      actor: 'system',
+      entity_type: 'database',
+      entity_id: completedRestore!.requestId,
+      after_json: expect.stringContaining('"rebuildPassed":true'),
+      metadata_json: '{"trigger":"startup_restore_recovery"}'
+    });
+    BackupService.acknowledgeCompletedRestore(databasePath);
     expect(restored.integrityCheck()).toBe('ok');
     restored.close();
   });
