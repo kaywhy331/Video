@@ -45,6 +45,14 @@ import {
   YouTubeService,
   youtubeCredentialFingerprint
 } from '@main/services/youtube-service';
+import type { InitialSetupState } from '@shared/initial-setup';
+
+const supportingSetup: InitialSetupState = {
+  required: false,
+  ready: true,
+  completedSteps: 0,
+  steps: []
+};
 
 function fixtureSecrets(): SecretStore {
   const values: Secrets = {
@@ -185,7 +193,8 @@ describe('autonomous production supporting rehearsal', () => {
         () => settings,
         places,
         undefined,
-        vision
+        vision,
+        () => supportingSetup
       );
       const coverage = catalog.coverage(250).find(item =>
         item.country === 'Portugal' && item.city === 'Lisbon'

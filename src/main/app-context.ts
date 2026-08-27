@@ -63,6 +63,7 @@ import { installMediaToolResolver } from './tool-paths';
 import { installProcessLaunchGuard } from './services/process-utils';
 import { ActiveFinalService } from './services/active-final-service';
 import { LongOperationPowerGuard } from './services/long-operation-power-guard';
+import { initialSetupState, type InitialSetupState } from '@shared/initial-setup';
 
 export class AppContext {
   readonly db: AppDatabase;
@@ -193,7 +194,8 @@ export class AppContext {
       () => this.settingsValue,
       this.places,
       this.research,
-      this.vision
+      this.vision,
+      () => this.productionSetupState()
     );
     this.jobs.setCheckpointHandler(projectId => {
       try {
@@ -319,6 +321,7 @@ export class AppContext {
       this.db,
       () => this.settingsValue,
       () => this.projects.createAutopilot({}),
+      () => this.productionSetupState(),
       () => this.workflow.resumeOldest()
     );
     this.google = new GoogleProviderService(this.secrets);
@@ -497,6 +500,14 @@ export class AppContext {
       secrets: this.secrets.status(),
       ...snapshot
     };
+  }
+
+  private productionSetupState(): InitialSetupState {
+    return initialSetupState({
+      settings: this.settings(),
+      secrets: this.secrets.status(),
+      ...this.stateSnapshot()
+    });
   }
 
   stateSnapshot(): AppStateSnapshot {

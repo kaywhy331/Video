@@ -110,7 +110,7 @@ export function initialSetupState(bootstrap: AppBootstrap): InitialSetupState {
   const completedSteps = steps.filter(step => step.complete).length;
 
   return {
-    required: bootstrap.projects.length === 0 && bootstrap.catalog.totalAssets === 0,
+    required: bootstrap.projects.length === 0 && completedSteps !== steps.length,
     ready: completedSteps === steps.length,
     completedSteps,
     steps
